@@ -24,6 +24,7 @@ import {
   MOCK_NOTIFICATIONS,
   MOCK_LEADERBOARD,
 } from './mockData';
+import { fetchUnstopHackathons } from './unstopService';
 
 const STORAGE_KEYS = {
   USER: '@studos_user',
@@ -178,13 +179,193 @@ class DataService {
     };
   }
 
-  async getOpportunities(): Promise<Opportunity[]> {
-    try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.OPPORTUNITIES);
-      return data ? JSON.parse(data) : MOCK_OPPORTUNITIES;
-    } catch {
-      return MOCK_OPPORTUNITIES;
+  async getOpportunities(params?: {
+    search?: string;
+    categories?: string[];
+    teamSize?: string[];
+    payment?: string[];
+    sortBy?: 'deadline' | 'recent' | 'prize' | 'relevance';
+    forceRefresh?: boolean;
+    allowDemoFallback?: boolean;
+  }): Promise<Opportunity[]> {
+    // First check cached opportunities if not forcing refresh
+    const cached = await AsyncStorage.getItem(STORAGE_KEYS.OPPORTUNITIES);
+    let opportunitiesList: Opportunity[] = cached ? JSON.parse(cached) : [];
+
+    // If no cached opportunities or forcing refresh, fetch real Unstop opportunities
+    if (opportunitiesList.length === 0 || params?.forceRefresh) {
+      try {
+        const unstopData = await fetchUnstopHackathons(params?.forceRefresh);
+        if (unstopData && unstopData.length > 0) {
+          const mappedOpportunities: Opportunity[] = unstopData.map((h) => {
+            const format: 'In-Person' | 'Online' | 'Hybrid' = h.mode.toLowerCase().includes('in-person')
+              ? 'In-Person'
+              : h.mode.toLowerCase().includes('hybrid')
+              ? 'Hybrid'
+              : 'Online';
+
+            return {
+              id: h.id,
+              title: h.title,
+              organizer: h.organizer,
+              type: 'Hackathon',
+              category: 'Hackathons',
+              format,
+              location: h.location,
+              deadline: h.deadline || 'Open / Ongoing',
+              daysRemaining: h.daysRemaining ?? 30,
+              eligibility: h.eligibility,
+              prizeOrCompensation: h.prize || 'Prizes & Certificates',
+              prizeAmount: h.prizeAmount,
+              registrationFee: h.isPaid ? 'Paid' : 'Free',
+              teamSize: '2-4 members',
+              minTeamSize: 2,
+              maxTeamSize: 4,
+              isVerified: true,
+              requiredSkills: h.skills.length > 0 ? h.skills : ['Coding', 'Problem Solving'],
+              description: h.description,
+              officialUrl: h.registrationUrl,
+              checklist: [
+                'Review problem statements and eligibility on Unstop',
+                'Register team on official portal before deadline',
+                'Prepare prototype / project pitch deck',
+              ],
+              source: 'Unstop',
+              status: 'Open',
+              isSaved: false,
+              featured: (h.prizeAmount && h.prizeAmount > 50000) || false,
+              publishedAt: new Date().toISOString(),
+            };
+          });
+
+          opportunitiesList = mappedOpportunities;
+          await AsyncStorage.setItem(STORAGE_KEYS.OPPORTUNITIES, JSON.stringify(mappedOpportunities));
+        }
+      } catch (fetchErr) {
+        console.warn('Real Unstop fetch error:', fetchErr);
+        // If we have previously cached real opportunities, we can serve them
+        if (opportunitiesList.length === 0) {
+          if (params?.allowDemoFallback) {
+            console.info('Demo fallback mode explicitly enabled: showing mock opportunities.');
+            opportunitiesList = MOCK_OPPORTUNITIES;
+          } else {
+            // Rethrow so the UI displays the honest error state and retry button
+            throw fetchErr;
+          }
+        }
+      }
     }
+
+    return this.applyFiltersAndSort(opportunitiesList, params);
+  }
+
+  async refreshRealOpportunities(): Promise<Opportunity[]> {
+    return this.getOpportunities({ forceRefresh: true });
+  }
+
+  async getOpportunityById(id: string): Promise<Opportunity | undefined> {
+    const opps = await this.getOpportunities();
+    return opps.find((o) => o.id === id);
+  }
+
+  private applyFiltersAndSort(
+    items: Opportunity[],
+    params?: {
+      search?: string;
+      categories?: string[];
+      teamSize?: string[];
+      payment?: string[];
+      sortBy?: 'deadline' | 'recent' | 'prize' | 'relevance';
+    }
+  ): Opportunity[] {
+    if (!params) return items;
+
+    let result = [...items];
+
+    // Search by title and organizer
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      result = result.filter(
+        (o) =>
+          o.title.toLowerCase().includes(q) ||
+          o.organizer.toLowerCase().includes(q) ||
+          (o.category && o.category.toLowerCase().includes(q)) ||
+          o.type.toLowerCase().includes(q) ||
+          (o.requiredSkills && o.requiredSkills.some((s) => s.toLowerCase().includes(q)))
+      );
+    }
+
+    // Filter by categories (multiple selection)
+    if (params.categories && params.categories.length > 0 && !params.categories.includes('All')) {
+      result = result.filter((o) => {
+        const cat = o.category || o.type;
+        return params.categories!.includes(cat as any) || params.categories!.includes(o.type as any);
+      });
+    }
+
+    // Filter by team size
+    if (params.teamSize && params.teamSize.length > 0) {
+      result = result.filter((o) => {
+        return params.teamSize!.some((ts) => {
+          if (ts === 'Individual') {
+            return o.teamSize === 'Individual' || o.maxTeamSize === 1;
+          }
+          if (ts === '2–4 members' || ts === '2-4 members') {
+            return (
+              o.teamSize === '2-4 members' ||
+              (o.minTeamSize && o.minTeamSize >= 2 && o.maxTeamSize && o.maxTeamSize <= 4)
+            );
+          }
+          if (ts === '5 or more members' || ts === '5+ members') {
+            return (
+              o.teamSize === '5+ members' ||
+              (o.maxTeamSize && o.maxTeamSize >= 5) ||
+              (o.minTeamSize && o.minTeamSize >= 5)
+            );
+          }
+          return false;
+        });
+      });
+    }
+
+    // Filter by payment structure
+    if (params.payment && params.payment.length > 0) {
+      result = result.filter((o) => {
+        return params.payment!.some((p) => {
+          if (p === 'Free registration') {
+            return o.registrationFee === 'Free' || !o.registrationFee;
+          }
+          if (p === 'Paid registration') {
+            return o.registrationFee === 'Paid' || (o.registrationFee && o.registrationFee !== 'Free');
+          }
+          if (p === 'Stipend') {
+            return Boolean(o.stipend);
+          }
+          if (p === 'Prize or rewards') {
+            return (o.prizeAmount && o.prizeAmount > 0) || Boolean(o.prizeOrCompensation);
+          }
+          if (p === 'Scholarship or funding') {
+            return o.type === 'Scholarship' || o.category === 'Scholarships';
+          }
+          return false;
+        });
+      });
+    }
+
+    // Sorting
+    if (params.sortBy === 'deadline') {
+      result.sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999));
+    } else if (params.sortBy === 'recent') {
+      result.sort((a, b) => {
+        const da = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+        const db = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+        return db - da;
+      });
+    } else if (params.sortBy === 'prize') {
+      result.sort((a, b) => (b.prizeAmount || 0) - (a.prizeAmount || 0));
+    }
+
+    return result;
   }
 
   async toggleSaveOpportunity(id: string): Promise<Opportunity | undefined> {

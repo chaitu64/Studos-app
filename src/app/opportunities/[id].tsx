@@ -79,7 +79,10 @@ export default function OpportunityDetailScreen() {
         {/* Top Badges */}
         <View style={styles.topBadges}>
           <Badge label={opp.type} variant="primary" size="md" />
-          <Badge label={`${opp.format} • ${opp.location}`} variant="cyan" size="md" />
+          {opp.category && opp.category !== (opp.type as any) ? (
+            <Badge label={opp.category} variant="purple" size="md" style={{ marginLeft: 6 }} />
+          ) : null}
+          <Badge label={`${opp.format} • ${opp.location}`} variant="cyan" size="md" style={{ marginLeft: 6 }} />
         </View>
 
         {/* Title */}
@@ -92,6 +95,9 @@ export default function OpportunityDetailScreen() {
           {opp.isVerified ? (
             <Badge label="Verified Official" variant="green" size="sm" style={{ marginLeft: 8 }} />
           ) : null}
+          {opp.source ? (
+            <Text style={styles.sourceText}>via {opp.source}</Text>
+          ) : null}
         </View>
 
         {/* Key Metrics Card */}
@@ -99,18 +105,35 @@ export default function OpportunityDetailScreen() {
           <View style={styles.metricItem}>
             <Text style={styles.metricLabel}>DEADLINE</Text>
             <Text style={[styles.metricValue, { color: Colors.primary }]}>{opp.deadline}</Text>
-            <Text style={styles.metricSub}>{opp.daysRemaining} days remaining</Text>
+            <Text style={styles.metricSub}>
+              {opp.daysRemaining !== undefined && opp.daysRemaining <= 0
+                ? 'Closing Today'
+                : `${opp.daysRemaining} days remaining`}
+              {opp.timezone ? ` • ${opp.timezone}` : ''}
+            </Text>
           </View>
 
           <View style={styles.metricDivider} />
 
           <View style={styles.metricItem}>
-            <Text style={styles.metricLabel}>PRIZE / GRANT</Text>
+            <Text style={styles.metricLabel}>PRIZE / STIPEND</Text>
             <Text style={[styles.metricValue, { color: Colors.accentAmber }]}>
               {opp.prizeOrCompensation.split(' ')[0]}
             </Text>
             <Text style={styles.metricSub} numberOfLines={1}>
               {opp.prizeOrCompensation}
+            </Text>
+          </View>
+
+          <View style={styles.metricDivider} />
+
+          <View style={styles.metricItem}>
+            <Text style={styles.metricLabel}>TEAM & FEE</Text>
+            <Text style={[styles.metricValue, { color: Colors.accentCyan }]}>
+              {opp.teamSize || 'Individual'}
+            </Text>
+            <Text style={styles.metricSub}>
+              {opp.registrationFee ? `Fee: ${opp.registrationFee}` : 'Free Registration'}
             </Text>
           </View>
         </Card>
@@ -175,7 +198,7 @@ export default function OpportunityDetailScreen() {
           </Text>
 
           <View style={styles.checklist}>
-            {opp.checklist.map((item, idx) => {
+            {(opp.checklist || []).map((item, idx) => {
               const isChecked = !!checkedItems[idx];
               return (
                 <TouchableOpacity
@@ -274,6 +297,12 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: Typography.semiBold,
     marginLeft: 6,
+  },
+  sourceText: {
+    fontSize: Typography.caption,
+    color: Colors.textMuted,
+    marginLeft: 8,
+    fontStyle: 'italic',
   },
   metricsCard: {
     flexDirection: 'row',

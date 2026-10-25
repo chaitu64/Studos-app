@@ -18,12 +18,14 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
+import { ActionSheet } from '../../components/ui/ActionSheet';
 import { useApp } from '../../context/AppContext';
 
 export default function ProfileScreen() {
-  const { user, ideas, projects, updateProfile } = useApp();
+  const { user, ideas, projects, updateProfile, conversations, unreadNotifsCount } = useApp();
 
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showActionSheet, setShowActionSheet] = useState(false);
   const [bioInput, setBioInput] = useState(user.shortBio);
   const [goalsInput, setGoalsInput] = useState(user.goals);
   const [skillsInput, setSkillsInput] = useState(user.skills.join(', '));
@@ -31,6 +33,7 @@ export default function ProfileScreen() {
 
   const myIdeas = ideas.filter((i) => i.creator.id === user.id);
   const myProjects = projects.filter((p) => p.contributors.some((c) => c.id === user.id));
+  const totalUnreadChat = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
   const handleSaveProfile = async () => {
     const updatedSkills = skillsInput
@@ -49,10 +52,19 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Top Bar with Settings */}
+      {/* Top Bar with Plus Action & Settings */}
       <View style={styles.topBar}>
         <Text style={styles.topBarTitle}>Student Profile</Text>
         <View style={styles.topBarActions}>
+          <TouchableOpacity
+            style={styles.plusActionBtn}
+            onPress={() => setShowActionSheet(true)}
+            activeOpacity={0.8}
+            accessibilityLabel="Create Action"
+          >
+            <Ionicons name="add" size={20} color="#FFF" />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.iconCircle}
             onPress={() => router.push('/settings' as any)}
@@ -154,6 +166,132 @@ export default function ProfileScreen() {
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{user.hackathonsCount}</Text>
             <Text style={styles.statLabel}>Hackathons</Text>
+          </View>
+        </View>
+
+        {/* Network & Actions Hub: Chat near top, Leaderboard, Idea Hub, Projects, Teams, Saved, Notifs, Settings */}
+        <View style={styles.hubSection}>
+          <Text style={styles.hubSectionTitle}>STUDOS NETWORK & ACTIONS</Text>
+
+          {/* 1. Chat / Messages (At the top of the hub) */}
+          <TouchableOpacity
+            style={styles.hubItemHighlight}
+            onPress={() => router.push('/(tabs)/chat' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.hubItemLeft}>
+              <View style={[styles.hubIconWrap, { backgroundColor: Colors.primarySubtle }]}>
+                <Ionicons name="chatbubbles" size={20} color={Colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.hubItemTitle}>Chat & Messages</Text>
+                <Text style={styles.hubItemSub}>Collaborator direct messages & squads</Text>
+              </View>
+            </View>
+            <View style={styles.hubItemRight}>
+              {totalUnreadChat > 0 ? (
+                <View style={styles.hubBadge}>
+                  <Text style={styles.hubBadgeText}>{totalUnreadChat} new</Text>
+                </View>
+              ) : null}
+              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+
+          {/* 2-8 Other Hub Destinations in a clean 2-column grid */}
+          <View style={styles.hubGrid}>
+            {/* 2. Leaderboard */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/leaderboard' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.accentAmberSubtle }]}>
+                <Ionicons name="trophy-outline" size={18} color={Colors.accentAmber} />
+              </View>
+              <Text style={styles.hubGridTitle}>Leaderboard</Text>
+              <Text style={styles.hubGridSub}>Rank #{user.leaderboardRank}</Text>
+            </TouchableOpacity>
+
+            {/* 3. Idea Hub / Submit an Idea */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/ideahub' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.primarySubtle }]}>
+                <Ionicons name="bulb-outline" size={18} color={Colors.primary} />
+              </View>
+              <Text style={styles.hubGridTitle}>Idea Hub</Text>
+              <Text style={styles.hubGridSub}>Submit an Idea</Text>
+            </TouchableOpacity>
+
+            {/* 4. Project Showcase */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/projects' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.accentGreenSubtle }]}>
+                <Ionicons name="rocket-outline" size={18} color={Colors.accentGreen} />
+              </View>
+              <Text style={styles.hubGridTitle}>Projects</Text>
+              <Text style={styles.hubGridSub}>Showcase Work</Text>
+            </TouchableOpacity>
+
+            {/* 5. Find Teammates */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/teams' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.accentCyanSubtle }]}>
+                <Ionicons name="people-outline" size={18} color={Colors.accentCyan} />
+              </View>
+              <Text style={styles.hubGridTitle}>Find Teammates</Text>
+              <Text style={styles.hubGridSub}>Recruit / Apply</Text>
+            </TouchableOpacity>
+
+            {/* 6. Saved Opportunities */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/(tabs)/explore' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.accentPurpleSubtle }]}>
+                <Ionicons name="bookmark-outline" size={18} color={Colors.accentPurple} />
+              </View>
+              <Text style={styles.hubGridTitle}>Saved Opps</Text>
+              <Text style={styles.hubGridSub}>Deadlines</Text>
+            </TouchableOpacity>
+
+            {/* 7. Notifications */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/notifications' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.primarySubtle }]}>
+                <Ionicons name="notifications-outline" size={18} color={Colors.primary} />
+              </View>
+              <Text style={styles.hubGridTitle}>Notifications</Text>
+              <Text style={styles.hubGridSub}>
+                {unreadNotifsCount > 0 ? `${unreadNotifsCount} unread` : 'All caught up'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* 8. Settings */}
+            <TouchableOpacity
+              style={styles.hubGridCard}
+              onPress={() => router.push('/settings' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.surfaceHighlight }]}>
+                <Ionicons name="settings-outline" size={18} color={Colors.textSecondary} />
+              </View>
+              <Text style={styles.hubGridTitle}>Settings</Text>
+              <Text style={styles.hubGridSub}>Account & Prefs</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -368,6 +506,12 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ACTION SHEET FOR SUBMIT IDEA / SHOWCASE / RECRUIT */}
+      <ActionSheet
+        visible={showActionSheet}
+        onClose={() => setShowActionSheet(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -395,6 +539,111 @@ const styles = StyleSheet.create({
   topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  plusActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  hubSection: {
+    marginBottom: 20,
+  },
+  hubSectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  hubItemHighlight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    padding: 14,
+    marginBottom: 10,
+  },
+  hubItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  hubIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  hubItemTitle: {
+    fontSize: Typography.body,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  hubItemSub: {
+    fontSize: Typography.caption,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  hubItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hubBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  hubBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  hubGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  hubGridCard: {
+    width: '48.5%',
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 12,
+  },
+  miniIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  hubGridTitle: {
+    fontSize: Typography.footnote,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  hubGridSub: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   iconCircle: {
     width: 36,

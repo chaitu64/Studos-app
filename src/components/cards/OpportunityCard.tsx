@@ -19,20 +19,30 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({ opportunity })
     router.push(`/opportunities/${opportunity.id}` as any);
   };
 
-  const isUrgent = opportunity.daysRemaining <= 14;
+  const isUrgent = opportunity.daysRemaining !== undefined && opportunity.daysRemaining <= 14;
 
   const getTypeVariant = (type: Opportunity['type']) => {
     switch (type) {
       case 'Hackathon':
         return 'primary';
       case 'Fellowship':
+      case 'Research':
         return 'purple';
       case 'AI Summit':
+      case 'Conference':
         return 'cyan';
       case 'Internship':
         return 'green';
       case 'Workshop':
         return 'amber';
+      case 'Scholarship':
+        return 'primary';
+      case 'Competition':
+      case 'Quiz':
+        return 'amber';
+      case 'Cultural Event':
+      case 'College Festival':
+        return 'purple';
       default:
         return 'neutral';
     }
@@ -42,11 +52,20 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({ opportunity })
     <Card variant="default" style={styles.card} onPress={handlePress}>
       {/* Top row: Type badge & Deadline indicator */}
       <View style={styles.topRow}>
-        <Badge
-          label={opportunity.type}
-          variant={getTypeVariant(opportunity.type)}
-          size="sm"
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Badge
+            label={opportunity.type}
+            variant={getTypeVariant(opportunity.type)}
+            size="sm"
+          />
+          {opportunity.category && opportunity.category !== (opportunity.type as any) ? (
+            <Badge
+              label={opportunity.category}
+              variant="neutral"
+              size="sm"
+            />
+          ) : null}
+        </View>
 
         <View
           style={[
@@ -65,7 +84,9 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({ opportunity })
               isUrgent ? { color: Colors.primary, fontWeight: '700' } : undefined,
             ]}
           >
-            {opportunity.daysRemaining}d left
+            {opportunity.daysRemaining !== undefined && opportunity.daysRemaining <= 0
+              ? 'Closing Today'
+              : `${opportunity.daysRemaining ?? 'Open'}d left`}
           </Text>
         </View>
       </View>

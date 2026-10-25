@@ -1,146 +1,193 @@
 import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Shadows } from '../../constants/theme';
-import { useApp } from '../../context/AppContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const { conversations } = useApp();
 
-  const totalUnreadChat = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+  // Custom TabBar that renders exactly 4 tab destinations in order:
+  // 1. Home, 2. Explore, 3. Swipe, 4. Profile
+  const renderCustomTabBar = ({ state, descriptors, navigation }: any) => {
+    const focusedRouteName = state.routes[state.index].name;
+
+    const renderTabItem = (routeName: string, title: string, iconOutline: any, iconFilled: any, badgeCount?: number) => {
+      const isFocused = focusedRouteName === routeName;
+      const onPress = () => {
+        const event = navigation.emit({
+          type: 'tabPress',
+          target: routeName,
+          canPreventDefault: true,
+        });
+
+        if (!isFocused && !event.defaultPrevented) {
+          navigation.navigate(routeName);
+        }
+      };
+
+      const color = isFocused ? Colors.primary : Colors.textMuted;
+
+      return (
+        <TouchableOpacity
+          key={routeName}
+          accessibilityRole="button"
+          accessibilityState={isFocused ? { selected: true } : {}}
+          accessibilityLabel={title}
+          testID={`tab-${routeName}`}
+          onPress={onPress}
+          style={styles.tabButton}
+          activeOpacity={0.7}
+        >
+          <View style={styles.iconContainer}>
+            <Ionicons name={isFocused ? iconFilled : iconOutline} size={22} color={color} />
+            {badgeCount && badgeCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{badgeCount}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={[styles.tabLabel, { color }]}>{title}</Text>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <View
+        style={[
+          styles.tabBarContainer,
+          {
+            height: Platform.OS === 'ios' ? 84 : 64 + insets.bottom,
+            paddingBottom: Platform.OS === 'ios' ? 24 : insets.bottom + 6,
+          },
+        ]}
+      >
+        {/* Destination 1: Home */}
+        {renderTabItem('index', 'Home', 'home-outline', 'home')}
+
+        {/* Destination 2: Explore */}
+        {renderTabItem('explore', 'Explore', 'compass-outline', 'compass')}
+
+        {/* Destination 3: Swipe */}
+        {renderTabItem('swipe', 'Swipe', 'flame-outline', 'flame')}
+
+        {/* Destination 4: Profile */}
+        {renderTabItem('profile', 'Profile', 'person-outline', 'person')}
+      </View>
+    );
+  };
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: Colors.surfaceElevated,
-          borderTopColor: Colors.border,
-          borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 : 64 + insets.bottom,
-          paddingBottom: Platform.OS === 'ios' ? 24 : insets.bottom + 6,
-          paddingTop: 8,
-          ...Shadows.card,
-        },
-        tabBarLabelStyle: {
-          fontSize: Typography.caption,
-          fontWeight: Typography.medium,
-          marginTop: 2,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-          ),
+    <>
+      <Tabs
+        tabBar={renderCustomTabBar}
+        screenOptions={{
+          headerShown: false,
         }}
-      />
+      >
+        {/* Destination 1: Home */}
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+          }}
+        />
 
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'Discover',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'sparkles' : 'sparkles-outline'}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
+        {/* Destination 2: Explore */}
+        <Tabs.Screen
+          name="explore"
+          options={{
+            title: 'Explore',
+          }}
+        />
 
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: '',
-          tabBarIcon: () => (
-            <View style={styles.createButtonContainer}>
-              <View style={styles.createButtonGlow} />
-              <View style={styles.createButtonInner}>
-                <Ionicons name="add" size={26} color="#FFF" />
-              </View>
-            </View>
-          ),
-        }}
-      />
+        {/* Destination 3: Swipe */}
+        <Tabs.Screen
+          name="swipe"
+          options={{
+            title: 'Swipe',
+          }}
+        />
 
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarBadge: totalUnreadChat > 0 ? totalUnreadChat : undefined,
-          tabBarBadgeStyle: {
-            backgroundColor: Colors.primary,
-            fontSize: 10,
-            fontWeight: 'bold',
-          },
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
+        {/* Destination 4: Profile */}
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'Profile',
+          }}
+        />
 
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'person' : 'person-outline'}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+        {/* Chat screen preserved for in-app navigation without being a bottom tab */}
+        <Tabs.Screen
+          name="chat"
+          options={{
+            href: null,
+          }}
+        />
+
+        {/* Hidden legacy routes so existing deep links remain functional */}
+        <Tabs.Screen
+          name="discover"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="create"
+          options={{
+            href: null,
+          }}
+        />
+      </Tabs>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  createButtonContainer: {
+  tabBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: Colors.surfaceElevated,
+    borderTopColor: Colors.border,
+    borderTopWidth: 1,
+    paddingTop: 8,
+    ...Shadows.card,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  iconContainer: {
     position: 'relative',
-    top: -12,
     alignItems: 'center',
     justifyContent: 'center',
-    width: 52,
-    height: 52,
+    width: 28,
+    height: 24,
   },
-  createButtonGlow: {
+  tabLabel: {
+    fontSize: Typography.caption,
+    fontWeight: Typography.medium,
+    marginTop: 3,
+  },
+  badge: {
     position: 'absolute',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    top: -4,
+    right: -8,
     backgroundColor: Colors.primary,
-    opacity: 0.35,
-    transform: [{ scale: 1.15 }],
-  },
-  createButtonInner: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.background,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: 'bold',
   },
 });

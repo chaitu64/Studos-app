@@ -16,7 +16,24 @@ export type OpportunityType =
   | 'Workshop'
   | 'Research'
   | 'Competition'
-  | 'Fellowship';
+  | 'Fellowship'
+  | 'Scholarship'
+  | 'Quiz'
+  | 'Conference'
+  | 'Cultural Event'
+  | 'College Festival';
+
+export type OpportunityCategory =
+  | 'Competitions'
+  | 'Hackathons'
+  | 'Quizzes'
+  | 'Scholarships'
+  | 'Workshops'
+  | 'Conferences'
+  | 'Cultural Events'
+  | 'College Festivals'
+  | 'Internships'
+  | 'Research Programs';
 
 export interface UserProfile {
   id: string;
@@ -125,19 +142,34 @@ export interface Opportunity {
   organizer: string;
   organizerLogo?: string;
   type: OpportunityType;
+  category?: OpportunityCategory;
   format: 'Online' | 'In-Person' | 'Hybrid';
   location: string;
-  startDate: string;
+  startDate?: string;
   deadline: string;
+  timezone?: string;
   daysRemaining: number;
   eligibility: string;
   prizeOrCompensation: string;
+  prizeAmount?: number;
+  currency?: string;
+  stipend?: string;
+  registrationFee?: 'Free' | 'Paid' | string;
+  teamSize?: 'Individual' | '2-4 members' | '5+ members' | string;
+  minTeamSize?: number;
+  maxTeamSize?: number;
   isVerified: boolean;
   requiredSkills: string[];
   description: string;
   officialUrl: string;
-  checklist: string[];
+  checklist?: string[];
+  source?: string;
+  verificationTimestamp?: string;
+  status?: 'Open' | 'Closing Soon' | 'Closed' | 'Upcoming';
   isSaved?: boolean;
+  featured?: boolean;
+  publishedAt?: string;
+  updatedAt?: string;
 }
 
 export interface Project {

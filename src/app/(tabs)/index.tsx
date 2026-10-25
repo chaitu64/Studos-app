@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Linking,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { Header } from '../../components/navigation/Header';
 import { Chip } from '../../components/ui/Chip';
 import { Card } from '../../components/ui/Card';
@@ -23,14 +25,18 @@ import { TeamCard } from '../../components/cards/TeamCard';
 import { ProjectCard } from '../../components/cards/ProjectCard';
 import { useApp } from '../../context/AppContext';
 import { MOCK_STUDENTS } from '../../services/mockData';
+import { Opportunity } from '../../types';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All Feeds' },
-  { id: 'ideas', label: '💡 Ideas' },
-  { id: 'hackathons', label: '⚡ Hackathons' },
-  { id: 'teams', label: '🤝 Teammates' },
-  { id: 'projects', label: '🚀 Projects' },
-  { id: 'fellowships', label: '🎓 Fellowships' },
+// The exact categories required by StudOs specification
+const HOME_OPPORTUNITY_CATEGORIES = [
+  'Competitions',
+  'Hackathons',
+  'Quizzes',
+  'Scholarships',
+  'Workshops',
+  'Conferences',
+  'Cultural Events',
+  'College Festivals',
 ];
 
 export default function HomeScreen() {
@@ -41,10 +47,10 @@ export default function HomeScreen() {
     opportunities,
     projects,
     leaderboard,
+    toggleSaveOpportunity,
     refreshAll,
   } = useApp();
 
-  const [selectedCategory, setSelectedCategory] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = async () => {
@@ -53,12 +59,76 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Filter ideas and opportunities
+  // Category navigation: Selecting any category opens Explore with that category pre-selected
+  const handleSelectCategory = (category: string) => {
+    router.push({
+      pathname: '/(tabs)/explore',
+      params: { category },
+    } as any);
+  };
+
+  // 1. Closing Soon: Opportunities with nearest valid upcoming registration deadlines
+  const closingSoonOpportunities = useMemo(() => {
+    return [...opportunities]
+      .filter((o) => (o.daysRemaining !== undefined ? o.daysRemaining >= 0 : true))
+      .sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999))
+      .slice(0, 3);
+  }, [opportunities]);
+
+  // 2. Featured Hackathons and Internships
+  const featuredHackathonsAndInternships = useMemo(() => {
+    return opportunities
+      .filter(
+        (o) =>
+          o.type === 'Hackathon' ||
+          o.type === 'Internship' ||
+          o.category === 'Hackathons' ||
+          o.category === 'Internships'
+      )
+      .slice(0, 3);
+  }, [opportunities]);
+
+  // 3. Recommended Opportunities: Matched by user primaryRole/skills or curated top
+  const recommendedOpportunities = useMemo(() => {
+    const userRole = user.primaryRole?.toLowerCase() || '';
+    const userSkills = user.skills?.map((s) => s.toLowerCase()) || [];
+
+    const matched = opportunities.filter((o) => {
+      const skillsMatch = o.requiredSkills?.some((sk) =>
+        userSkills.includes(sk.toLowerCase())
+      );
+      const titleMatch =
+        o.title.toLowerCase().includes(userRole) ||
+        o.description.toLowerCase().includes(userRole);
+      return skillsMatch || titleMatch;
+    });
+
+    return (matched.length > 0 ? matched : opportunities).slice(0, 3);
+  }, [opportunities, user]);
+
+  // 4. Saved Opportunities
+  const savedOpportunities = useMemo(() => {
+    return opportunities.filter((o) => o.isSaved);
+  }, [opportunities]);
+
+  // 5. Trending Ideas, Teams & Collaborators
   const trendingIdeas = ideas.slice(0, 3);
-  const featuredOpportunities = opportunities.slice(0, 3);
   const activeTeams = teams.slice(0, 2);
-  const recentProjects = projects.slice(0, 2);
   const topStudents = MOCK_STUDENTS.slice(0, 4);
+  const recentProjects = projects.slice(0, 2);
+
+  const handleRegisterDirect = async (opp: Opportunity) => {
+    try {
+      const supported = await Linking.canOpenURL(opp.officialUrl);
+      if (supported) {
+        await Linking.openURL(opp.officialUrl);
+      } else {
+        Alert.alert('Official Portal', `Opening portal: ${opp.officialUrl}`);
+      }
+    } catch {
+      Alert.alert('Notice', `Please visit portal at: ${opp.officialUrl}`);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -81,11 +151,11 @@ export default function HomeScreen() {
           <View style={styles.heroContent}>
             <View style={styles.heroBadge}>
               <Ionicons name="flash" size={12} color={Colors.primary} />
-              <Text style={styles.heroBadgeText}>TREEHACKS 2026 REGISTRATION OPEN</Text>
+              <Text style={styles.heroBadgeText}>LIVE STUDENT DISCOVERY</Text>
             </View>
             <Text style={styles.heroTitle}>Turn your midnight ideas into deployed reality.</Text>
             <Text style={styles.heroSubtitle}>
-              Find collaborators with complementary skills or apply to open student startup teams.
+              Find verified hackathons, internships, scholarships, and collaborators with matching skills.
             </Text>
 
             <View style={styles.heroActions}>
@@ -100,224 +170,335 @@ export default function HomeScreen() {
                 title="Find Teammates"
                 size="sm"
                 variant="secondary"
-                onPress={() => router.push('/teams' as any)}
+                onPress={() => router.push('/(tabs)/swipe' as any)}
                 style={{ marginLeft: 8 }}
               />
             </View>
           </View>
         </View>
 
-        {/* Category Horizontal Filter Chips */}
+        {/* HORIZONTALLY SCROLLABLE OPPORTUNITY CATEGORIES */}
         <View style={styles.categoriesSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-            {CATEGORIES.map((cat) => (
+          <View style={styles.categoriesHeader}>
+            <Text style={styles.categoriesSectionTitle}>EXPLORE BY CATEGORY</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
+              <Text style={styles.seeAllText}>All →</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsScroll}
+          >
+            {HOME_OPPORTUNITY_CATEGORIES.map((catName) => (
               <Chip
-                key={cat.id}
-                label={cat.label}
-                selected={selectedCategory === cat.id}
-                onPress={() => setSelectedCategory(cat.id)}
+                key={catName}
+                label={catName}
+                selected={false}
+                onPress={() => handleSelectCategory(catName)}
+                style={styles.categoryChip}
               />
             ))}
           </ScrollView>
         </View>
 
-        {/* SECTION: Trending Ideas from Community */}
-        {(selectedCategory === 'all' || selectedCategory === 'ideas') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Trending Ideas</Text>
-                <Text style={styles.sectionSubtitle}>Student initiatives seeking collaborators</Text>
+        {/* SECTION 1: CLOSING SOON (Highest Priority Section) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <View style={styles.urgentHeaderRow}>
+                <View style={styles.urgentDot} />
+                <Text style={styles.sectionTitle}>Closing Soon</Text>
               </View>
-              <TouchableOpacity onPress={() => router.push('/ideahub' as any)}>
-                <Text style={styles.seeAllText}>Explore Hub →</Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionSubtitle}>
+                Verified deadlines approaching within days — register before slots fill
+              </Text>
             </View>
-
-            {trendingIdeas.map((idea) => (
-              <IdeaCard key={idea.id} idea={idea} />
-            ))}
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
+              <Text style={styles.seeAllUrgentText}>Explore All →</Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* SECTION: Recommended Opportunities */}
-        {(selectedCategory === 'all' || selectedCategory === 'hackathons' || selectedCategory === 'fellowships') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Curated Opportunities</Text>
-                <Text style={styles.sectionSubtitle}>Verified hackathons, grants & internships</Text>
+          {closingSoonOpportunities.map((opp) => (
+            <Card key={opp.id} variant="default" style={styles.closingSoonCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.typeBadgeRow}>
+                  <Badge label={opp.type} variant="primary" size="sm" />
+                  <Badge label={opp.format} variant="neutral" size="sm" style={{ marginLeft: 6 }} />
+                </View>
+
+                {/* Prominent Deadline Pill */}
+                <View style={styles.countdownPill}>
+                  <Ionicons name="alarm-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.countdownText}>
+                    {opp.daysRemaining !== undefined && opp.daysRemaining <= 0
+                      ? 'Closing Today'
+                      : `${opp.daysRemaining} days left`}
+                  </Text>
+                </View>
               </View>
-              <TouchableOpacity onPress={() => router.push('/opportunities' as any)}>
-                <Text style={styles.seeAllText}>View All ({opportunities.length}) →</Text>
+
+              <TouchableOpacity
+                onPress={() => router.push(`/opportunities/${opp.id}` as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.oppTitle}>{opp.title}</Text>
               </TouchableOpacity>
-            </View>
 
-            {featuredOpportunities.map((opp) => (
-              <OpportunityCard key={opp.id} opportunity={opp} />
-            ))}
-          </View>
-        )}
-
-        {/* SECTION: Students Looking for Teammates */}
-        {(selectedCategory === 'all' || selectedCategory === 'teams') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Collaborator Spotlight</Text>
-                <Text style={styles.sectionSubtitle}>Connect with builders possessing matching skills</Text>
-              </View>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/discover' as any)}>
-                <Text style={styles.seeAllText}>Swipe & Match →</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.collaboratorScroll}>
-              {topStudents.map((s) => (
-                <Card key={s.id} variant="default" style={styles.studentPreviewCard}>
-                  <Avatar uri={s.avatar} name={s.name} size={50} isVerified={s.isVerified} />
-                  <Text style={styles.studentCardName} numberOfLines={1}>{s.name}</Text>
-                  <Text style={styles.studentCardCollege} numberOfLines={1}>{s.college}</Text>
-                  <Badge label={s.primaryRole} variant="primary" size="sm" style={{ marginTop: 6 }} />
-
-                  <View style={styles.studentCardSkills}>
-                    {s.skills.slice(0, 2).map((sk) => (
-                      <View key={sk} style={styles.miniSkill}>
-                        <Text style={styles.miniSkillText}>{sk}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  <Button
-                    title="Connect"
-                    size="sm"
-                    variant="outline"
-                    onPress={() => router.push('/(tabs)/discover' as any)}
-                    style={styles.studentConnectBtn}
+              {/* Organizer Row */}
+              <View style={styles.organizerRow}>
+                <Ionicons name="business-outline" size={14} color={Colors.textMuted} />
+                <Text style={styles.organizerText}>{opp.organizer}</Text>
+                {opp.isVerified ? (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={14}
+                    color={Colors.primary}
+                    style={{ marginLeft: 4 }}
                   />
-                </Card>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* SECTION: Open Teams Recruiting */}
-        {(selectedCategory === 'all' || selectedCategory === 'teams') && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Open Teams Recruiting</Text>
-                <Text style={styles.sectionSubtitle}>Hackathon squads and startup crews with open seats</Text>
+                ) : null}
               </View>
-              <TouchableOpacity onPress={() => router.push('/teams' as any)}>
-                <Text style={styles.seeAllText}>All Teams →</Text>
-              </TouchableOpacity>
-            </View>
 
+              {/* Metrics Grid */}
+              <View style={styles.oppMetricsGrid}>
+                {opp.prizeOrCompensation ? (
+                  <View style={styles.metricItem}>
+                    <Ionicons name="trophy-outline" size={14} color={Colors.accentAmber} />
+                    <Text style={[styles.metricText, { color: Colors.accentAmber }]} numberOfLines={1}>
+                      {opp.prizeOrCompensation}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.metricItem}>
+                  <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
+                  <Text style={styles.metricText} numberOfLines={1}>
+                    Deadline: {opp.deadline}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Card Actions */}
+              <View style={styles.oppActionsRow}>
+                <TouchableOpacity
+                  style={[styles.saveBtn, opp.isSaved && styles.saveBtnActive]}
+                  onPress={() => toggleSaveOpportunity(opp.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={opp.isSaved ? 'bookmark' : 'bookmark-outline'}
+                    size={18}
+                    color={opp.isSaved ? Colors.primary : Colors.textMuted}
+                  />
+                  <Text style={[styles.saveBtnText, opp.isSaved && { color: Colors.primary }]}>
+                    {opp.isSaved ? 'Saved' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+
+                <Button
+                  title="View Details"
+                  size="sm"
+                  variant="outline"
+                  onPress={() => router.push(`/opportunities/${opp.id}` as any)}
+                  style={{ flex: 1, marginHorizontal: 6 }}
+                />
+
+                <Button
+                  title="Apply"
+                  size="sm"
+                  variant="primary"
+                  onPress={() => handleRegisterDirect(opp)}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </Card>
+          ))}
+        </View>
+
+        {/* SECTION 2: FEATURED HACKATHONS AND INTERNSHIPS */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Featured Hackathons & Internships</Text>
+              <Text style={styles.sectionSubtitle}>Premier technical challenges and paid industry roles</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
+              <Text style={styles.seeAllText}>View All ({featuredHackathonsAndInternships.length}) →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {featuredHackathonsAndInternships.map((opp) => (
+            <OpportunityCard key={opp.id} opportunity={opp} />
+          ))}
+        </View>
+
+        {/* SECTION 3: RECOMMENDED OPPORTUNITIES */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Recommended For You</Text>
+              <Text style={styles.sectionSubtitle}>
+                Matched with your skills ({user.primaryRole})
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
+              <Text style={styles.seeAllText}>Explore Feed →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recommendedOpportunities.map((opp) => (
+            <OpportunityCard key={opp.id} opportunity={opp} />
+          ))}
+        </View>
+
+        {/* SECTION 4: TRENDING STUDENT IDEAS */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Trending Student Ideas</Text>
+              <Text style={styles.sectionSubtitle}>Concepts seeking co-builders and feedback</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/ideahub' as any)}>
+              <Text style={styles.seeAllText}>Explore IdeaHub →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {trendingIdeas.map((idea) => (
+            <IdeaCard key={idea.id} idea={idea} />
+          ))}
+        </View>
+
+        {/* SECTION 5: FIND TEAMMATES (Collaborators Spotlight & Teams) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Find Teammates</Text>
+              <Text style={styles.sectionSubtitle}>Connect with builders possessing matching skills</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/swipe' as any)}>
+              <Text style={styles.seeAllText}>Swipe & Connect →</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.collaboratorScroll}
+          >
+            {topStudents.map((s) => (
+              <Card key={s.id} variant="default" style={styles.studentPreviewCard}>
+                <Avatar uri={s.avatar} name={s.name} size={50} isVerified={s.isVerified} />
+                <Text style={styles.studentCardName} numberOfLines={1}>
+                  {s.name}
+                </Text>
+                <Text style={styles.studentCardCollege} numberOfLines={1}>
+                  {s.college}
+                </Text>
+                <Badge label={s.primaryRole} variant="primary" size="sm" style={{ marginTop: 6 }} />
+
+                <View style={styles.studentCardSkills}>
+                  {s.skills.slice(0, 2).map((sk) => (
+                    <View key={sk} style={styles.miniSkill}>
+                      <Text style={styles.miniSkillText}>{sk}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Button
+                  title="Connect"
+                  size="sm"
+                  variant="outline"
+                  onPress={() => router.push('/(tabs)/swipe' as any)}
+                  style={styles.studentConnectBtn}
+                />
+              </Card>
+            ))}
+          </ScrollView>
+
+          {/* Open Teams */}
+          <View style={{ marginTop: 14 }}>
             {activeTeams.map((team) => (
               <TeamCard key={team.id} team={team} />
             ))}
           </View>
-        )}
+        </View>
 
-        {/* SECTION: Recent Project Showcases */}
-        {(selectedCategory === 'all' || selectedCategory === 'projects') && (
+        {/* SECTION 6: SAVED OPPORTUNITIES */}
+        {savedOpportunities.length > 0 ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionTitle}>Project Showcase</Text>
-                <Text style={styles.sectionSubtitle}>Prototypes & achievements built by peers</Text>
+                <Text style={styles.sectionTitle}>Saved Opportunities</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {savedOpportunities.length} opportunities bookmarked for your application schedule
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => router.push('/projects' as any)}>
-                <Text style={styles.seeAllText}>All Projects →</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
+                <Text style={styles.seeAllText}>Manage All →</Text>
               </TouchableOpacity>
             </View>
 
-            {recentProjects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
+            {savedOpportunities.slice(0, 2).map((opp) => (
+              <OpportunityCard key={opp.id} opportunity={opp} />
             ))}
           </View>
-        )}
+        ) : null}
 
-        {/* SECTION: Community Leaderboard Preview */}
+        {/* SECTION: Recent Project Showcases */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Project Showcase</Text>
+              <Text style={styles.sectionSubtitle}>Prototypes & achievements built by student peers</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/projects' as any)}>
+              <Text style={styles.seeAllText}>All Projects →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentProjects.map((p) => (
+            <ProjectCard key={p.id} project={p} />
+          ))}
+        </View>
+
+        {/* Community Leaderboard Preview */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>Impact Leaderboard</Text>
-              <Text style={styles.sectionSubtitle}>Recognizing real builders, mentors & researchers</Text>
+              <Text style={styles.sectionSubtitle}>Recognizing verified builders & researchers</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/leaderboard' as any)}>
               <Text style={styles.seeAllText}>Rankings →</Text>
             </TouchableOpacity>
           </View>
 
-          <Card variant="elevated" style={styles.leaderboardPreviewCard}>
-            {leaderboard.slice(0, 3).map((lead, idx) => (
-              <View key={lead.id} style={styles.leaderboardRow}>
-                <View style={styles.leadRankBadge}>
-                  <Text style={styles.leadRankNumber}>#{lead.rank}</Text>
+          <Card variant="outline" style={styles.leaderboardPreviewCard}>
+            {leaderboard.slice(0, 3).map((item, idx) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.leaderboardRow,
+                  idx < 2 && { borderBottomWidth: 1, borderBottomColor: Colors.border },
+                ]}
+              >
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankNum}>{idx + 1}</Text>
                 </View>
-                <Avatar uri={lead.avatar} name={lead.name} size={36} />
-                <View style={styles.leadInfo}>
-                  <Text style={styles.leadName}>{lead.name}</Text>
-                  <Text style={styles.leadRole}>
-                    {lead.college} • {lead.categoryRank}
+                <Avatar uri={item.avatar} name={item.name} size={36} />
+                <View style={styles.leaderboardInfo}>
+                  <Text style={styles.leaderboardName}>{item.name}</Text>
+                  <Text style={styles.leaderboardSub}>
+                    {item.role} • {item.college}
                   </Text>
                 </View>
-                <View style={styles.leadPoints}>
-                  <Text style={styles.pointsNumber}>{lead.points}</Text>
+                <View style={styles.leaderboardPoints}>
+                  <Text style={styles.pointsNum}>{item.points.toLocaleString()}</Text>
                   <Text style={styles.pointsLabel}>pts</Text>
                 </View>
               </View>
             ))}
-
-            <TouchableOpacity
-              style={styles.leaderboardFooterBtn}
-              onPress={() => router.push('/leaderboard' as any)}
-            >
-              <Text style={styles.leaderboardFooterText}>
-                Your Rank: #{user.leaderboardRank} ({user.points} pts) • View Point Rules
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
-            </TouchableOpacity>
-          </Card>
-        </View>
-
-        {/* Guided First-Time Path Checklist */}
-        <View style={[styles.section, { marginBottom: 32 }]}>
-          <Card variant="outline" style={styles.onboardingCard}>
-            <View style={styles.onboardingHeader}>
-              <Ionicons name="sparkles" size={18} color={Colors.primary} />
-              <Text style={styles.onboardingTitle}>YOUR INNOVATION ROADMAP</Text>
-            </View>
-            <Text style={styles.onboardingSubtitle}>
-              Complete these steps to unlock maximum student matchmaking and team invites:
-            </Text>
-
-            <View style={styles.checklist}>
-              <View style={styles.checkItem}>
-                <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                <Text style={[styles.checkText, styles.checkTextDone]}>Complete student profile & academic branch</Text>
-              </View>
-              <View style={styles.checkItem}>
-                <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                <Text style={[styles.checkText, styles.checkTextDone]}>Tag skills & project availability</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.checkItem}
-                onPress={() => router.push('/(tabs)/discover' as any)}
-              >
-                <Ionicons name="ellipse-outline" size={18} color={Colors.primary} />
-                <Text style={styles.checkText}>Swipe and connect with your first 3 collaborators</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.checkItem}
-                onPress={() => router.push('/ideahub/submit' as any)}
-              >
-                <Ionicons name="ellipse-outline" size={18} color={Colors.primary} />
-                <Text style={styles.checkText}>Publish an idea or apply to an open team</Text>
-              </TouchableOpacity>
-            </View>
           </Card>
         </View>
       </ScrollView>
@@ -331,36 +512,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollContainer: {
-    paddingHorizontal: Spacing.screenPadding,
-    paddingBottom: 40,
+    paddingBottom: 32,
   },
   heroBanner: {
-    backgroundColor: Colors.surfaceElevated,
+    marginHorizontal: Spacing.screenPadding,
+    marginTop: 12,
+    marginBottom: 16,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.primaryBorder,
     padding: 16,
-    marginTop: 14,
-    marginBottom: 16,
+    ...Shadows.card,
   },
-  heroContent: {},
+  heroContent: {
+    alignItems: 'flex-start',
+  },
   heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.primarySubtle,
-    paddingVertical: 3,
     paddingHorizontal: 8,
-    borderRadius: BorderRadius.xs,
-    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
+    gap: 4,
   },
   heroBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
     color: Colors.primary,
-    marginLeft: 4,
     letterSpacing: 0.5,
   },
   heroTitle: {
@@ -371,9 +552,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   heroSubtitle: {
-    fontSize: Typography.body,
-    color: Colors.textMuted,
-    lineHeight: 20,
+    fontSize: Typography.footnote,
+    color: Colors.textSecondary,
+    lineHeight: 18,
     marginBottom: 14,
   },
   heroActions: {
@@ -381,173 +562,248 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   categoriesSection: {
-    marginBottom: 20,
-    marginHorizontal: -Spacing.screenPadding,
+    marginBottom: 18,
+  },
+  categoriesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.screenPadding,
+    marginBottom: 8,
+  },
+  categoriesSectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.8,
   },
   chipsScroll: {
     paddingHorizontal: Spacing.screenPadding,
+    gap: 8,
+  },
+  categoryChip: {
+    marginRight: 2,
   },
   section: {
     marginBottom: 24,
+    paddingHorizontal: Spacing.screenPadding,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   sectionTitle: {
     fontSize: Typography.title3,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   sectionSubtitle: {
     fontSize: Typography.caption,
     color: Colors.textMuted,
     marginTop: 2,
   },
+  urgentHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  urgentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
   seeAllText: {
-    fontSize: Typography.footnote,
+    fontSize: Typography.caption,
+    fontWeight: Typography.semiBold,
+    color: Colors.textSecondary,
+    paddingTop: 4,
+  },
+  seeAllUrgentText: {
+    fontSize: Typography.caption,
+    fontWeight: Typography.bold,
     color: Colors.primary,
+    paddingTop: 4,
+  },
+  closingSoonCard: {
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
+    padding: 16,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  typeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  countdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primarySubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  countdownText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  oppTitle: {
+    fontSize: Typography.title3,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+    marginBottom: 6,
+  },
+  organizerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 4,
+  },
+  organizerText: {
+    fontSize: Typography.caption,
+    color: Colors.textMuted,
+    fontWeight: Typography.medium,
+  },
+  oppMetricsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  metricItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metricText: {
+    fontSize: Typography.caption,
+    color: Colors.textSecondary,
+    fontWeight: Typography.medium,
+  },
+  oppActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  saveBtnActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primarySubtle,
+  },
+  saveBtnText: {
+    fontSize: 12,
+    color: Colors.textMuted,
     fontWeight: Typography.semiBold,
   },
   collaboratorScroll: {
     gap: 12,
-    paddingRight: 16,
+    paddingBottom: 4,
   },
   studentPreviewCard: {
-    width: 170,
+    width: 150,
     alignItems: 'center',
-    padding: 14,
+    padding: 12,
   },
   studentCardName: {
     fontSize: Typography.body,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
     marginTop: 8,
-    textAlign: 'center',
   },
   studentCardCollege: {
-    fontSize: Typography.caption,
+    fontSize: 11,
     color: Colors.textMuted,
     marginTop: 2,
-    textAlign: 'center',
   },
   studentCardSkills: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 4,
     marginTop: 8,
+    marginBottom: 10,
   },
   miniSkill: {
-    backgroundColor: Colors.surfaceHighlight,
-    paddingVertical: 2,
+    backgroundColor: Colors.surfaceElevated,
     paddingHorizontal: 6,
-    borderRadius: BorderRadius.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   miniSkillText: {
     fontSize: 10,
     color: Colors.textSecondary,
   },
   studentConnectBtn: {
-    marginTop: 10,
     width: '100%',
-    paddingVertical: 5,
   },
   leaderboardPreviewCard: {
-    padding: 12,
+    padding: 0,
+    overflow: 'hidden',
   },
   leaderboardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
   },
-  leadRankBadge: {
-    width: 26,
+  rankBadge: {
+    width: 24,
     alignItems: 'center',
-    marginRight: 8,
   },
-  leadRankNumber: {
-    fontSize: Typography.subhead,
-    fontWeight: Typography.bold,
+  rankNum: {
+    fontSize: 14,
+    fontWeight: '900',
     color: Colors.primary,
   },
-  leadInfo: {
+  leaderboardInfo: {
     flex: 1,
-    marginLeft: 10,
   },
-  leadName: {
+  leaderboardName: {
+    fontSize: Typography.body,
+    fontWeight: Typography.semiBold,
+    color: Colors.textPrimary,
+  },
+  leaderboardSub: {
+    fontSize: Typography.caption,
+    color: Colors.textMuted,
+  },
+  leaderboardPoints: {
+    alignItems: 'flex-end',
+  },
+  pointsNum: {
     fontSize: Typography.body,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
-  },
-  leadRole: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  leadPoints: {
-    alignItems: 'flex-end',
-  },
-  pointsNumber: {
-    fontSize: Typography.headline,
-    fontWeight: Typography.bold,
-    color: Colors.accentAmber,
   },
   pointsLabel: {
     fontSize: 10,
     color: Colors.textMuted,
-  },
-  leaderboardFooterBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 12,
-    paddingHorizontal: 4,
-  },
-  leaderboardFooterText: {
-    fontSize: Typography.footnote,
-    color: Colors.textSecondary,
-    fontWeight: Typography.medium,
-  },
-  onboardingCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderColor: Colors.borderLight,
-  },
-  onboardingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  onboardingTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.8,
-    marginLeft: 6,
-  },
-  onboardingSubtitle: {
-    fontSize: Typography.footnote,
-    color: Colors.textMuted,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  checklist: {
-    gap: 10,
-  },
-  checkItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkText: {
-    fontSize: Typography.body,
-    color: Colors.textPrimary,
-    marginLeft: 8,
-    fontWeight: Typography.medium,
-  },
-  checkTextDone: {
-    color: Colors.textMuted,
-    textDecorationLine: 'line-through',
+    textTransform: 'uppercase',
   },
 });

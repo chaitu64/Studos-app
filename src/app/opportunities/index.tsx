@@ -19,10 +19,15 @@ import { OpportunityType } from '../../types';
 const CATEGORIES: ('All' | OpportunityType | 'Saved')[] = [
   'All',
   'Hackathon',
-  'Fellowship',
-  'AI Summit',
+  'Competition',
+  'Quiz',
+  'Scholarship',
   'Internship',
   'Workshop',
+  'Conference',
+  'Cultural Event',
+  'College Festival',
+  'Fellowship',
   'Saved',
 ];
 
@@ -36,7 +41,7 @@ export default function OpportunitiesScreen() {
     if (selectedCategory === 'Saved') {
       return !!opp.isSaved;
     }
-    if (selectedCategory !== 'All' && opp.type !== selectedCategory) {
+    if (selectedCategory !== 'All' && opp.type !== selectedCategory && opp.category !== (selectedCategory as any)) {
       return false;
     }
     if (searchQuery.trim()) {
@@ -51,7 +56,7 @@ export default function OpportunitiesScreen() {
   });
 
   if (sortByDeadline) {
-    filtered = [...filtered].sort((a, b) => a.daysRemaining - b.daysRemaining);
+    filtered = [...filtered].sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999));
   }
 
   return (
