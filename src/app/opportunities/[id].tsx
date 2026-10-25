@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Linking,
   Share,
   Alert,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,22 +19,70 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useApp } from '../../context/AppContext';
+import { dataService } from '../../services/dataService';
+import { Opportunity } from '../../types';
+import { formatDaysRemaining } from '../../services/unstopService';
 
 export default function OpportunityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { opportunities, toggleSaveOpportunity } = useApp();
 
-  const opp = opportunities.find((o) => o.id === id);
-
+  const [opp, setOpp] = useState<Opportunity | null>(() => {
+    return opportunities.find((o) => o.id === id) || null;
+  });
+  const [isLoading, setIsLoading] = useState(!opp);
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
   const [hasReminderSet, setHasReminderSet] = useState(false);
+  const [isApplied, setIsApplied] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+  const [bannerError, setBannerError] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    if (id) {
+      dataService.getOpportunityById(id).then((found) => {
+        if (!ignore && found) {
+          setOpp(found);
+          setIsLoading(false);
+        } else if (!ignore) {
+          setIsLoading(false);
+        }
+      }).catch(() => {
+        if (!ignore) setIsLoading(false);
+      });
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading opportunity details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!opp) {
     return (
-      <View style={styles.notFoundContainer}>
-        <Text style={styles.notFoundText}>Opportunity not found</Text>
-        <Button title="Back to Opportunities" variant="primary" onPress={() => router.back()} />
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.notFoundContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
+          <Text style={styles.notFoundTitle}>Opportunity Not Found</Text>
+          <Text style={styles.notFoundSubtitle}>
+            This opportunity listing could not be found or may have expired.
+          </Text>
+          <Button
+            title="Back to Opportunities"
+            variant="primary"
+            onPress={() => router.back()}
+          />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -41,25 +91,34 @@ export default function OpportunityDetailScreen() {
   };
 
   const handleApply = async () => {
+    if (!opp.officialUrl) {
+      Alert.alert(
+        'Registration Unavailable',
+        'No official registration URL was provided for this opportunity.'
+      );
+      return;
+    }
+
     try {
       const supported = await Linking.canOpenURL(opp.officialUrl);
       if (supported) {
         await Linking.openURL(opp.officialUrl);
       } else {
-        Alert.alert('Official Portal', `Opening application link: ${opp.officialUrl}`);
+        Alert.alert('External Portal', `Please open: ${opp.officialUrl}`);
       }
     } catch {
-      Alert.alert('External Portal', `Please visit: ${opp.officialUrl}`);
+      Alert.alert('Application Link', `Unable to open browser. URL: ${opp.officialUrl}`);
     }
   };
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out ${opp.title} (${opp.prizeOrCompensation}) on StuDos: ${opp.officialUrl}`,
+        title: opp.title,
+        message: `${opp.title} by ${opp.organizer}\nDeadline: ${opp.deadline}\nApply here: ${opp.officialUrl}`,
       });
     } catch {
-      // ignore
+      // User cancelled
     }
   };
 
@@ -73,50 +132,127 @@ export default function OpportunityDetailScreen() {
     );
   };
 
+  const handleToggleApplied = () => {
+    const nextState = !isApplied;
+    setIsApplied(nextState);
+    Alert.alert(
+      nextState ? 'Marked as Applied' : 'Application Status Cleared',
+      nextState
+        ? 'Your status has been updated to Applied (self-reported). Good luck!'
+        : 'Status cleared from your builder dashboard.'
+    );
+  };
+
+  const getOrganizerInitials = (name: string): string => {
+    if (!name) return 'UN';
+    const words = name.replace(/[^a-zA-Z0-9\s]/g, '').trim().split(/\s+/);
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
+  const isUrgent = opp.daysRemaining !== undefined && opp.daysRemaining <= 7;
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      {/* Navigation Bar */}
+      <View style={styles.navBar}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.navBackBtn}
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.navTitle} numberOfLines={1}>
+          Opportunity Details
+        </Text>
+        <TouchableOpacity
+          onPress={handleShare}
+          style={styles.navShareBtn}
+          accessibilityLabel="Share opportunity"
+        >
+          <Ionicons name="share-social-outline" size={20} color={Colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {/* Optional Banner Image */}
+        {opp.bannerImage && !bannerError ? (
+          <View style={styles.bannerWrapper}>
+            <Image
+              source={{ uri: opp.bannerImage }}
+              style={styles.bannerImage}
+              resizeMode="cover"
+              onError={() => setBannerError(true)}
+            />
+          </View>
+        ) : null}
+
         {/* Top Badges */}
-        <View style={styles.topBadges}>
+        <View style={styles.topBadgesRow}>
           <Badge label={opp.type} variant="primary" size="md" />
           {opp.category && opp.category !== (opp.type as any) ? (
-            <Badge label={opp.category} variant="purple" size="md" style={{ marginLeft: 6 }} />
+            <Badge label={opp.category} variant="purple" size="md" />
           ) : null}
-          <Badge label={`${opp.format} • ${opp.location}`} variant="cyan" size="md" style={{ marginLeft: 6 }} />
+          <Badge label={`${opp.format} • ${opp.location}`} variant="cyan" size="md" />
         </View>
 
         {/* Title */}
         <Text style={styles.title}>{opp.title}</Text>
 
-        {/* Organizer Row */}
+        {/* Organizer Row with Logo & Verified Badge */}
         <View style={styles.organizerRow}>
-          <Ionicons name="business" size={16} color={Colors.primary} />
-          <Text style={styles.organizerText}>{opp.organizer}</Text>
-          {opp.isVerified ? (
-            <Badge label="Verified Official" variant="green" size="sm" style={{ marginLeft: 8 }} />
-          ) : null}
-          {opp.source ? (
-            <Text style={styles.sourceText}>via {opp.source}</Text>
-          ) : null}
+          {opp.organizerLogo && !logoError ? (
+            <Image
+              source={{ uri: opp.organizerLogo }}
+              style={styles.organizerLogo}
+              resizeMode="contain"
+              onError={() => setLogoError(true)}
+            />
+          ) : (
+            <View style={styles.organizerInitials}>
+              <Text style={styles.organizerInitialsText}>
+                {getOrganizerInitials(opp.organizer)}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.organizerInfo}>
+            <View style={styles.organizerNameRow}>
+              <Text style={styles.organizerName}>{opp.organizer}</Text>
+              {opp.isVerified ? (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={16}
+                  color={Colors.primary}
+                  style={{ marginLeft: 5 }}
+                />
+              ) : null}
+            </View>
+            {opp.source ? (
+              <Text style={styles.sourceText}>Source verified via {opp.source}</Text>
+            ) : null}
+          </View>
         </View>
 
         {/* Key Metrics Card */}
         <Card variant="elevated" style={styles.metricsCard}>
           <View style={styles.metricItem}>
             <Text style={styles.metricLabel}>DEADLINE</Text>
-            <Text style={[styles.metricValue, { color: Colors.primary }]}>{opp.deadline}</Text>
+            <Text style={[styles.metricValue, { color: isUrgent ? Colors.primary : Colors.textPrimary }]}>
+              {opp.deadline}
+            </Text>
             <Text style={styles.metricSub}>
-              {opp.daysRemaining !== undefined && opp.daysRemaining <= 0
-                ? 'Closing Today'
-                : `${opp.daysRemaining} days remaining`}
-              {opp.timezone ? ` • ${opp.timezone}` : ''}
+              {formatDaysRemaining(opp.daysRemaining).label}
             </Text>
           </View>
 
           <View style={styles.metricDivider} />
 
           <View style={styles.metricItem}>
-            <Text style={styles.metricLabel}>PRIZE / STIPEND</Text>
+            <Text style={styles.metricLabel}>PRIZE / REWARD</Text>
             <Text style={[styles.metricValue, { color: Colors.accentAmber }]}>
               {opp.prizeOrCompensation.split(' ')[0]}
             </Text>
@@ -133,25 +269,44 @@ export default function OpportunityDetailScreen() {
               {opp.teamSize || 'Individual'}
             </Text>
             <Text style={styles.metricSub}>
-              {opp.registrationFee ? `Fee: ${opp.registrationFee}` : 'Free Registration'}
+              {opp.registrationFee ? `Fee: ${opp.registrationFee}` : 'Free'}
             </Text>
           </View>
         </Card>
 
-        {/* Action Row: Save, Share, Reminder */}
+        {/* Action Row: Save, Self-Report Applied, Reminder */}
         <View style={styles.actionRow}>
           <Button
             title={opp.isSaved ? 'Saved to Bookmarks' : 'Save Opportunity'}
             variant={opp.isSaved ? 'secondary' : 'outline'}
             size="sm"
-            icon={<Ionicons name={opp.isSaved ? 'bookmark' : 'bookmark-outline'} size={16} color={opp.isSaved ? Colors.primary : Colors.textPrimary} />}
+            icon={
+              <Ionicons
+                name={opp.isSaved ? 'bookmark' : 'bookmark-outline'}
+                size={16}
+                color={opp.isSaved ? Colors.primary : Colors.textPrimary}
+              />
+            }
             onPress={() => toggleSaveOpportunity(opp.id)}
             style={{ flex: 1, marginRight: 8 }}
           />
 
           <TouchableOpacity
+            style={[styles.iconBtn, isApplied ? styles.iconBtnApplied : undefined]}
+            onPress={handleToggleApplied}
+            accessibilityLabel="Toggle application status"
+          >
+            <Ionicons
+              name={isApplied ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={18}
+              color={isApplied ? Colors.accentGreen : Colors.textSecondary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.iconBtn, hasReminderSet ? styles.iconBtnActive : undefined]}
             onPress={handleToggleReminder}
+            accessibilityLabel="Set deadline reminder"
           >
             <Ionicons
               name={hasReminderSet ? 'notifications' : 'notifications-outline'}
@@ -159,11 +314,16 @@ export default function OpportunityDetailScreen() {
               color={hasReminderSet ? Colors.primary : Colors.textSecondary}
             />
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn} onPress={handleShare}>
-            <Ionicons name="share-social-outline" size={18} color={Colors.textSecondary} />
-          </TouchableOpacity>
         </View>
+
+        {isApplied ? (
+          <View style={styles.appliedBanner}>
+            <Ionicons name="checkmark-done" size={16} color={Colors.accentGreen} />
+            <Text style={styles.appliedBannerText}>
+              Marked as Applied (Self-reported status)
+            </Text>
+          </View>
+        ) : null}
 
         {/* Section: Description */}
         <View style={styles.section}>
@@ -175,12 +335,17 @@ export default function OpportunityDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ELIGIBILITY REQUIREMENTS</Text>
           <View style={styles.eligibilityBox}>
-            <Ionicons name="school-outline" size={18} color={Colors.accentCyan} style={{ marginRight: 8 }} />
+            <Ionicons
+              name="school-outline"
+              size={18}
+              color={Colors.accentCyan}
+              style={{ marginRight: 8 }}
+            />
             <Text style={styles.eligibilityText}>{opp.eligibility}</Text>
           </View>
         </View>
 
-        {/* Section: Skills Needed */}
+        {/* Section: Skills & Tags */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>RELEVANT SKILLS & TRACKS</Text>
           <View style={styles.chipsWrap}>
@@ -194,7 +359,7 @@ export default function OpportunityDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>STUDENT PREPARATION CHECKLIST</Text>
           <Text style={styles.checklistHint}>
-            Check items off as you complete requirements for your application:
+            Check items off as you prepare your application:
           </Text>
 
           <View style={styles.checklist}>
@@ -224,9 +389,9 @@ export default function OpportunityDetailScreen() {
           <View style={styles.teamMatchInfo}>
             <Ionicons name="people" size={20} color={Colors.primary} />
             <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text style={styles.teamMatchTitle}>Need a team for this hackathon?</Text>
+              <Text style={styles.teamMatchTitle}>Need teammates for this?</Text>
               <Text style={styles.teamMatchSub}>
-                Browse students looking for teammates for {opp.title.split('—')[0]}.
+                Find complementary student builders looking to collaborate.
               </Text>
             </View>
           </View>
@@ -239,16 +404,21 @@ export default function OpportunityDetailScreen() {
           />
         </Card>
 
-        {/* Official Application CTA Button */}
+        {/* Prominent Register / Apply Button */}
         <Button
-          title="Open Official Application Portal"
+          title="Register / Apply on Official Portal"
           variant="primary"
           size="lg"
           icon={<Ionicons name="open-outline" size={18} color="#FFF" />}
           iconPosition="right"
           onPress={handleApply}
-          style={{ marginTop: 16, marginBottom: 40 }}
+          style={styles.registerButton}
         />
+
+        <Text style={styles.sourceAttributionText}>
+          Tapping Register opens the authorized Unstop registration link ({opp.officialUrl}).
+          StudOs does not collect credentials or automate external registrations.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -259,24 +429,76 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  scrollContainer: {
-    padding: Spacing.screenPadding,
-    paddingBottom: 40,
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: Typography.body,
+    color: Colors.textMuted,
   },
   notFoundContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
-    padding: 20,
+    padding: 24,
+    gap: 12,
   },
-  notFoundText: {
-    fontSize: Typography.headline,
+  notFoundTitle: {
+    fontSize: Typography.title2,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+  },
+  notFoundSubtitle: {
+    fontSize: Typography.body,
     color: Colors.textMuted,
-    marginBottom: 16,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  topBadges: {
+  navBar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  navBackBtn: {
+    padding: 6,
+  },
+  navTitle: {
+    flex: 1,
+    fontSize: Typography.headline,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginHorizontal: 12,
+  },
+  navShareBtn: {
+    padding: 6,
+  },
+  scrollContainer: {
+    padding: Spacing.screenPadding,
+    paddingBottom: 40,
+  },
+  bannerWrapper: {
+    width: '100%',
+    height: 180,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    marginBottom: 16,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  bannerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  topBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
@@ -285,24 +507,54 @@ const styles = StyleSheet.create({
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
     lineHeight: 34,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   organizerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
   },
-  organizerText: {
-    fontSize: Typography.headline,
+  organizerLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginRight: 12,
+  },
+  organizerInitials: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceHighlight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  organizerInitialsText: {
+    fontSize: 16,
+    fontWeight: '800',
     color: Colors.textSecondary,
+  },
+  organizerInfo: {
+    flex: 1,
+  },
+  organizerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  organizerName: {
+    fontSize: Typography.headline,
     fontWeight: Typography.semiBold,
-    marginLeft: 6,
+    color: Colors.textPrimary,
   },
   sourceText: {
     fontSize: Typography.caption,
     color: Colors.textMuted,
-    marginLeft: 8,
-    fontStyle: 'italic',
+    marginTop: 2,
   },
   metricsCard: {
     flexDirection: 'row',
@@ -318,31 +570,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.textMuted,
     letterSpacing: 0.8,
+    marginBottom: 4,
   },
   metricValue: {
-    fontSize: Typography.title3,
+    fontSize: Typography.subhead,
     fontWeight: Typography.bold,
-    marginTop: 4,
+    textAlign: 'center',
+    marginBottom: 2,
   },
   metricSub: {
-    fontSize: Typography.caption,
+    fontSize: 10,
     color: Colors.textMuted,
-    marginTop: 2,
+    textAlign: 'center',
   },
   metricDivider: {
     width: 1,
-    height: '100%',
     backgroundColor: Colors.border,
+    marginHorizontal: 8,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: BorderRadius.md,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -351,19 +605,35 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   iconBtnActive: {
-    borderColor: Colors.primary,
     backgroundColor: Colors.primarySubtle,
+    borderColor: Colors.primaryBorder,
   },
-  section: {
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.lg,
+  iconBtnApplied: {
+    backgroundColor: 'rgba(52, 199, 89, 0.15)',
+    borderColor: 'rgba(52, 199, 89, 0.3)',
+  },
+  appliedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(52, 199, 89, 0.12)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 16,
+    borderColor: 'rgba(52, 199, 89, 0.3)',
     marginBottom: 16,
   },
+  appliedBannerText: {
+    fontSize: Typography.footnote,
+    color: Colors.accentGreen,
+    fontWeight: Typography.semiBold,
+  },
+  section: {
+    marginBottom: 20,
+  },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     color: Colors.textMuted,
     letterSpacing: 0.8,
@@ -372,22 +642,21 @@ const styles = StyleSheet.create({
   bodyText: {
     fontSize: Typography.body,
     color: Colors.textSecondary,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   eligibilityBox: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: Colors.surfaceElevated,
-    padding: 12,
-    borderRadius: BorderRadius.sm,
+    padding: 14,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   eligibilityText: {
-    flex: 1,
     fontSize: Typography.body,
     color: Colors.textPrimary,
-    lineHeight: 20,
+    flex: 1,
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -395,9 +664,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   checklistHint: {
-    fontSize: Typography.caption,
+    fontSize: Typography.footnote,
     color: Colors.textMuted,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   checklist: {
     gap: 10,
@@ -405,14 +674,18 @@ const styles = StyleSheet.create({
   checkRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    padding: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   checkbox: {
     width: 20,
     height: 20,
     borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: Colors.borderLight,
-    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -422,19 +695,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   checkLabel: {
-    flex: 1,
     fontSize: Typography.body,
     color: Colors.textPrimary,
+    flex: 1,
   },
   checkLabelChecked: {
-    color: Colors.textMuted,
     textDecorationLine: 'line-through',
+    color: Colors.textMuted,
   },
   teamMatchBanner: {
-    padding: 14,
+    marginBottom: 20,
+    padding: 16,
     backgroundColor: Colors.surfaceElevated,
-    borderColor: Colors.borderLight,
-    marginBottom: 16,
   },
   teamMatchInfo: {
     flexDirection: 'row',
@@ -446,8 +718,19 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   teamMatchSub: {
-    fontSize: Typography.caption,
+    fontSize: Typography.footnote,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  registerButton: {
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  sourceAttributionText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 24,
   },
 });

@@ -1,22 +1,30 @@
+import { Opportunity, OpportunityCategory, OpportunityType } from '../types';
+
 const BASE_URL = 'https://unstop.com';
 const API_URL = `${BASE_URL}/api/public/opportunity/search-result`;
+const CDN_BASE = 'https://d8it4huxumps7.cloudfront.net';
 
-export type UnstopHackathon = {
-  id: string;
-  title: string;
-  organizer: string;
-  deadline: string | null;
-  location: string;
-  mode: string;
-  prize: string;
-  skills: string[];
-  eligibility: string;
-  description: string;
-  registrationUrl: string;
-  source: 'Unstop';
-  daysRemaining?: number;
-  prizeAmount?: number;
-  isPaid?: boolean;
+// 8 Core Categories (Cultural Events removed as requested)
+export const UNSTOP_CATEGORIES: Record<OpportunityCategory, string> = {
+  Hackathons: 'hackathons',
+  Internships: 'internships',
+  Jobs: 'jobs',
+  Competitions: 'competitions',
+  Quizzes: 'quizzes',
+  Scholarships: 'scholarships',
+  Workshops: 'workshops',
+  'Conferences / Meets': 'conferences',
+};
+
+const TYPE_MAPPING: Record<OpportunityCategory, OpportunityType> = {
+  Hackathons: 'Hackathon',
+  Internships: 'Internship',
+  Jobs: 'Job',
+  Competitions: 'Competition',
+  Quizzes: 'Quiz',
+  Scholarships: 'Scholarship',
+  Workshops: 'Workshop',
+  'Conferences / Meets': 'Conference',
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -51,45 +59,42 @@ function text(value: unknown): string {
     .trim();
 }
 
-function absoluteUrl(value: unknown): string {
-  const url = text(value);
-  if (!url) return '';
+function resolveImageUrl(url: unknown): string | undefined {
+  const clean = text(url);
+  if (!clean || clean === 'null' || clean.endsWith('/')) {
+    return undefined;
+  }
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+  if (clean.startsWith('//')) {
+    return `https:${clean}`;
+  }
+  const cleanPath = clean.replace(/^\/+/, '');
+  if (cleanPath.startsWith('images/') || cleanPath.startsWith('uploads/')) {
+    return `${CDN_BASE}/${cleanPath}`;
+  }
+  return `${BASE_URL}/${cleanPath}`;
+}
 
-  try {
+function absoluteUrl(value: unknown, fallbackId?: string): string {
+  const url = text(value);
+  if (url) {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
-    return new URL(url.replace(/^\/+/, ''), `${BASE_URL}/`).toString();
-  } catch {
-    return '';
+    return `${BASE_URL}/${url.replace(/^\/+/, '')}`;
   }
+  if (fallbackId) {
+    return `${BASE_URL}/o/${fallbackId}`;
+  }
+  return '';
 }
 
-function extractItems(payload: unknown): UnknownRecord[] {
-  const root = asRecord(payload);
-  const data = asRecord(root.data);
-
-  const candidates = [
-    data.data,
-    data.items,
-    data.results,
-    root.results,
-    root.items,
-  ];
-
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.map(asRecord);
-    }
-  }
-
-  return [];
-}
-
-function parsePrizeAmount(prizeStr: string): number {
-  if (!prizeStr) return 0;
+function parsePrizeAmount(prizeStr: string): number | undefined {
+  if (!prizeStr) return undefined;
   const digits = prizeStr.replace(/[^0-9]/g, '');
-  return digits ? parseInt(digits, 10) : 0;
+  return digits ? parseInt(digits, 10) : undefined;
 }
 
 function calculateDaysRemaining(deadlineStr: string | null): number | undefined {
@@ -105,168 +110,450 @@ function calculateDaysRemaining(deadlineStr: string | null): number | undefined 
   }
 }
 
-function normalizeHackathon(item: UnknownRecord): UnstopHackathon | null {
-  const org =
-    item.organisation ??
-    item.organization ??
-    item.organizer ??
-    '';
-
-  const address =
-    item.address_with_country_logo ??
-    item.address ??
-    {};
-
-  const addressRecord = asRecord(address);
-
-  const location =
-    typeof address === 'object' && address !== null
-      ? [addressRecord.city, addressRecord.state, addressRecord.country]
-          .map(text)
-          .filter(Boolean)
-          .join(', ')
-      : text(address);
-
-  const rawSkills = item.required_skills ?? item.skills ?? [];
-
-  const skills = Array.isArray(rawSkills)
-    ? rawSkills.map(text).filter(Boolean)
-    : text(rawSkills)
-        .split(',')
-        .map((skill) => skill.trim())
-        .filter(Boolean);
-
-  const title = text(item.title ?? item.name);
-  const registrationUrl = absoluteUrl(
-    item.seo_url ?? item.url ?? item.public_url ?? item.short_url
-  );
-
-  const id = text(item.id ?? item.opportunity_id);
-
-  if (!title) return null;
-
-  const rawDeadline = text(
-    item.end_date ?? item.registration_deadline ?? item.last_date
-  ) || null;
-
-  const prize = text(item.prize_money ?? item.prize ?? item.prizes);
-
+export function formatDaysRemaining(daysRemaining: number | undefined): {
+  label: string;
+  isUrgent: boolean;
+  isExpired: boolean;
+  isAvailable: boolean;
+} {
+  if (daysRemaining === undefined) {
+    return {
+      label: 'Rolling / TBA',
+      isUrgent: false,
+      isExpired: false,
+      isAvailable: false,
+    };
+  }
+  if (daysRemaining < 0) {
+    return {
+      label: 'Expired',
+      isUrgent: false,
+      isExpired: true,
+      isAvailable: true,
+    };
+  }
+  if (daysRemaining === 0) {
+    return {
+      label: 'Closing Today',
+      isUrgent: true,
+      isExpired: false,
+      isAvailable: true,
+    };
+  }
+  if (daysRemaining === 1) {
+    return {
+      label: '1 day remaining',
+      isUrgent: true,
+      isExpired: false,
+      isAvailable: true,
+    };
+  }
   return {
-    id: id || registrationUrl || title,
-    title,
-    organizer: text(org) || 'Unstop Verified Organizer',
-    deadline: rawDeadline,
-    location: location || 'Online',
-    mode: text(item.region ?? item.mode) || 'Online',
-    prize,
-    prizeAmount: parsePrizeAmount(prize),
-    skills,
-    eligibility: text(item.eligibility ?? item.eligible_for) || 'Open to all college students',
-    description: text(item.details ?? item.description) || 'Hackathon hosted on Unstop.',
-    registrationUrl: registrationUrl || `https://unstop.com/o/${id}`,
-    source: 'Unstop',
-    daysRemaining: calculateDaysRemaining(rawDeadline),
-    isPaid: Boolean(item.isPaid),
+    label: `${daysRemaining} days remaining`,
+    isUrgent: daysRemaining <= 5,
+    isExpired: false,
+    isAvailable: true,
   };
 }
 
-let inFlightFetch: Promise<UnstopHackathon[]> | null = null;
+function formatDeadlineDate(dateStr: string | null): string {
+  if (!dateStr) return 'Not specified';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr.slice(0, 10);
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr.slice(0, 10);
+  }
+}
 
-export async function fetchUnstopHackathons(force = false): Promise<UnstopHackathon[]> {
-  if (inFlightFetch && !force) {
-    return inFlightFetch;
+export function normalizeUnstopItem(
+  item: UnknownRecord,
+  categoryName: OpportunityCategory
+): Opportunity | null {
+  const rawTitle = item.title ?? item.name;
+  const title = text(rawTitle);
+  if (!title) return null;
+
+  const id = text(item.id ?? item.opportunity_id);
+
+  // Organizer info
+  const orgObj = asRecord(item.organisation ?? item.organization ?? item.organizer);
+  let organizerName = text(orgObj.name) || text(item.organizer);
+  let rawLogo = orgObj.logo ?? orgObj.logoUrl ?? orgObj.logoUrl2;
+
+  if (!organizerName) {
+    const fest = asRecord(item.festival);
+    const festOrg = asRecord(fest.organisation);
+    organizerName = text(festOrg.name);
+    rawLogo = rawLogo ?? festOrg.logo;
   }
 
-  inFlightFetch = (async () => {
-    const results = new Map<string, UnstopHackathon>();
+  if (!organizerName) {
+    organizerName = 'Unstop Verified Host';
+  }
 
-    for (let page = 1; page <= 3; page += 1) {
-      const url = new URL(API_URL);
+  // Separate organizer logo and opportunity banner
+  const organizerLogo = resolveImageUrl(rawLogo ?? item.logoUrl2 ?? item.logoUrl);
 
-      url.searchParams.set('opportunity', 'hackathons');
-      url.searchParams.set('per_page', '20');
-      url.searchParams.set('oppstatus', 'open');
-      url.searchParams.set('page', String(page));
+  const festObj = asRecord(item.festival);
+  const rawBanner = item.thumb ?? item.banner_mobile ?? item.banner ?? festObj.logoUrl2;
+  const bannerImage = resolveImageUrl(rawBanner);
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
+  // Mode and Location
+  const rawRegion = text(item.region ?? item.mode).toLowerCase();
+  let format: 'In-Person' | 'Online' | 'Hybrid' = 'Online';
+  if (rawRegion.includes('in-person') || rawRegion.includes('offline')) {
+    format = 'In-Person';
+  } else if (rawRegion.includes('hybrid')) {
+    format = 'Hybrid';
+  }
 
-      try {
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json, text/plain, */*',
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Referer: 'https://unstop.com/hackathons/',
-          },
-          signal: controller.signal,
-        });
+  const address = asRecord(item.address_with_country_logo ?? item.address);
+  const city = text(address.city);
+  const state = text(address.state);
+  const country = text(address.country);
+  const locParts = [city, state, country].filter(Boolean);
+  const location = locParts.length > 0 ? locParts.join(', ') : format;
 
-        clearTimeout(timeout);
+  // Registration Requirements (team sizes, deadlines, eligibility)
+  const regnReq = asRecord(item.regnRequirements);
+  const rawDeadline = text(
+    item.end_date ?? regnReq.end_regn_dt ?? item.registration_deadline ?? item.last_date
+  ) || null;
 
-        if (!response.ok) {
-          if (page === 1) {
-            throw new Error(`Unstop returned HTTP ${response.status} on page 1`);
-          }
-          break;
-        }
+  // Days remaining calculation
+  let daysRemaining: number | undefined;
+  const remDaysArr = asRecord(regnReq.remainingDaysArray);
+  if (remDaysArr.durations != null && !isNaN(Number(remDaysArr.durations))) {
+    daysRemaining = Math.max(0, Number(remDaysArr.durations));
+  } else {
+    daysRemaining = calculateDaysRemaining(rawDeadline);
+  }
 
-        const rawText = await response.text();
-        if (!rawText || !rawText.trim()) {
-          if (page === 1) {
-            throw new Error('Unstop returned an empty response body on page 1');
-          }
-          break;
-        }
+  // Team size
+  const minTeamRaw = regnReq.min_team_size;
+  const maxTeamRaw = regnReq.max_team_size;
+  const minTeamSize = typeof minTeamRaw === 'number' ? minTeamRaw : undefined;
+  const maxTeamSize = typeof maxTeamRaw === 'number' ? maxTeamRaw : undefined;
 
-        // Check if CDN or Cloudflare returned HTML challenge instead of JSON
-        if (rawText.trim().startsWith('<')) {
-          if (page === 1) {
-            throw new Error('Unstop returned an HTML challenge instead of JSON data');
-          }
-          break;
-        }
+  let teamSize = 'Not specified';
+  if (minTeamSize && maxTeamSize) {
+    teamSize = minTeamSize === maxTeamSize
+      ? minTeamSize === 1 ? 'Individual' : `${minTeamSize} members`
+      : `${minTeamSize}–${maxTeamSize} members`;
+  } else if (maxTeamSize) {
+    teamSize = maxTeamSize === 1 ? 'Individual' : `Up to ${maxTeamSize} members`;
+  } else if (minTeamSize) {
+    teamSize = `Min ${minTeamSize} members`;
+  }
 
-        const payload: unknown = JSON.parse(rawText);
-        const items = extractItems(payload);
+  // Eligibility
+  let eligibility = 'Everyone can apply';
+  const filters = Array.isArray(item.filters) ? item.filters : [];
+  for (const f of filters) {
+    const fRec = asRecord(f);
+    if (fRec.type === 'eligible' && fRec.name) {
+      const eText = text(fRec.name);
+      if (eText && eText.toLowerCase() !== 'all') {
+        eligibility = eText;
+      }
+      break;
+    }
+  }
+  if (eligibility === 'Everyone can apply' && regnReq.eligibility) {
+    const regnElig = text(regnReq.eligibility);
+    if (regnElig) eligibility = regnElig;
+  }
 
-        if (items.length === 0) {
-          if (page === 1) {
-            throw new Error(
-              'Unstop returned no recognizable listings. Its response structure may have changed.'
-            );
-          }
-          break;
-        }
+  // Tags & Skills
+  const tags: string[] = [];
+  const wf = Array.isArray(item.workfunction) ? item.workfunction : [];
+  for (const w of wf) {
+    const name = text(asRecord(w).name);
+    if (name) tags.push(name);
+  }
 
-        for (const item of items) {
-          const opportunity = normalizeHackathon(item);
-          if (!opportunity) continue;
+  const skills: string[] = [];
+  const rawSkills = item.required_skills ?? item.skills ?? [];
+  if (Array.isArray(rawSkills)) {
+    for (const s of rawSkills) {
+      if (typeof s === 'object') {
+        const sRec = asRecord(s);
+        const name = text(sRec.skill ?? sRec.skill_name ?? sRec.name);
+        if (name) skills.push(name);
+      } else {
+        const name = text(s);
+        if (name) skills.push(name);
+      }
+    }
+  } else if (typeof rawSkills === 'string') {
+    skills.push(...rawSkills.split(',').map((s) => s.trim()).filter(Boolean));
+  }
 
-          results.set(opportunity.id, opportunity);
-        }
+  // Prizes
+  const prizesList = Array.isArray(item.prizes) ? item.prizes : [];
+  let prizeText = '';
+  if (prizesList.length > 0) {
+    const firstP = asRecord(prizesList[0]);
+    prizeText = text(firstP.cash ?? firstP.title);
+  }
+  if (!prizeText) {
+    prizeText = text(item.prize_money ?? item.prize ?? item.prizes);
+  }
+  const prizeAmount = parsePrizeAmount(prizeText);
 
-        if (items.length < 20) break;
-      } catch (pageErr) {
-        clearTimeout(timeout);
-        // If we already successfully parsed Page 1, preserve the 20+ real listings
-        if (results.size > 0) {
-          console.warn(`Unstop page ${page} encountered an issue, returning ${results.size} fetched items:`, pageErr);
-          break;
-        }
-        throw pageErr;
+  // Registration URL
+  const regUrl = absoluteUrl(
+    item.seo_url ?? item.url ?? item.public_url ?? item.short_url,
+    id
+  );
+
+  const isPaid = Boolean(item.isPaid);
+  const isVerified = Boolean(
+    orgObj.is_verified || orgObj.verified || item.is_verified || item.verified
+  );
+
+  let status: 'Open' | 'Closing Soon' | 'Expired' = 'Open';
+  if (daysRemaining !== undefined) {
+    if (daysRemaining < 0) {
+      status = 'Expired';
+    } else if (daysRemaining <= 5) {
+      status = 'Closing Soon';
+    }
+  }
+
+  return {
+    id: id || regUrl || title,
+    title,
+    organizer: organizerName,
+    organizerLogo,
+    bannerImage,
+    type: TYPE_MAPPING[categoryName] || 'Hackathon',
+    category: categoryName,
+    format,
+    location,
+    deadline: formatDeadlineDate(rawDeadline),
+    deadlineIso: rawDeadline || undefined,
+    daysRemaining: daysRemaining,
+    eligibility,
+    prizeOrCompensation: prizeText || 'Not specified',
+    prizeAmount,
+    registrationFee: isPaid ? 'Paid' : 'Free',
+    teamSize,
+    minTeamSize,
+    maxTeamSize,
+    isVerified,
+    tags,
+    requiredSkills: skills.length > 0 ? skills.slice(0, 6) : tags.slice(0, 4),
+    description: text(item.details ?? item.description) || `${categoryName} hosted on Unstop.`,
+    officialUrl: regUrl,
+    checklist: [
+      'Review problem statements and eligibility on Unstop',
+      'Register on official portal before deadline',
+      'Prepare submission materials and pitch',
+    ],
+    source: 'Unstop',
+    status,
+    isSaved: false,
+    featured: (prizeAmount && prizeAmount > 50000) || false,
+    publishedAt: text(item.approved_date ?? item.updated_at) || new Date().toISOString(),
+  };
+}
+
+// Memory Cache with 15-minute TTL
+interface CacheEntry {
+  data: Opportunity[];
+  timestamp: number;
+}
+const memoryCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 15 * 60 * 1000;
+
+// In-flight request deduplication map
+const inFlightRequests = new Map<string, Promise<Opportunity[]>>();
+
+export async function fetchCategoryFromUnstop(
+  category: OpportunityCategory,
+  page = 1,
+  perPage = 20
+): Promise<Opportunity[]> {
+  const slug = UNSTOP_CATEGORIES[category];
+  if (!slug) return [];
+
+  const url = new URL(API_URL);
+  url.searchParams.set('opportunity', slug);
+  url.searchParams.set('per_page', String(perPage));
+  url.searchParams.set('oppstatus', 'open');
+  url.searchParams.set('page', String(page));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Referer: `${BASE_URL}/${slug}/`,
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`Unstop HTTP error ${response.status} for category ${category}`);
+    }
+
+    const rawText = await response.text();
+    if (!rawText || rawText.trim().startsWith('<')) {
+      throw new Error(`Unstop returned HTML challenge or empty body for ${category}`);
+    }
+
+    const payload = JSON.parse(rawText) as UnknownRecord;
+    const dataBlock = asRecord(payload.data);
+
+    let items: UnknownRecord[] = [];
+    const candidates = [
+      dataBlock.data,
+      dataBlock.items,
+      dataBlock.results,
+      payload.results,
+      payload.items,
+    ];
+
+    for (const c of candidates) {
+      if (Array.isArray(c)) {
+        items = c.map(asRecord);
+        break;
       }
     }
 
-    if (results.size === 0) {
-      throw new Error('No hackathons could be retrieved from Unstop.');
+    const normalized: Opportunity[] = [];
+    for (const it of items) {
+      const opp = normalizeUnstopItem(it, category);
+      if (opp) normalized.push(opp);
     }
 
-    return Array.from(results.values());
+    return normalized;
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
+}
+
+export async function fetchLiveOpportunities(options?: {
+  category?: OpportunityCategory | 'All';
+  categories?: OpportunityCategory[];
+  forceRefresh?: boolean;
+}): Promise<Opportunity[]> {
+  const cacheKey = options?.category || (options?.categories ? options.categories.join(',') : 'All');
+  const now = Date.now();
+
+  if (!options?.forceRefresh) {
+    const cached = memoryCache.get(cacheKey);
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      return cached.data;
+    }
+  }
+
+  // Deduplicate in-flight requests
+  const flightKey = `${cacheKey}_${Boolean(options?.forceRefresh)}`;
+  const ongoing = inFlightRequests.get(flightKey);
+  if (ongoing) return ongoing;
+
+  const promise = (async () => {
+    // Attempt to fetch from local/hosted StudOs backend first if available
+    const backendUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001';
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2500);
+      const url = new URL(`${backendUrl}/api/opportunities`);
+      if (options?.category && options.category !== 'All') {
+        url.searchParams.set('category', options.category);
+      }
+      url.searchParams.set('per_page', '50');
+      if (options?.forceRefresh) {
+        url.searchParams.set('force_refresh', 'true');
+      }
+
+      const backendRes = await fetch(url.toString(), { signal: controller.signal });
+      clearTimeout(timeout);
+      if (backendRes.ok) {
+        const json = (await backendRes.json()) as { data?: Opportunity[] };
+        if (json?.data && Array.isArray(json.data) && json.data.length > 0) {
+          memoryCache.set(cacheKey, { data: json.data, timestamp: now });
+          return json.data;
+        }
+      }
+    } catch {
+      // Backend offline or unreachable (e.g. mobile physical device); fallback to direct Unstop fetch
+    }
+
+    const targetCategories: OpportunityCategory[] = [];
+
+    if (options?.category && options.category !== 'All') {
+      targetCategories.push(options.category);
+    } else if (options?.categories && options.categories.length > 0) {
+      targetCategories.push(...options.categories);
+    } else {
+      // Default: fetch top active opportunities across core categories
+      targetCategories.push(
+        'Hackathons',
+        'Internships',
+        'Jobs',
+        'Competitions',
+        'Quizzes',
+        'Scholarships',
+        'Workshops',
+        'Conferences / Meets'
+      );
+    }
+
+    const resultsMap = new Map<string, Opportunity>();
+    const errors: Error[] = [];
+
+    // Fetch categories with bounded concurrency
+    const perCategoryLimit = targetCategories.length === 1 ? 25 : 8;
+
+    await Promise.allSettled(
+      targetCategories.map(async (cat) => {
+        try {
+          const items = await fetchCategoryFromUnstop(cat, 1, perCategoryLimit);
+          for (const item of items) {
+            if (!resultsMap.has(item.id)) {
+              resultsMap.set(item.id, item);
+            }
+          }
+        } catch (catErr) {
+          console.warn(`Unstop category ${cat} fetch failed:`, catErr);
+          errors.push(catErr as Error);
+        }
+      })
+    );
+
+    const aggregated = Array.from(resultsMap.values());
+
+    if (aggregated.length === 0 && errors.length > 0) {
+      // If all requests failed, throw honest error so the UI shows retry action
+      throw new Error('Unable to connect to live opportunity sources. Please check your internet connection.');
+    }
+
+    // Sort default by deadline
+    aggregated.sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999));
+
+    memoryCache.set(cacheKey, { data: aggregated, timestamp: now });
+    return aggregated;
   })().finally(() => {
-    inFlightFetch = null;
+    inFlightRequests.delete(flightKey);
   });
 
-  return inFlightFetch;
+  inFlightRequests.set(flightKey, promise);
+  return promise;
 }

@@ -14,7 +14,6 @@ import {
   CURRENT_USER,
   MOCK_IDEAS,
   MOCK_TEAMS,
-  MOCK_OPPORTUNITIES,
   MOCK_PROJECTS,
   MOCK_CONVERSATIONS,
   MOCK_NOTIFICATIONS,
@@ -53,7 +52,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [ideas, setIdeas] = useState<Idea[]>(MOCK_IDEAS);
   const [teams, setTeams] = useState<TeamListing[]>(MOCK_TEAMS);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>(MOCK_OPPORTUNITIES);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [conversations, setConversations] = useState<ChatConversation[]>(MOCK_CONVERSATIONS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);

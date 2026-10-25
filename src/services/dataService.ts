@@ -16,7 +16,6 @@ import {
   MOCK_STUDENTS,
   MOCK_IDEAS,
   MOCK_TEAMS,
-  MOCK_OPPORTUNITIES,
   MOCK_PROJECTS,
   MOCK_CONVERSATIONS,
   MOCK_CHAT_MESSAGES,
@@ -24,7 +23,7 @@ import {
   MOCK_NOTIFICATIONS,
   MOCK_LEADERBOARD,
 } from './mockData';
-import { fetchUnstopHackathons } from './unstopService';
+import { fetchLiveOpportunities } from './unstopService';
 
 const STORAGE_KEYS = {
   USER: '@studos_user',
@@ -186,72 +185,27 @@ class DataService {
     payment?: string[];
     sortBy?: 'deadline' | 'recent' | 'prize' | 'relevance';
     forceRefresh?: boolean;
-    allowDemoFallback?: boolean;
   }): Promise<Opportunity[]> {
-    // First check cached opportunities if not forcing refresh
+    // Check cached opportunities in local storage
     const cached = await AsyncStorage.getItem(STORAGE_KEYS.OPPORTUNITIES);
     let opportunitiesList: Opportunity[] = cached ? JSON.parse(cached) : [];
 
     // If no cached opportunities or forcing refresh, fetch real Unstop opportunities
     if (opportunitiesList.length === 0 || params?.forceRefresh) {
       try {
-        const unstopData = await fetchUnstopHackathons(params?.forceRefresh);
-        if (unstopData && unstopData.length > 0) {
-          const mappedOpportunities: Opportunity[] = unstopData.map((h) => {
-            const format: 'In-Person' | 'Online' | 'Hybrid' = h.mode.toLowerCase().includes('in-person')
-              ? 'In-Person'
-              : h.mode.toLowerCase().includes('hybrid')
-              ? 'Hybrid'
-              : 'Online';
-
-            return {
-              id: h.id,
-              title: h.title,
-              organizer: h.organizer,
-              type: 'Hackathon',
-              category: 'Hackathons',
-              format,
-              location: h.location,
-              deadline: h.deadline || 'Open / Ongoing',
-              daysRemaining: h.daysRemaining ?? 30,
-              eligibility: h.eligibility,
-              prizeOrCompensation: h.prize || 'Prizes & Certificates',
-              prizeAmount: h.prizeAmount,
-              registrationFee: h.isPaid ? 'Paid' : 'Free',
-              teamSize: '2-4 members',
-              minTeamSize: 2,
-              maxTeamSize: 4,
-              isVerified: true,
-              requiredSkills: h.skills.length > 0 ? h.skills : ['Coding', 'Problem Solving'],
-              description: h.description,
-              officialUrl: h.registrationUrl,
-              checklist: [
-                'Review problem statements and eligibility on Unstop',
-                'Register team on official portal before deadline',
-                'Prepare prototype / project pitch deck',
-              ],
-              source: 'Unstop',
-              status: 'Open',
-              isSaved: false,
-              featured: (h.prizeAmount && h.prizeAmount > 50000) || false,
-              publishedAt: new Date().toISOString(),
-            };
-          });
-
-          opportunitiesList = mappedOpportunities;
-          await AsyncStorage.setItem(STORAGE_KEYS.OPPORTUNITIES, JSON.stringify(mappedOpportunities));
+        const liveData = await fetchLiveOpportunities({
+          forceRefresh: params?.forceRefresh,
+        });
+        if (liveData && liveData.length > 0) {
+          opportunitiesList = liveData;
+          await AsyncStorage.setItem(STORAGE_KEYS.OPPORTUNITIES, JSON.stringify(liveData));
         }
       } catch (fetchErr) {
         console.warn('Real Unstop fetch error:', fetchErr);
-        // If we have previously cached real opportunities, we can serve them
+        // If we have previously cached real opportunities, serve them
         if (opportunitiesList.length === 0) {
-          if (params?.allowDemoFallback) {
-            console.info('Demo fallback mode explicitly enabled: showing mock opportunities.');
-            opportunitiesList = MOCK_OPPORTUNITIES;
-          } else {
-            // Rethrow so the UI displays the honest error state and retry button
-            throw fetchErr;
-          }
+          // Never fabricate mock data — rethrow so the UI shows an honest error and retry action
+          throw fetchErr;
         }
       }
     }
@@ -264,11 +218,19 @@ class DataService {
   }
 
   async getOpportunityById(id: string): Promise<Opportunity | undefined> {
+    const cached = await AsyncStorage.getItem(STORAGE_KEYS.OPPORTUNITIES);
+    if (cached) {
+      try {
+        const items: Opportunity[] = JSON.parse(cached);
+        const found = items.find((o) => o.id === id);
+        if (found) return found;
+      } catch {}
+    }
     const opps = await this.getOpportunities();
     return opps.find((o) => o.id === id);
   }
 
-  private applyFiltersAndSort(
+  public applyFiltersAndSort(
     items: Opportunity[],
     params?: {
       search?: string;
@@ -282,17 +244,34 @@ class DataService {
 
     let result = [...items];
 
-    // Search by title and organizer
+    // Search by title, organizer, category, type, location, skills, tags
     if (params.search && params.search.trim()) {
       const q = params.search.trim().toLowerCase();
-      result = result.filter(
-        (o) =>
-          o.title.toLowerCase().includes(q) ||
-          o.organizer.toLowerCase().includes(q) ||
-          (o.category && o.category.toLowerCase().includes(q)) ||
-          o.type.toLowerCase().includes(q) ||
-          (o.requiredSkills && o.requiredSkills.some((s) => s.toLowerCase().includes(q)))
-      );
+      const tokens = q.split(/\s+/).filter(Boolean);
+
+      result = result.filter((o) => {
+        const title = (o.title || '').toLowerCase();
+        const organizer = (o.organizer || '').toLowerCase();
+        const category = (o.category || '').toLowerCase();
+        const type = (o.type || '').toLowerCase();
+        const loc = (o.location || '').toLowerCase();
+        const skills = (o.requiredSkills || []).map((s) => s.toLowerCase());
+        const tags = (o.tags || []).map((t) => t.toLowerCase());
+        const desc = (o.description || '').toLowerCase();
+
+        // Every search token must match somewhere in the opportunity data
+        return tokens.every(
+          (t) =>
+            title.includes(t) ||
+            organizer.includes(t) ||
+            category.includes(t) ||
+            type.includes(t) ||
+            loc.includes(t) ||
+            desc.includes(t) ||
+            skills.some((s) => s.includes(t)) ||
+            tags.some((tag) => tag.includes(t))
+        );
+      });
     }
 
     // Filter by categories (multiple selection)
@@ -312,6 +291,7 @@ class DataService {
           }
           if (ts === '2–4 members' || ts === '2-4 members') {
             return (
+              o.teamSize === '2–4 members' ||
               o.teamSize === '2-4 members' ||
               (o.minTeamSize && o.minTeamSize >= 2 && o.maxTeamSize && o.maxTeamSize <= 4)
             );
@@ -338,31 +318,49 @@ class DataService {
           if (p === 'Paid registration') {
             return o.registrationFee === 'Paid' || (o.registrationFee && o.registrationFee !== 'Free');
           }
-          if (p === 'Stipend') {
+          if (p === 'Stipends' || p === 'Stipend') {
             return Boolean(o.stipend);
           }
-          if (p === 'Prize or rewards') {
-            return (o.prizeAmount && o.prizeAmount > 0) || Boolean(o.prizeOrCompensation);
-          }
-          if (p === 'Scholarship or funding') {
-            return o.type === 'Scholarship' || o.category === 'Scholarships';
+          if (p === 'Prizes & Rewards' || p === 'Prize or rewards') {
+            return (o.prizeAmount && o.prizeAmount > 0) || Boolean(o.prizeOrCompensation && o.prizeOrCompensation !== 'Not specified');
           }
           return false;
         });
       });
     }
 
-    // Sorting
+    // Sorting with explicit handling for missing and negative values
     if (params.sortBy === 'deadline') {
-      result.sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999));
+      result.sort((a, b) => {
+        // Active non-expired deadlines first (ascending: 0, 1, 2...)
+        const aHasDays = a.daysRemaining !== undefined && a.daysRemaining >= 0;
+        const bHasDays = b.daysRemaining !== undefined && b.daysRemaining >= 0;
+
+        if (aHasDays && bHasDays) {
+          return (a.daysRemaining as number) - (b.daysRemaining as number);
+        }
+        if (aHasDays && !bHasDays) return -1;
+        if (!aHasDays && bHasDays) return 1;
+
+        // If both are missing or expired, place unexpired before expired
+        const aDays = a.daysRemaining !== undefined ? a.daysRemaining : -999;
+        const bDays = b.daysRemaining !== undefined ? b.daysRemaining : -999;
+        return bDays - aDays;
+      });
     } else if (params.sortBy === 'recent') {
       result.sort((a, b) => {
         const da = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
         const db = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-        return db - da;
+        if (db !== da) return db - da;
+        return a.title.localeCompare(b.title);
       });
     } else if (params.sortBy === 'prize') {
-      result.sort((a, b) => (b.prizeAmount || 0) - (a.prizeAmount || 0));
+      result.sort((a, b) => {
+        const pa = a.prizeAmount && a.prizeAmount > 0 ? a.prizeAmount : 0;
+        const pb = b.prizeAmount && b.prizeAmount > 0 ? b.prizeAmount : 0;
+        if (pb !== pa) return pb - pa;
+        return a.title.localeCompare(b.title);
+      });
     }
 
     return result;

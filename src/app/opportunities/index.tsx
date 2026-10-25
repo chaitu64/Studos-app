@@ -19,15 +19,13 @@ import { OpportunityType } from '../../types';
 const CATEGORIES: ('All' | OpportunityType | 'Saved')[] = [
   'All',
   'Hackathon',
+  'Internship',
+  'Job',
   'Competition',
   'Quiz',
   'Scholarship',
-  'Internship',
   'Workshop',
   'Conference',
-  'Cultural Event',
-  'College Festival',
-  'Fellowship',
   'Saved',
 ];
 

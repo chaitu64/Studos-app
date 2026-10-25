@@ -27,16 +27,15 @@ import { useApp } from '../../context/AppContext';
 import { MOCK_STUDENTS } from '../../services/mockData';
 import { Opportunity } from '../../types';
 
-// The exact categories required by StudOs specification
 const HOME_OPPORTUNITY_CATEGORIES = [
-  'Competitions',
   'Hackathons',
+  'Internships',
+  'Jobs',
+  'Competitions',
   'Quizzes',
   'Scholarships',
   'Workshops',
-  'Conferences',
-  'Cultural Events',
-  'College Festivals',
+  'Conferences / Meets',
 ];
 
 export default function HomeScreen() {

@@ -12,28 +12,24 @@ export type ProjectStage = 'Concept' | 'Research' | 'Prototype' | 'MVP' | 'Launc
 export type OpportunityType =
   | 'Hackathon'
   | 'Internship'
-  | 'AI Summit'
-  | 'Workshop'
-  | 'Research'
+  | 'Job'
   | 'Competition'
-  | 'Fellowship'
-  | 'Scholarship'
   | 'Quiz'
+  | 'Scholarship'
+  | 'Workshop'
   | 'Conference'
-  | 'Cultural Event'
-  | 'College Festival';
+  | 'Fellowship'
+  | 'Research';
 
 export type OpportunityCategory =
-  | 'Competitions'
   | 'Hackathons'
+  | 'Internships'
+  | 'Jobs'
+  | 'Competitions'
   | 'Quizzes'
   | 'Scholarships'
   | 'Workshops'
-  | 'Conferences'
-  | 'Cultural Events'
-  | 'College Festivals'
-  | 'Internships'
-  | 'Research Programs';
+  | 'Conferences / Meets';
 
 export interface UserProfile {
   id: string;
@@ -141,14 +137,16 @@ export interface Opportunity {
   title: string;
   organizer: string;
   organizerLogo?: string;
+  bannerImage?: string;
   type: OpportunityType;
   category?: OpportunityCategory;
   format: 'Online' | 'In-Person' | 'Hybrid';
   location: string;
   startDate?: string;
   deadline: string;
+  deadlineIso?: string;
   timezone?: string;
-  daysRemaining: number;
+  daysRemaining?: number;
   eligibility: string;
   prizeOrCompensation: string;
   prizeAmount?: number;
@@ -160,12 +158,13 @@ export interface Opportunity {
   maxTeamSize?: number;
   isVerified: boolean;
   requiredSkills: string[];
+  tags?: string[];
   description: string;
   officialUrl: string;
   checklist?: string[];
   source?: string;
   verificationTimestamp?: string;
-  status?: 'Open' | 'Closing Soon' | 'Closed' | 'Upcoming';
+  status?: 'Open' | 'Closing Soon' | 'Closed' | 'Upcoming' | 'Expired';
   isSaved?: boolean;
   featured?: boolean;
   publishedAt?: string;
