@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,133 +6,151 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Linking,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { Header } from '../../components/navigation/Header';
-import { Chip } from '../../components/ui/Chip';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
-import { IdeaCard } from '../../components/cards/IdeaCard';
-import { OpportunityCard } from '../../components/cards/OpportunityCard';
-import { TeamCard } from '../../components/cards/TeamCard';
-import { ProjectCard } from '../../components/cards/ProjectCard';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { CardSkeleton } from '../../components/ui/Skeleton';
+import { CommunityPostCard } from '../../components/cards/CommunityPostCard';
+import { PostComposerModal } from '../../components/modals/PostComposerModal';
+import { PostCommentsModal } from '../../components/modals/PostCommentsModal';
+import { CollaborateModal } from '../../components/modals/CollaborateModal';
+import { AuthorProfileModal } from '../../components/modals/AuthorProfileModal';
 import { useApp } from '../../context/AppContext';
-import { MOCK_STUDENTS } from '../../services/mockData';
-import { Opportunity } from '../../types';
+import { CommunityPost, CommunityPostType } from '../../types';
+import { DEMO_DISCOVERY_POSTS } from '../../services/demoDiscoveryData';
 
-const HOME_OPPORTUNITY_CATEGORIES = [
-  'Hackathons',
-  'Internships',
-  'Jobs',
-  'Competitions',
-  'Quizzes',
-  'Scholarships',
-  'Workshops',
-  'Conferences / Meets',
+interface FilterCategory {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  type?: CommunityPostType;
+}
+
+const FEED_FILTERS: FilterCategory[] = [
+  { id: 'all', label: 'All Activity', icon: 'grid-outline' },
+  { id: 'idea', label: 'Ideas & Innovation', icon: 'bulb-outline', type: 'idea' },
+  { id: 'service', label: 'Student Services', icon: 'construct-outline', type: 'service' },
+  { id: 'story', label: 'Experiences & Stories', icon: 'book-outline', type: 'story' },
+  { id: 'event_collab', label: 'Hackathons & Events', icon: 'trophy-outline', type: 'event_collab' },
+  { id: 'project', label: 'Projects & Updates', icon: 'rocket-outline', type: 'project' },
+  { id: 'question', label: 'Questions & Help', icon: 'help-circle-outline', type: 'question' },
 ];
 
 export default function HomeScreen() {
   const {
     user,
-    ideas,
-    teams,
-    opportunities,
-    projects,
-    leaderboard,
-    toggleSaveOpportunity,
-    refreshAll,
+    communityPosts,
+    refreshCommunityPosts,
+    addCommunityPost,
+    toggleLikePost,
+    toggleSavePost,
+    addPostComment,
+    applyToCollaborate,
   } = useApp();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+
+  // Modals state
+  const [composerVisible, setComposerVisible] = useState(false);
+  const [composerInitialType, setComposerInitialType] = useState<CommunityPostType>('idea');
+
+  const [activeCommentPost, setActiveCommentPost] = useState<CommunityPost | null>(null);
+  const [activeCollabPost, setActiveCollabPost] = useState<CommunityPost | null>(null);
+  const [selectedAuthor, setSelectedAuthor] = useState<{
+    id: string;
+    name: string;
+    avatar: string;
+    college?: string;
+    role?: string;
+    isVerified?: boolean;
+  } | null>(null);
+
+  // Initial load of real community feed
+  const loadFeed = useCallback(async () => {
+    try {
+      setErrorMessage(null);
+      await refreshCommunityPosts();
+    } catch {
+      setErrorMessage('Unable to load student community feed. Please check your connection and retry.');
+    } finally {
+      setInitialLoading(false);
+    }
+  }, [refreshCommunityPosts]);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshAll();
+    await loadFeed();
     setRefreshing(false);
   };
 
-  // Category navigation: Selecting any category opens Explore with that category pre-selected
-  const handleSelectCategory = (category: string) => {
-    router.push({
-      pathname: '/(tabs)/explore',
-      params: { category },
-    } as any);
+  // Open Composer with specific type from quick action
+  const handleOpenComposer = (type: CommunityPostType) => {
+    setComposerInitialType(type);
+    setComposerVisible(true);
   };
 
-  // 1. Closing Soon: Opportunities with nearest valid upcoming registration deadlines
-  const closingSoonOpportunities = useMemo(() => {
-    return [...opportunities]
-      .filter((o) => (o.daysRemaining !== undefined ? o.daysRemaining >= 0 : true))
-      .sort((a, b) => (a.daysRemaining || 999) - (b.daysRemaining || 999))
-      .slice(0, 3);
-  }, [opportunities]);
+  // Filter posts based on selected category tab
+  const filteredPosts = useMemo(() => {
+    const feedPosts = [...DEMO_DISCOVERY_POSTS, ...communityPosts];
+    if (selectedFilter === 'all') {
+      return feedPosts;
+    }
+    return feedPosts.filter((post) => post.type === selectedFilter);
+  }, [communityPosts, selectedFilter]);
 
-  // 2. Featured Hackathons and Internships
-  const featuredHackathonsAndInternships = useMemo(() => {
-    return opportunities
-      .filter(
-        (o) =>
-          o.type === 'Hackathon' ||
-          o.type === 'Internship' ||
-          o.category === 'Hackathons' ||
-          o.category === 'Internships'
-      )
-      .slice(0, 3);
-  }, [opportunities]);
+  // Suggested discovery: real active collaboration requests
+  const activeCollabRequests = useMemo(() => {
+    return communityPosts.filter(
+      (p) =>
+        (p.type === 'idea' && p.rolesNeeded && p.rolesNeeded.length > 0) ||
+        (p.type === 'event_collab' && Boolean(p.eventRoleNeeded))
+    );
+  }, [communityPosts]);
 
-  // 3. Recommended Opportunities: Matched by user primaryRole/skills or curated top
-  const recommendedOpportunities = useMemo(() => {
-    const userRole = user.primaryRole?.toLowerCase() || '';
-    const userSkills = user.skills?.map((s) => s.toLowerCase()) || [];
-
-    const matched = opportunities.filter((o) => {
-      const skillsMatch = o.requiredSkills?.some((sk) =>
-        userSkills.includes(sk.toLowerCase())
-      );
-      const titleMatch =
-        o.title.toLowerCase().includes(userRole) ||
-        o.description.toLowerCase().includes(userRole);
-      return skillsMatch || titleMatch;
-    });
-
-    return (matched.length > 0 ? matched : opportunities).slice(0, 3);
-  }, [opportunities, user]);
-
-  // 4. Saved Opportunities
-  const savedOpportunities = useMemo(() => {
-    return opportunities.filter((o) => o.isSaved);
-  }, [opportunities]);
-
-  // 5. Trending Ideas, Teams & Collaborators
-  const trendingIdeas = ideas.slice(0, 3);
-  const activeTeams = teams.slice(0, 2);
-  const topStudents = MOCK_STUDENTS.slice(0, 4);
-  const recentProjects = projects.slice(0, 2);
-
-  const handleRegisterDirect = async (opp: Opportunity) => {
-    try {
-      const supported = await Linking.canOpenURL(opp.officialUrl);
-      if (supported) {
-        await Linking.openURL(opp.officialUrl);
-      } else {
-        Alert.alert('Official Portal', `Opening portal: ${opp.officialUrl}`);
-      }
-    } catch {
-      Alert.alert('Notice', `Please visit portal at: ${opp.officialUrl}`);
+  // Author press handling
+  const handleAuthorPress = (authorId: string) => {
+    if (authorId === user.id) {
+      router.push('/(tabs)/profile' as any);
+      return;
+    }
+    const foundPost = communityPosts.find((p) => p.author.id === authorId);
+    if (foundPost) {
+      setSelectedAuthor(foundPost.author);
     }
   };
 
+  // Card press handling
+  const handleCardPress = (post: CommunityPost) => {
+    if (post.type === 'idea' && post.ideaId) {
+      router.push(`/ideahub/${post.ideaId}` as any);
+    } else if (post.type === 'project' && post.projectId) {
+      router.push(`/projects/${post.projectId}` as any);
+    } else if (post.type === 'event_collab' && post.teamId) {
+      router.push(`/teams/${post.teamId}` as any);
+    } else {
+      setActiveCommentPost(post);
+    }
+  };
+
+  const firstName = user?.name ? user.name.trim().split(' ')[0] : 'Student';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
-      <Header />
+      {/* Top Header with Wordmark, Search, Notifications, Avatar */}
+      <Header hideGreeting={true} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -145,362 +163,281 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Quick Innovation Hero Banner */}
-        <View style={styles.heroBanner}>
-          <View style={styles.heroContent}>
-            <View style={styles.heroBadge}>
-              <Ionicons name="flash" size={12} color={Colors.primary} />
-              <Text style={styles.heroBadgeText}>LIVE STUDENT DISCOVERY</Text>
-            </View>
-            <Text style={styles.heroTitle}>Turn your midnight ideas into deployed reality.</Text>
-            <Text style={styles.heroSubtitle}>
-              Find verified hackathons, internships, scholarships, and collaborators with matching skills.
-            </Text>
-
-            <View style={styles.heroActions}>
-              <Button
-                title="Post an Idea"
-                size="sm"
-                variant="primary"
-                icon={<Ionicons name="add-circle-outline" size={16} color="#FFF" />}
-                onPress={() => router.push('/ideahub/submit' as any)}
-              />
-              <Button
-                title="Find Teammates"
-                size="sm"
-                variant="secondary"
-                onPress={() => router.push('/(tabs)/swipe' as any)}
-                style={{ marginLeft: 8 }}
-              />
-            </View>
-          </View>
+        {/* WELCOME SECTION: Personalized Greeting & Subtle Mission */}
+        <View style={styles.welcomeSection}>
+          <Text style={styles.greetingTitle}>Welcome back, {firstName}</Text>
+          <Text style={styles.greetingSubtitle}>
+            Connect with student builders, share ideas, offer services, and collaborate on real projects.
+          </Text>
         </View>
 
-        {/* HORIZONTALLY SCROLLABLE OPPORTUNITY CATEGORIES */}
-        <View style={styles.categoriesSection}>
-          <View style={styles.categoriesHeader}>
-            <Text style={styles.categoriesSectionTitle}>EXPLORE BY CATEGORY</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
-              <Text style={styles.seeAllText}>All →</Text>
+        {/* CREATE-POST COMPOSER BAR & QUICK ACTIONS */}
+        <View style={styles.composerCard}>
+          <View style={styles.composerHeaderRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/(tabs)/profile' as any)}
+            >
+              <Avatar uri={user.avatar} name={user.name} size={38} isVerified={user.isVerified} />
             </TouchableOpacity>
-          </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsScroll}
-          >
-            {HOME_OPPORTUNITY_CATEGORIES.map((catName) => (
-              <Chip
-                key={catName}
-                label={catName}
-                selected={false}
-                onPress={() => handleSelectCategory(catName)}
-                style={styles.categoryChip}
-              />
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* SECTION 1: CLOSING SOON (Highest Priority Section) */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <View style={styles.urgentHeaderRow}>
-                <View style={styles.urgentDot} />
-                <Text style={styles.sectionTitle}>Closing Soon</Text>
-              </View>
-              <Text style={styles.sectionSubtitle}>
-                Verified deadlines approaching within days — register before slots fill
+            <TouchableOpacity
+              style={styles.composerInputTrigger}
+              activeOpacity={0.8}
+              onPress={() => handleOpenComposer('idea')}
+            >
+              <Text style={styles.composerPlaceholder}>
+                What are you working on or looking for?
               </Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
-              <Text style={styles.seeAllUrgentText}>Explore All →</Text>
+              <Ionicons name="create-outline" size={18} color={Colors.primary} />
             </TouchableOpacity>
           </View>
 
-          {closingSoonOpportunities.map((opp) => (
-            <Card key={opp.id} variant="default" style={styles.closingSoonCard}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.typeBadgeRow}>
-                  <Badge label={opp.type} variant="primary" size="sm" />
-                  <Badge label={opp.format} variant="neutral" size="sm" style={{ marginLeft: 6 }} />
-                </View>
-
-                {/* Prominent Deadline Pill */}
-                <View style={styles.countdownPill}>
-                  <Ionicons name="alarm-outline" size={14} color={Colors.primary} />
-                  <Text style={styles.countdownText}>
-                    {opp.daysRemaining !== undefined && opp.daysRemaining <= 0
-                      ? 'Closing Today'
-                      : `${opp.daysRemaining} days left`}
-                  </Text>
-                </View>
+          {/* 6 Quick Post Actions */}
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('idea')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentAmberSubtle }]}>
+                <Ionicons name="bulb-outline" size={16} color={Colors.accentAmber} />
               </View>
+              <Text style={styles.quickActionLabel}>Share an Idea</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => router.push(`/opportunities/${opp.id}` as any)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.oppTitle}>{opp.title}</Text>
-              </TouchableOpacity>
-
-              {/* Organizer Row */}
-              <View style={styles.organizerRow}>
-                <Ionicons name="business-outline" size={14} color={Colors.textMuted} />
-                <Text style={styles.organizerText}>{opp.organizer}</Text>
-                {opp.isVerified ? (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={14}
-                    color={Colors.primary}
-                    style={{ marginLeft: 4 }}
-                  />
-                ) : null}
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('service')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentCyanSubtle }]}>
+                <Ionicons name="construct-outline" size={16} color={Colors.accentCyan} />
               </View>
+              <Text style={styles.quickActionLabel}>Offer a Service</Text>
+            </TouchableOpacity>
 
-              {/* Metrics Grid */}
-              <View style={styles.oppMetricsGrid}>
-                {opp.prizeOrCompensation ? (
-                  <View style={styles.metricItem}>
-                    <Ionicons name="trophy-outline" size={14} color={Colors.accentAmber} />
-                    <Text style={[styles.metricText, { color: Colors.accentAmber }]} numberOfLines={1}>
-                      {opp.prizeOrCompensation}
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('story')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentPurpleSubtle }]}>
+                <Ionicons name="book-outline" size={16} color={Colors.accentPurple} />
+              </View>
+              <Text style={styles.quickActionLabel}>Share a Story</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('event_collab')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.primarySubtle }]}>
+                <Ionicons name="trophy-outline" size={16} color={Colors.primary} />
+              </View>
+              <Text style={styles.quickActionLabel}>Organize an Event</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('project')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentGreenSubtle }]}>
+                <Ionicons name="rocket-outline" size={16} color={Colors.accentGreen} />
+              </View>
+              <Text style={styles.quickActionLabel}>Showcase a Project</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionItem}
+              activeOpacity={0.7}
+              onPress={() => handleOpenComposer('question')}
+            >
+              <View style={[styles.quickActionIcon, { backgroundColor: Colors.infoSubtle }]}>
+                <Ionicons name="help-circle-outline" size={16} color={Colors.info} />
+              </View>
+              <Text style={styles.quickActionLabel}>Ask Community</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* OPTIONAL SUGGESTED DISCOVERY: Only shown when genuine active collaboration requests exist */}
+        {activeCollabRequests.length > 0 && selectedFilter === 'all' ? (
+          <View style={styles.discoverySection}>
+            <View style={styles.discoveryHeader}>
+              <View style={styles.discoveryTitleRow}>
+                <View style={styles.pulseDot} />
+                <Text style={styles.discoveryTitle}>ACTIVE COLLABORATION REQUESTS</Text>
+              </View>
+              <Text style={styles.discoveryCount}>{activeCollabRequests.length} Open</Text>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.discoveryScroll}
+            >
+              {activeCollabRequests.slice(0, 5).map((collab) => (
+                <TouchableOpacity
+                  key={`collab_${collab.id}`}
+                  style={styles.collabSnippetCard}
+                  activeOpacity={0.8}
+                  onPress={() => handleCardPress(collab)}
+                >
+                  <View style={styles.collabSnippetTop}>
+                    <Avatar uri={collab.author.avatar} name={collab.author.name} size={28} />
+                    <Text style={styles.collabSnippetAuthor} numberOfLines={1}>
+                      {collab.author.name}
                     </Text>
                   </View>
-                ) : null}
-
-                <View style={styles.metricItem}>
-                  <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
-                  <Text style={styles.metricText} numberOfLines={1}>
-                    Deadline: {opp.deadline}
+                  <Text style={styles.collabSnippetTitle} numberOfLines={2}>
+                    {collab.title}
                   </Text>
-                </View>
-              </View>
-
-              {/* Card Actions */}
-              <View style={styles.oppActionsRow}>
-                <TouchableOpacity
-                  style={[styles.saveBtn, opp.isSaved && styles.saveBtnActive]}
-                  onPress={() => toggleSaveOpportunity(opp.id)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={opp.isSaved ? 'bookmark' : 'bookmark-outline'}
-                    size={18}
-                    color={opp.isSaved ? Colors.primary : Colors.textMuted}
-                  />
-                  <Text style={[styles.saveBtnText, opp.isSaved && { color: Colors.primary }]}>
-                    {opp.isSaved ? 'Saved' : 'Save'}
-                  </Text>
+                  <View style={styles.collabSnippetFooter}>
+                    <Text style={styles.collabSnippetSeeking} numberOfLines={1}>
+                      {collab.rolesNeeded?.join(', ') || collab.eventRoleNeeded || 'Collaborators'}
+                    </Text>
+                    <Ionicons name="arrow-forward-circle" size={16} color={Colors.primary} />
+                  </View>
                 </TouchableOpacity>
-
-                <Button
-                  title="View Details"
-                  size="sm"
-                  variant="outline"
-                  onPress={() => router.push(`/opportunities/${opp.id}` as any)}
-                  style={{ flex: 1, marginHorizontal: 6 }}
-                />
-
-                <Button
-                  title="Apply"
-                  size="sm"
-                  variant="primary"
-                  onPress={() => handleRegisterDirect(opp)}
-                  style={{ flex: 1 }}
-                />
-              </View>
-            </Card>
-          ))}
-        </View>
-
-        {/* SECTION 2: FEATURED HACKATHONS AND INTERNSHIPS */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Featured Hackathons & Internships</Text>
-              <Text style={styles.sectionSubtitle}>Premier technical challenges and paid industry roles</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
-              <Text style={styles.seeAllText}>View All ({featuredHackathonsAndInternships.length}) →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {featuredHackathonsAndInternships.map((opp) => (
-            <OpportunityCard key={opp.id} opportunity={opp} />
-          ))}
-        </View>
-
-        {/* SECTION 3: RECOMMENDED OPPORTUNITIES */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Recommended For You</Text>
-              <Text style={styles.sectionSubtitle}>
-                Matched with your skills ({user.primaryRole})
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
-              <Text style={styles.seeAllText}>Explore Feed →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {recommendedOpportunities.map((opp) => (
-            <OpportunityCard key={opp.id} opportunity={opp} />
-          ))}
-        </View>
-
-        {/* SECTION 4: TRENDING STUDENT IDEAS */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Trending Student Ideas</Text>
-              <Text style={styles.sectionSubtitle}>Concepts seeking co-builders and feedback</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/ideahub' as any)}>
-              <Text style={styles.seeAllText}>Explore IdeaHub →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {trendingIdeas.map((idea) => (
-            <IdeaCard key={idea.id} idea={idea} />
-          ))}
-        </View>
-
-        {/* SECTION 5: FIND TEAMMATES (Collaborators Spotlight & Teams) */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Find Teammates</Text>
-              <Text style={styles.sectionSubtitle}>Connect with builders possessing matching skills</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/swipe' as any)}>
-              <Text style={styles.seeAllText}>Swipe & Connect →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.collaboratorScroll}
-          >
-            {topStudents.map((s) => (
-              <Card key={s.id} variant="default" style={styles.studentPreviewCard}>
-                <Avatar uri={s.avatar} name={s.name} size={50} isVerified={s.isVerified} />
-                <Text style={styles.studentCardName} numberOfLines={1}>
-                  {s.name}
-                </Text>
-                <Text style={styles.studentCardCollege} numberOfLines={1}>
-                  {s.college}
-                </Text>
-                <Badge label={s.primaryRole} variant="primary" size="sm" style={{ marginTop: 6 }} />
-
-                <View style={styles.studentCardSkills}>
-                  {s.skills.slice(0, 2).map((sk) => (
-                    <View key={sk} style={styles.miniSkill}>
-                      <Text style={styles.miniSkillText}>{sk}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <Button
-                  title="Connect"
-                  size="sm"
-                  variant="outline"
-                  onPress={() => router.push('/(tabs)/swipe' as any)}
-                  style={styles.studentConnectBtn}
-                />
-              </Card>
-            ))}
-          </ScrollView>
-
-          {/* Open Teams */}
-          <View style={{ marginTop: 14 }}>
-            {activeTeams.map((team) => (
-              <TeamCard key={team.id} team={team} />
-            ))}
-          </View>
-        </View>
-
-        {/* SECTION 6: SAVED OPPORTUNITIES */}
-        {savedOpportunities.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Saved Opportunities</Text>
-                <Text style={styles.sectionSubtitle}>
-                  {savedOpportunities.length} opportunities bookmarked for your application schedule
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/explore' as any)}>
-                <Text style={styles.seeAllText}>Manage All →</Text>
-              </TouchableOpacity>
-            </View>
-
-            {savedOpportunities.slice(0, 2).map((opp) => (
-              <OpportunityCard key={opp.id} opportunity={opp} />
-            ))}
+              ))}
+            </ScrollView>
           </View>
         ) : null}
 
-        {/* SECTION: Recent Project Showcases */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Project Showcase</Text>
-              <Text style={styles.sectionSubtitle}>Prototypes & achievements built by student peers</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/projects' as any)}>
-              <Text style={styles.seeAllText}>All Projects →</Text>
-            </TouchableOpacity>
+        {/* COMMUNITY FEED HEADER & CATEGORY FILTER TABS */}
+        <View style={styles.feedHeaderSection}>
+          <View style={styles.feedTitleRow}>
+            <Text style={styles.feedTitle}>Community Activity</Text>
+            <Text style={styles.feedSubtitle}>Live posts from students and innovators</Text>
           </View>
 
-          {recentProjects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
-          ))}
+          {/* Horizontally Scrollable Category Filter Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {FEED_FILTERS.map((f) => {
+              const isSelected = selectedFilter === f.id;
+              return (
+                <TouchableOpacity
+                  key={f.id}
+                  style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                  onPress={() => setSelectedFilter(f.id)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={f.icon}
+                    size={13}
+                    color={isSelected ? '#FFF' : Colors.textMuted}
+                  />
+                  <Text
+                    style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}
+                  >
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
-        {/* Community Leaderboard Preview */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Impact Leaderboard</Text>
-              <Text style={styles.sectionSubtitle}>Recognizing verified builders & researchers</Text>
+        {/* FEED CONTENT STATES: Loading / Error / Empty / Real Posts */}
+        <View style={styles.feedContent}>
+          {initialLoading ? (
+            <View style={styles.loadingContainer}>
+              <CardSkeleton />
+              <CardSkeleton />
             </View>
-            <TouchableOpacity onPress={() => router.push('/leaderboard' as any)}>
-              <Text style={styles.seeAllText}>Rankings →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Card variant="outline" style={styles.leaderboardPreviewCard}>
-            {leaderboard.slice(0, 3).map((item, idx) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.leaderboardRow,
-                  idx < 2 && { borderBottomWidth: 1, borderBottomColor: Colors.border },
-                ]}
-              >
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankNum}>{idx + 1}</Text>
-                </View>
-                <Avatar uri={item.avatar} name={item.name} size={36} />
-                <View style={styles.leaderboardInfo}>
-                  <Text style={styles.leaderboardName}>{item.name}</Text>
-                  <Text style={styles.leaderboardSub}>
-                    {item.role} • {item.college}
-                  </Text>
-                </View>
-                <View style={styles.leaderboardPoints}>
-                  <Text style={styles.pointsNum}>{item.points.toLocaleString()}</Text>
-                  <Text style={styles.pointsLabel}>pts</Text>
-                </View>
-              </View>
-            ))}
-          </Card>
+          ) : errorMessage ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={36} color={Colors.error} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={loadFeed} activeOpacity={0.8}>
+                <Ionicons name="refresh-outline" size={16} color="#FFF" />
+                <Text style={styles.retryBtnText}>Retry Connection</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredPosts.length === 0 ? (
+            <EmptyState
+              icon={
+                selectedFilter === 'idea'
+                  ? 'bulb-outline'
+                  : selectedFilter === 'service'
+                  ? 'construct-outline'
+                  : selectedFilter === 'story'
+                  ? 'book-outline'
+                  : selectedFilter === 'event_collab'
+                  ? 'trophy-outline'
+                  : selectedFilter === 'project'
+                  ? 'rocket-outline'
+                  : selectedFilter === 'question'
+                  ? 'help-circle-outline'
+                  : 'people-outline'
+              }
+              title={
+                selectedFilter === 'all'
+                  ? 'No Student Posts Shared Yet'
+                  : `No ${FEED_FILTERS.find((f) => f.id === selectedFilter)?.label || 'Posts'} Yet`
+              }
+              description="Be the first student to share an idea, offer a service, post a story, or recruit collaborators for an initiative."
+              actionTitle="Share your first post"
+              onAction={() =>
+                handleOpenComposer(
+                  selectedFilter !== 'all' ? (selectedFilter as CommunityPostType) : 'idea'
+                )
+              }
+            />
+          ) : (
+            filteredPosts.map((post) => (
+              <CommunityPostCard
+                key={post.id}
+                post={post}
+                onLike={post.id.startsWith('demo_') ? undefined : () => toggleLikePost(post.id)}
+                onComment={post.id.startsWith('demo_') ? undefined : () => setActiveCommentPost(post)}
+                onSave={post.id.startsWith('demo_') ? undefined : () => toggleSavePost(post.id)}
+                onCollaborate={post.id.startsWith('demo_') ? undefined : () => setActiveCollabPost(post)}
+                onAuthorPress={post.id.startsWith('demo_') ? undefined : handleAuthorPress}
+                onCardPress={post.id.startsWith('demo_') ? undefined : handleCardPress}
+              />
+            ))
+          )}
         </View>
       </ScrollView>
+
+      {/* Post Composer Modal */}
+      <PostComposerModal
+        visible={composerVisible}
+        initialType={composerInitialType}
+        onClose={() => setComposerVisible(false)}
+        onSubmit={addCommunityPost}
+      />
+
+      {/* Post Comments Discussion Modal */}
+      <PostCommentsModal
+        visible={Boolean(activeCommentPost)}
+        post={activeCommentPost}
+        onClose={() => setActiveCommentPost(null)}
+        onAddComment={addPostComment}
+      />
+
+      {/* Collaboration / Inquiry Modal */}
+      <CollaborateModal
+        visible={Boolean(activeCollabPost)}
+        post={activeCollabPost}
+        onClose={() => setActiveCollabPost(null)}
+        onSubmit={applyToCollaborate}
+      />
+
+      {/* Student Author Profile Modal */}
+      <AuthorProfileModal
+        visible={Boolean(selectedAuthor)}
+        author={selectedAuthor}
+        onClose={() => setSelectedAuthor(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -511,298 +448,249 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollContainer: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
-  heroBanner: {
+  welcomeSection: {
+    paddingHorizontal: Spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 14,
+  },
+  greetingTitle: {
+    fontSize: Typography.title2,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    letterSpacing: -0.4,
+  },
+  greetingSubtitle: {
+    fontSize: Typography.subhead,
+    color: Colors.textMuted,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  composerCard: {
     marginHorizontal: Spacing.screenPadding,
-    marginTop: 12,
-    marginBottom: 16,
     backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-    padding: 16,
+    borderColor: Colors.cardBorder,
+    padding: 14,
+    marginBottom: 20,
     ...Shadows.card,
   },
-  heroContent: {
-    alignItems: 'flex-start',
-  },
-  heroBadge: {
+  composerHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primarySubtle,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    marginBottom: 8,
-    gap: 4,
-  },
-  heroBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.5,
-  },
-  heroTitle: {
-    fontSize: Typography.title3,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-    lineHeight: 24,
-    marginBottom: 6,
-  },
-  heroSubtitle: {
-    fontSize: Typography.footnote,
-    color: Colors.textSecondary,
-    lineHeight: 18,
+    gap: 10,
     marginBottom: 14,
   },
-  heroActions: {
+  composerInputTrigger: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  categoriesSection: {
-    marginBottom: 18,
-  },
-  categoriesHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.screenPadding,
-    marginBottom: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  categoriesSectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
+  composerPlaceholder: {
+    fontSize: Typography.body,
     color: Colors.textMuted,
-    letterSpacing: 0.8,
+    flex: 1,
   },
-  chipsScroll: {
-    paddingHorizontal: Spacing.screenPadding,
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
   },
-  categoryChip: {
-    marginRight: 2,
+  quickActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 6,
   },
-  section: {
-    marginBottom: 24,
-    paddingHorizontal: Spacing.screenPadding,
+  quickActionIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionHeader: {
+  quickActionLabel: {
+    fontSize: 11,
+    fontWeight: Typography.semiBold,
+    color: Colors.textSecondary,
+  },
+  discoverySection: {
+    marginBottom: 20,
+  },
+  discoveryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.screenPadding,
+    marginBottom: 10,
   },
-  sectionTitle: {
-    fontSize: Typography.title3,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  sectionSubtitle: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  urgentHeaderRow: {
+  discoveryTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  urgentDot: {
+  pulseDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: Colors.primary,
   },
-  seeAllText: {
-    fontSize: Typography.caption,
-    fontWeight: Typography.semiBold,
-    color: Colors.textSecondary,
-    paddingTop: 4,
+  discoveryTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.8,
   },
-  seeAllUrgentText: {
-    fontSize: Typography.caption,
+  discoveryCount: {
+    fontSize: 11,
     fontWeight: Typography.bold,
     color: Colors.primary,
-    paddingTop: 4,
   },
-  closingSoonCard: {
-    marginBottom: 12,
+  discoveryScroll: {
+    paddingHorizontal: Spacing.screenPadding,
+    gap: 10,
+  },
+  collabSnippetCard: {
+    width: 200,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.primaryBorder,
-    padding: 16,
+    padding: 12,
   },
-  cardHeaderRow: {
+  collabSnippetTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  collabSnippetAuthor: {
+    fontSize: 11,
+    fontWeight: Typography.bold,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  collabSnippetTitle: {
+    fontSize: 12,
+    fontWeight: Typography.semiBold,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+    minHeight: 32,
+    marginBottom: 8,
+  },
+  collabSnippetFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 6,
   },
-  typeBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  collabSnippetSeeking: {
+    fontSize: 10,
+    color: Colors.accentAmber,
+    fontWeight: Typography.bold,
+    maxWidth: 150,
   },
-  countdownPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primarySubtle,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    gap: 4,
+  feedHeaderSection: {
+    marginBottom: 14,
   },
-  countdownText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primary,
+  feedTitleRow: {
+    paddingHorizontal: Spacing.screenPadding,
+    marginBottom: 10,
   },
-  oppTitle: {
+  feedTitle: {
     fontSize: Typography.title3,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
-    lineHeight: 22,
-    marginBottom: 6,
   },
-  organizerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    gap: 4,
-  },
-  organizerText: {
+  feedSubtitle: {
     fontSize: Typography.caption,
-    color: Colors.textMuted,
-    fontWeight: Typography.medium,
-  },
-  oppMetricsGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 12,
-  },
-  metricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metricText: {
-    fontSize: Typography.caption,
-    color: Colors.textSecondary,
-    fontWeight: Typography.medium,
-  },
-  oppActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: 12,
-  },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 4,
-  },
-  saveBtnActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primarySubtle,
-  },
-  saveBtnText: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: Typography.semiBold,
-  },
-  collaboratorScroll: {
-    gap: 12,
-    paddingBottom: 4,
-  },
-  studentPreviewCard: {
-    width: 150,
-    alignItems: 'center',
-    padding: 12,
-  },
-  studentCardName: {
-    fontSize: Typography.body,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-    marginTop: 8,
-  },
-  studentCardCollege: {
-    fontSize: 11,
     color: Colors.textMuted,
     marginTop: 2,
   },
-  studentCardSkills: {
+  filterScroll: {
+    paddingHorizontal: Spacing.screenPadding,
+    gap: 8,
+  },
+  filterChip: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  miniSkill: {
+    alignItems: 'center',
     backgroundColor: Colors.surfaceElevated,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 5,
   },
-  miniSkillText: {
-    fontSize: 10,
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: Typography.medium,
     color: Colors.textSecondary,
   },
-  studentConnectBtn: {
-    width: '100%',
+  filterChipTextActive: {
+    color: '#FFF',
+    fontWeight: Typography.bold,
   },
-  leaderboardPreviewCard: {
-    padding: 0,
-    overflow: 'hidden',
+  feedContent: {
+    paddingHorizontal: Spacing.screenPadding,
   },
-  leaderboardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  loadingContainer: {
     gap: 12,
   },
-  rankBadge: {
-    width: 24,
+  errorBox: {
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginVertical: 16,
+    gap: 10,
   },
-  rankNum: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: Colors.primary,
-  },
-  leaderboardInfo: {
-    flex: 1,
-  },
-  leaderboardName: {
+  errorText: {
     fontSize: Typography.body,
-    fontWeight: Typography.semiBold,
-    color: Colors.textPrimary,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 280,
   },
-  leaderboardSub: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.sm,
+    gap: 6,
+    marginTop: 4,
   },
-  leaderboardPoints: {
-    alignItems: 'flex-end',
-  },
-  pointsNum: {
-    fontSize: Typography.body,
+  retryBtnText: {
+    fontSize: 12,
     fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-  },
-  pointsLabel: {
-    fontSize: 10,
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
+    color: '#FFF',
   },
 });

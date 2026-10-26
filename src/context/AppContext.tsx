@@ -8,6 +8,8 @@ import {
   ChatConversation,
   NotificationItem,
   LeaderboardUser,
+  CommunityPost,
+  CommunityPostComment,
 } from '../types';
 import { dataService } from '../services/dataService';
 import {
@@ -32,6 +34,13 @@ interface AppContextType {
   savedOpportunityIds: string[];
   unreadNotifsCount: number;
   isLoading: boolean;
+  communityPosts: CommunityPost[];
+  refreshCommunityPosts: () => Promise<void>;
+  addCommunityPost: (newPost: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => Promise<CommunityPost>;
+  toggleLikePost: (id: string) => Promise<void>;
+  toggleSavePost: (id: string) => Promise<void>;
+  addPostComment: (postId: string, text: string) => Promise<CommunityPostComment>;
+  applyToCollaborate: (postId: string, note: string, role?: string) => Promise<{ success: boolean; message: string }>;
   refreshAll: () => Promise<void>;
   updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
   toggleUpvoteIdea: (id: string) => Promise<void>;
@@ -57,11 +66,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [conversations, setConversations] = useState<ChatConversation[]>(MOCK_CONVERSATIONS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(MOCK_LEADERBOARD);
+  const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
   const [isLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [u, i, t, o, p, c, n, l] = await Promise.all([
+      const [u, i, t, o, p, c, n, l, cp] = await Promise.all([
         dataService.getUser(),
         dataService.getIdeas(),
         dataService.getTeams(),
@@ -70,6 +80,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dataService.getConversations(),
         dataService.getNotifications(),
         dataService.getLeaderboard(),
+        dataService.getCommunityPosts(),
       ]);
       setUser(u);
       setIdeas(i);
@@ -79,6 +90,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setConversations(c);
       setNotifications(n);
       setLeaderboard(l);
+      setCommunityPosts(cp.posts);
     } catch (err) {
       console.error('Error loading StuDos data:', err);
     }
@@ -88,7 +100,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let active = true;
     const sync = async () => {
       try {
-        const [u, i, t, o, p, c, n, l] = await Promise.all([
+        const [u, i, t, o, p, c, n, l, cp] = await Promise.all([
           dataService.getUser(),
           dataService.getIdeas(),
           dataService.getTeams(),
@@ -97,6 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dataService.getConversations(),
           dataService.getNotifications(),
           dataService.getLeaderboard(),
+          dataService.getCommunityPosts(),
         ]);
         if (active) {
           setUser(u);
@@ -107,6 +120,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setConversations(c);
           setNotifications(n);
           setLeaderboard(l);
+          setCommunityPosts(cp.posts);
         }
       } catch (err) {
         console.error('Sync error:', err);
@@ -186,6 +200,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
+  const refreshCommunityPosts = async () => {
+    const res = await dataService.getCommunityPosts();
+    setCommunityPosts(res.posts);
+  };
+
+  const addCommunityPost = async (
+    newPost: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>
+  ) => {
+    const created = await dataService.addCommunityPost(newPost);
+    setCommunityPosts((prev) => [created, ...prev]);
+    return created;
+  };
+
+  const toggleLikePost = async (id: string) => {
+    const updated = await dataService.toggleLikePost(id);
+    if (updated) {
+      setCommunityPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+    }
+  };
+
+  const toggleSavePost = async (id: string) => {
+    const updated = await dataService.toggleSavePost(id);
+    if (updated) {
+      setCommunityPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+    }
+  };
+
+  const addPostComment = async (postId: string, text: string) => {
+    const comment = await dataService.addPostComment(postId, text);
+    setCommunityPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              comments: p.comments ? [...p.comments, comment] : [comment],
+              commentsCount: (p.commentsCount || 0) + 1,
+            }
+          : p
+      )
+    );
+    return comment;
+  };
+
+  const applyToCollaborate = async (postId: string, note: string, role?: string) => {
+    return await dataService.applyToCollaborate(postId, note, role);
+  };
+
   const unreadNotifsCount = notifications.filter((n) => !n.read).length;
   const savedOpportunityIds = opportunities.filter((o) => o.isSaved).map((o) => o.id);
 
@@ -203,6 +264,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         savedOpportunityIds,
         unreadNotifsCount,
         isLoading,
+        communityPosts,
+        refreshCommunityPosts,
+        addCommunityPost,
+        toggleLikePost,
+        toggleSavePost,
+        addPostComment,
+        applyToCollaborate,
         refreshAll: loadData,
         updateProfile,
         toggleUpvoteIdea,

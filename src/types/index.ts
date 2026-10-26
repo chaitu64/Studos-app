@@ -257,3 +257,74 @@ export interface LeaderboardUser {
   weeklyGain: number;
   verifiedContributions: number;
 }
+
+export type CommunityPostType =
+  | 'idea'
+  | 'service'
+  | 'story'
+  | 'event_collab'
+  | 'project'
+  | 'question';
+
+export interface CommunityPostComment {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  userRole?: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface CommunityPost {
+  id: string;
+  type: CommunityPostType;
+  title: string;
+  content: string;
+  author: {
+    id: string;
+    name: string;
+    avatar: string;
+    college?: string;
+    role?: string;
+    isVerified?: boolean;
+  };
+  createdAt: string;
+  createdAtTimestamp: number;
+  category?: string;
+  tags?: string[];
+  skills?: string[];
+  images?: string[];
+
+  // For Ideas:
+  problemStatement?: string;
+  proposedSolution?: string;
+  targetAudience?: string;
+  stage?: ProjectStage;
+  rolesNeeded?: StudentRole[];
+  ideaId?: string;
+
+  // For Services:
+  servicePricing?: string;
+  serviceAvailability?: string;
+
+  // For Event / Hackathon Collab:
+  eventName?: string;
+  eventRoleNeeded?: string;
+  eventDate?: string;
+  teamId?: string;
+
+  // For Projects:
+  demoUrl?: string;
+  githubUrl?: string;
+  technologies?: string[];
+  projectId?: string;
+
+  // Real Engagement
+  likesCount: number;
+  commentsCount: number;
+  isLiked?: boolean;
+  isSaved?: boolean;
+  comments?: CommunityPostComment[];
+}
+

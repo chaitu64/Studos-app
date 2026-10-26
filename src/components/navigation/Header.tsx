@@ -10,11 +10,13 @@ export interface HeaderProps {
   showSearch?: boolean;
   title?: string;
   subtitle?: string;
+  hideGreeting?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
+  hideGreeting,
 }) => {
   const { user, unreadNotifsCount } = useApp();
 
@@ -68,14 +70,14 @@ export const Header: React.FC<HeaderProps> = ({
       </View>
 
       {/* Greeting or Title section */}
-      {title ? (
+      {hideGreeting ? null : title ? (
         <View style={styles.titleSection}>
           <Text style={styles.pageTitle}>{title}</Text>
           {subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}
         </View>
       ) : (
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingGreeting}>Welcome back, {user.name.split(' ')[0]}</Text>
+          <Text style={styles.greetingGreeting}>Welcome back, {user?.name ? user.name.split(' ')[0] : 'Student'}</Text>
           <Text style={styles.greetingMission}>Build something that matters today.</Text>
         </View>
       )}

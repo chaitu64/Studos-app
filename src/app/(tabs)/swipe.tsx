@@ -1,291 +1,669 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
+  ActivityIndicator,
   Alert,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { SwipeProfileCard } from '../../components/cards/SwipeProfileCard';
-import { Button } from '../../components/ui/Button';
-import { Chip } from '../../components/ui/Chip';
+import { Colors, BorderRadius, Spacing, Typography } from '../../constants/theme';
 import { Avatar } from '../../components/ui/Avatar';
+import { Button } from '../../components/ui/Button';
+import { CardSkeleton } from '../../components/ui/Skeleton';
+import { Chip } from '../../components/ui/Chip';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { MOCK_STUDENTS } from '../../services/mockData';
-import { StudentRole, UserProfile } from '../../types';
+import {
+  DiscoveryItem,
+  DiscoveryPerson,
+  DiscoverySwipeCard,
+} from '../../components/cards/DiscoverySwipeCard';
 import { useApp } from '../../context/AppContext';
+import { CommunityPost } from '../../types';
+import { DEMO_DISCOVERY_POSTS } from '../../services/demoDiscoveryData';
 
-const ROLE_FILTERS: (StudentRole | 'All')[] = [
-  'All',
-  'Developer',
-  'AI/ML Engineer',
-  'UI/UX Designer',
-  'Hardware Engineer',
-  'Researcher',
-  'Founder / Product',
+type DiscoveryMode = 'people' | 'ideas' | 'services';
+
+const MODES: { id: DiscoveryMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'people', label: 'People', icon: 'people-outline' },
+  { id: 'ideas', label: 'Ideas & Teams', icon: 'bulb-outline' },
+  { id: 'services', label: 'Services', icon: 'construct-outline' },
 ];
 
+function unique(values: (string | undefined)[]): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function getItemPost(item: DiscoveryItem): CommunityPost {
+  return item.kind === 'person' ? item.person.sourcePost : item.post;
+}
+
 export default function SwipeScreen() {
-  const { user, conversations } = useApp();
-  const [deck, setDeck] = useState<UserProfile[]>(MOCK_STUDENTS);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedRole, setSelectedRole] = useState<StudentRole | 'All'>('All');
+  const {
+    user,
+    ideas,
+    teams,
+    communityPosts,
+    refreshCommunityPosts,
+    applyToCollaborate,
+    applyToTeam,
+    toggleSavePost,
+    toggleBookmarkIdea,
+  } = useApp();
+
+  const [mode, setMode] = useState<DiscoveryMode>('people');
+  const [filter, setFilter] = useState('All');
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showMatchModal, setShowMatchModal] = useState(false);
-  const [matchedStudent, setMatchedStudent] = useState<UserProfile | null>(null);
-  const [savedProfiles, setSavedProfiles] = useState<string[]>([]);
+  const [detailsItem, setDetailsItem] = useState<DiscoveryItem | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [skippedIds, setSkippedIds] = useState<string[]>([]);
+  const [actionedIds, setActionedIds] = useState<string[]>([]);
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
-  // Filter deck based on selected role
-  const filteredDeck = deck.filter((s) => {
-    if (selectedRole === 'All') return true;
-    return s.primaryRole === selectedRole;
-  });
+  const loadDiscovery = useCallback(async (refresh = false) => {
+    if (refresh) setIsRefreshing(true);
+    else setIsLoading(true);
 
-  const currentStudent = filteredDeck[currentIndex];
+    try {
+      setErrorMessage(null);
+      await refreshCommunityPosts();
+    } catch (error) {
+      console.error('Unable to load discovery records:', error);
+      setErrorMessage('Discovery could not be refreshed. Check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [refreshCommunityPosts]);
 
-  const handlePass = () => {
-    if (currentIndex < filteredDeck.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      setCurrentIndex(filteredDeck.length);
+  useEffect(() => {
+    let active = true;
+    const initialLoad = async () => {
+      try {
+        await refreshCommunityPosts();
+        if (active) setErrorMessage(null);
+      } catch (error) {
+        console.error('Unable to load discovery records:', error);
+        if (active) setErrorMessage('Discovery could not be loaded. Check your connection and try again.');
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+    void initialLoad();
+    return () => {
+      active = false;
+    };
+  }, [refreshCommunityPosts]);
+
+  const discoverablePosts = useMemo(() => {
+    const byIdeaId = new Map(ideas.map((idea) => [idea.id, idea]));
+
+    return [...DEMO_DISCOVERY_POSTS, ...communityPosts].filter((post) => {
+      if (
+        !post.author.id ||
+        post.author.id === 'unknown' ||
+        post.author.id === user.id ||
+        !post.author.name.trim() ||
+        !post.title.trim()
+      ) return false;
+
+      const idea = byIdeaId.get(post.ideaId || post.id);
+      if (idea && idea.visibility !== 'Public') return false;
+
+      if (post.type === 'service') return true;
+      if (mode === 'ideas') {
+        return post.type === 'idea' || post.type === 'project' || post.type === 'event_collab';
+      }
+      return true;
+    });
+  }, [communityPosts, ideas, mode, user.id]);
+
+  const people = useMemo<DiscoveryPerson[]>(() => {
+    const grouped = new Map<string, CommunityPost[]>();
+    for (const post of discoverablePosts.filter((entry) =>
+      entry.type === 'idea' ||
+      entry.type === 'project' ||
+      entry.type === 'event_collab' ||
+      entry.type === 'service'
+    )) {
+      const posts = grouped.get(post.author.id) || [];
+      posts.push(post);
+      grouped.set(post.author.id, posts);
+    }
+
+    return [...grouped.entries()].map(([id, posts]) => {
+      const orderedPosts = [...posts].sort((a, b) => b.createdAtTimestamp - a.createdAtTimestamp);
+      return {
+        id,
+        author: orderedPosts[0].author,
+        posts: orderedPosts,
+        sourcePost: orderedPosts[0],
+        skills: unique(orderedPosts.flatMap((post) => [...(post.skills || []), ...(post.technologies || [])])),
+      };
+    });
+  }, [discoverablePosts]);
+
+  const allItems = useMemo<DiscoveryItem[]>(() => {
+    if (mode === 'people') {
+      return people.map((person) => ({
+        kind: 'person',
+        id: `person:${person.id}`,
+        person,
+      }));
+    }
+
+    const posts = discoverablePosts.filter((post) =>
+      mode === 'services'
+        ? post.type === 'service'
+        : post.type === 'idea' || post.type === 'project' || post.type === 'event_collab'
+    );
+
+    return posts.map((post) => ({ kind: 'post', id: post.id, post }));
+  }, [discoverablePosts, mode, people]);
+
+  const filterOptions = useMemo(() => {
+    if (mode === 'people') {
+      return unique(people.flatMap((person) => [
+        person.author.role,
+        ...person.skills,
+      ]));
+    }
+    if (mode === 'services') {
+      return unique(discoverablePosts
+        .filter((post) => post.type === 'service')
+        .flatMap((post) => [post.category, ...(post.skills || [])]));
+    }
+    return unique(discoverablePosts
+      .filter((post) => post.type === 'idea' || post.type === 'project' || post.type === 'event_collab')
+      .flatMap((post) => [
+        post.category,
+        ...(post.rolesNeeded || []),
+        ...(post.skills || []),
+        post.eventRoleNeeded,
+      ]));
+  }, [discoverablePosts, mode, people]);
+
+  const visibleItems = useMemo(() => {
+    const currentSkills = new Set(user.skills.map((skill) => skill.toLowerCase()));
+    const matchesFilter = (item: DiscoveryItem) => {
+      if (filter === 'All') return true;
+      if (item.kind === 'person') {
+        return item.person.author.role === filter || item.person.skills.includes(filter);
+      }
+      const post = item.post;
+      return post.category === filter ||
+        post.skills?.includes(filter) ||
+        post.technologies?.includes(filter) ||
+        post.rolesNeeded?.some((role) => role === filter) ||
+        post.eventRoleNeeded?.split(',').some((role) => role.trim() === filter);
+    };
+    const score = (item: DiscoveryItem) => {
+      const skills = item.kind === 'person'
+        ? item.person.skills
+        : [...(item.post.skills || []), ...(item.post.technologies || []), ...(item.post.rolesNeeded || [])];
+      return skills.reduce((count, skill) => count + (currentSkills.has(skill.toLowerCase()) ? 1 : 0), 0);
+    };
+
+    return allItems
+      .filter((item) =>
+        !skippedIds.includes(item.id) &&
+        !actionedIds.includes(item.id) &&
+        !actionedIds.includes(getItemPost(item).id) &&
+        matchesFilter(item)
+      )
+      .sort((a, b) => score(b) - score(a));
+  }, [actionedIds, allItems, filter, skippedIds, user.skills]);
+
+  const currentItem = visibleItems[0];
+  const currentPost = currentItem ? getItemPost(currentItem) : null;
+  const actionLabel = mode === 'people'
+    ? 'Invite to collaborate'
+    : mode === 'services'
+      ? 'Request service'
+      : currentPost?.type === 'event_collab'
+        ? 'Request to join'
+        : 'Express interest';
+
+  const setModeAndResetFilter = (nextMode: DiscoveryMode) => {
+    setMode(nextMode);
+    setFilter('All');
+  };
+
+  const skipCurrent = useCallback(() => {
+    if (currentItem) {
+      setSkippedIds((previous) => previous.includes(currentItem.id) ? previous : [...previous, currentItem.id]);
+    }
+  }, [currentItem]);
+
+  const submitInterest = useCallback(async (item: DiscoveryItem) => {
+    const post = getItemPost(item);
+    if (post.id.startsWith('demo_')) {
+      Alert.alert('Demo preview', 'This is sample content for checking the design. No request was sent.');
+      return;
+    }
+    setPendingId(item.id);
+
+    try {
+      let confirmation: string;
+      if (post.type === 'event_collab' && post.teamId) {
+        const team = teams.find((entry) => entry.id === post.teamId);
+        if (!team) {
+          throw new Error('This team listing is no longer available.');
+        }
+        const openRole = team.openRoles.find((role) => !role.filled)?.role || user.primaryRole;
+        const result = await applyToTeam(team.id, openRole);
+        if (!result.success) throw new Error(result.message || 'The team request was not accepted.');
+        confirmation = 'Your team application was recorded in this app.';
+      } else {
+        const note = mode === 'services'
+          ? `${user.name} requested the service "${post.title}".`
+          : mode === 'people'
+            ? `${user.name} would like to connect about "${post.title}".`
+            : `${user.name} is interested in contributing to "${post.title}".`;
+        const result = await applyToCollaborate(post.id, note, user.primaryRole);
+        if (!result.success) throw new Error(result.message || 'The collaboration request was not accepted.');
+        confirmation = 'Your request was recorded in this app.';
+      }
+
+      setActionedIds((previous) => previous.includes(item.id) ? previous : [...previous, item.id]);
+      setActionedIds((previous) => previous.includes(post.id) ? previous : [...previous, post.id]);
+      Alert.alert('Request recorded', confirmation);
+    } catch (error) {
+      console.error('Unable to submit discovery request:', error);
+      Alert.alert(
+        'Request not sent',
+        error instanceof Error ? error.message : 'The request could not be completed. Please try again.'
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }, [applyToCollaborate, applyToTeam, mode, teams, user.name, user.primaryRole]);
+
+  const confirmInterest = useCallback((item: DiscoveryItem) => {
+    if (pendingId) return;
+    const post = getItemPost(item);
+    const isDemo = post.id.startsWith('demo_');
+    const title = item.kind === 'person'
+      ? isDemo
+        ? `Preview invitation to ${item.person.author.name}?`
+        : `Invite ${item.person.author.name} to collaborate?`
+      : mode === 'services'
+        ? `${isDemo ? 'Preview service request for' : 'Request'} "${post.title}"?`
+        : post.type === 'event_collab'
+          ? `${isDemo ? 'Preview team request for' : 'Request to join'} "${post.title}"?`
+          : `${isDemo ? 'Preview interest in' : 'Express interest in'} "${post.title}"?`;
+    Alert.alert(
+      title,
+      isDemo
+        ? 'This is demo content used to preview the interface. No real request will be sent.'
+        : 'This records a request in the current app. It does not confirm acceptance, hiring, payment, or membership.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: isDemo ? 'Preview action' : item.kind === 'person' ? 'Send invitation' : mode === 'services' ? 'Request service' : 'Continue', onPress: () => { void submitInterest(item); } },
+      ]
+    );
+  }, [mode, pendingId, submitInterest]);
+
+  const saveCurrent = async () => {
+    if (!currentItem || !currentPost) return;
+
+    try {
+      if (currentPost.id.startsWith('post_')) {
+        await toggleSavePost(currentPost.id);
+      } else if (ideas.some((idea) => idea.id === (currentPost.ideaId || currentPost.id))) {
+        await toggleBookmarkIdea(currentPost.ideaId || currentPost.id);
+      } else {
+        return;
+      }
+    } catch (error) {
+      console.error('Unable to save discovery item:', error);
+      Alert.alert('Could not save', 'This item could not be saved. Please try again.');
     }
   };
 
-  const handleConnect = () => {
-    if (!currentStudent) return;
-    // Maya Chen and Marcus Vance trigger mutual match for demo delight!
-    if (currentStudent.id === 'usr_1' || currentStudent.id === 'usr_2') {
-      setMatchedStudent(currentStudent);
-      setShowMatchModal(true);
-    } else {
-      Alert.alert(
-        'Connection Request Sent!',
-        `We notified ${currentStudent.name} about your mutual interest. You'll be notified when they accept.`,
-        [{ text: 'Great!', onPress: handlePass }]
+  const canSaveCurrent = Boolean(
+    currentPost &&
+    (currentPost.id.startsWith('post_') || ideas.some((idea) => idea.id === (currentPost.ideaId || currentPost.id)))
+  );
+  const isCurrentSaved = Boolean(
+    currentPost?.isSaved ||
+    (currentPost && ideas.find((idea) => idea.id === (currentPost.ideaId || currentPost.id))?.isBookmarked)
+  );
+
+  const openExternalLink = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error('Unable to open discovery link:', error);
+      Alert.alert('Link unavailable', 'This link could not be opened on your device.');
+    }
+  };
+
+  const openOverflowMenu = () => {
+    Alert.alert('Discovery options', 'Choose an action for your current feed.', [
+      { text: 'Refresh discovery', onPress: () => { void loadDiscovery(true); } },
+      ...(currentItem ? [{ text: 'Skip this item', onPress: skipCurrent }] : []),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const renderDetails = () => {
+    if (!detailsItem) return null;
+    if (detailsItem.kind === 'person') {
+      const { person } = detailsItem;
+      return (
+        <>
+          <View style={styles.detailAuthor}>
+            <Avatar uri={person.author.avatar} name={person.author.name} size={48} isVerified={person.author.isVerified} />
+            <View style={styles.detailAuthorText}>
+              <Text style={styles.detailTitle}>{person.author.name}</Text>
+              <Text style={styles.detailMuted}>{[person.author.role, person.author.college].filter(Boolean).join(' · ')}</Text>
+            </View>
+          </View>
+          {person.posts.map((post) => (
+            <View key={post.id} style={styles.detailEntry}>
+              <Text style={styles.detailSectionTitle}>{post.title}</Text>
+              <Text style={styles.detailBody}>{post.content}</Text>
+              <Text style={styles.detailMuted}>{post.type.replace('_', ' ')} · {post.createdAt}</Text>
+            </View>
+          ))}
+          {person.skills.length ? (
+            <View style={styles.detailEntry}>
+              <Text style={styles.detailSectionTitle}>Skills mentioned in shared posts</Text>
+              <Text style={styles.detailBody}>{person.skills.join(' · ')}</Text>
+            </View>
+          ) : null}
+        </>
       );
     }
-  };
 
-  const handleSave = () => {
-    if (!currentStudent) return;
-    setSavedProfiles((prev) => [...prev, currentStudent.id]);
-    Alert.alert('Profile Saved', `${currentStudent.name} saved to your bookmarks (${savedProfiles.length + 1} total).`);
-  };
-
-  const handleReport = () => {
-    Alert.alert(
-      'Report or Block Student',
-      'Select an action to keep the StuDos innovation community respectful and safe.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report Inappropriate Profile',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Report Received', 'Our moderation team will review this profile within 2 hours.');
-            handlePass();
-          },
-        },
-        {
-          text: 'Block User',
-          style: 'destructive',
-          onPress: () => {
-            setDeck((prev) => prev.filter((s) => s.id !== currentStudent?.id));
-            Alert.alert('Blocked', 'You will no longer see this user in your recommendations.');
-          },
-        },
-      ]
+    const post = detailsItem.post;
+    return (
+      <>
+        <View style={styles.detailAuthor}>
+          <Avatar uri={post.author.avatar} name={post.author.name} size={44} isVerified={post.author.isVerified} />
+          <View style={styles.detailAuthorText}>
+            <Text style={styles.detailTitle}>{post.title}</Text>
+            <Text style={styles.detailMuted}>Shared by {post.author.name}</Text>
+          </View>
+        </View>
+        {post.category ? <Text style={styles.detailMuted}>{post.category}</Text> : null}
+        <Text style={styles.detailBody}>
+          {[post.problemStatement || post.content, post.proposedSolution]
+            .filter(Boolean)
+            .join('\n\n')}
+        </Text>
+        {post.skills?.length ? (
+          <View style={styles.detailEntry}>
+            <Text style={styles.detailSectionTitle}>Skills</Text>
+            <Text style={styles.detailBody}>{post.skills.join(' · ')}</Text>
+          </View>
+        ) : null}
+        {post.rolesNeeded?.length ? (
+          <View style={styles.detailEntry}>
+            <Text style={styles.detailSectionTitle}>Roles needed</Text>
+            <Text style={styles.detailBody}>{post.rolesNeeded.join(' · ')}</Text>
+          </View>
+        ) : null}
+        {post.servicePricing ? <Text style={styles.detailMuted}>Pricing: {post.servicePricing}</Text> : null}
+        {post.serviceAvailability ? <Text style={styles.detailMuted}>Availability: {post.serviceAvailability}</Text> : null}
+        {post.demoUrl ? (
+          <Pressable accessibilityRole="link" onPress={() => { void openExternalLink(post.demoUrl!); }}>
+            <Text style={styles.detailLink}>Open demo</Text>
+          </Pressable>
+        ) : null}
+        {post.githubUrl ? (
+          <Pressable accessibilityRole="link" onPress={() => { void openExternalLink(post.githubUrl!); }}>
+            <Text style={styles.detailLink}>Open GitHub</Text>
+          </Pressable>
+        ) : null}
+      </>
     );
   };
 
-  const handleResetDeck = () => {
-    setDeck(MOCK_STUDENTS);
-    setCurrentIndex(0);
-  };
-
-  const startConversationWithMatch = () => {
-    setShowMatchModal(false);
-    // Find or navigate to conversation
-    const existing = conversations.find((c) => c.name === matchedStudent?.name);
-    if (existing) {
-      router.push(`/chat/${existing.id}` as any);
-    } else {
-      router.push(`/chat/conv_1` as any);
-    }
-  };
+  const hasModeRecords = allItems.length > 0;
+  const emptyTitle = mode === 'people'
+    ? 'No students to discover yet'
+    : mode === 'services'
+      ? 'No student services yet'
+      : 'No ideas or teams to join yet';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Top Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Swipe & Connect</Text>
-          <Text style={styles.headerSubtitle}>Discover ambitious student co-builders</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>Discover & Connect</Text>
+          <Text style={styles.headerSubtitle}>Find your next teammate, project, or opportunity to contribute.</Text>
         </View>
-
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.filterBtn}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open discovery filters"
             onPress={() => setShowFilterModal(true)}
+            style={styles.iconButton}
+            hitSlop={8}
           >
-            <Ionicons name="filter" size={18} color={Colors.primary} />
-            {selectedRole !== 'All' ? (
-              <View style={styles.activeFilterDot} />
-            ) : null}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.flagBtn}
-            onPress={handleReport}
-            disabled={!currentStudent}
+            <Ionicons name="options-outline" size={19} color={Colors.textPrimary} />
+            {filter !== 'All' ? <View style={styles.filterDot} /> : null}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="More discovery options"
+            onPress={openOverflowMenu}
+            style={styles.iconButton}
+            hitSlop={8}
           >
-            <Ionicons name="ellipsis-vertical" size={18} color={Colors.textMuted} />
-          </TouchableOpacity>
+            <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textPrimary} />
+          </Pressable>
         </View>
       </View>
 
-      {/* Horizontal Role Chips */}
-      <View style={styles.rolesRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rolesScroll}>
-          {ROLE_FILTERS.map((r) => (
-            <Chip
-              key={r}
-              label={r}
-              selected={selectedRole === r}
-              onPress={() => {
-                setSelectedRole(r);
-                setCurrentIndex(0);
-              }}
-            />
-          ))}
-        </ScrollView>
+      <View style={styles.modeTabs}>
+        {MODES.map((entry) => {
+          const selected = mode === entry.id;
+          return (
+            <Pressable
+              key={entry.id}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => setModeAndResetFilter(entry.id)}
+              style={[styles.modeTab, selected && styles.modeTabSelected]}
+            >
+              <Ionicons name={entry.icon} size={16} color={selected ? Colors.primary : Colors.textMuted} />
+              <Text style={[styles.modeText, selected && styles.modeTextSelected]} numberOfLines={1}>
+                {entry.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* Card Arena */}
+      {filterOptions.length > 0 ? (
+        <View style={styles.filterChips}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+            <Chip label="All" selected={filter === 'All'} onPress={() => setFilter('All')} />
+            {filterOptions.slice(0, 8).map((option) => (
+              <Chip key={option} label={option} selected={filter === option} onPress={() => setFilter(option)} />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       <View style={styles.arena}>
-        {currentStudent ? (
-          <SwipeProfileCard
-            student={currentStudent}
-            onPass={handlePass}
-            onConnect={handleConnect}
-            onSave={handleSave}
-            onViewDetails={() => router.push('/(tabs)/profile' as any)}
+        {isLoading ? (
+          <CardSkeleton />
+        ) : errorMessage ? (
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn't load discovery"
+            description={errorMessage}
+            actionTitle="Retry"
+            onAction={() => { void loadDiscovery(true); }}
+            style={styles.emptyState}
           />
+        ) : currentItem ? (
+          <>
+            {isRefreshing ? (
+              <View style={styles.refreshing}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.refreshingText}>Refreshing discovery…</Text>
+              </View>
+            ) : null}
+            <DiscoverySwipeCard
+              item={currentItem}
+              actionLabel={actionLabel}
+              disabled={pendingId === currentItem.id}
+              onSkip={skipCurrent}
+              onInterest={() => confirmInterest(currentItem)}
+              onDetails={() => setDetailsItem(currentItem)}
+            />
+            <View style={styles.actions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Skip this item"
+                onPress={skipCurrent}
+                disabled={pendingId === currentItem.id}
+                style={[styles.actionButton, styles.skipButton]}
+                hitSlop={4}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+                <Text style={styles.actionButtonText}>Skip</Text>
+              </Pressable>
+              {canSaveCurrent ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Save this item"
+                  onPress={() => { void saveCurrent(); }}
+                  disabled={pendingId === currentItem.id}
+                  style={[styles.actionButton, styles.saveButton]}
+                  hitSlop={4}
+                >
+                  <Ionicons name={isCurrentSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={Colors.accentAmber} />
+                  <Text style={styles.actionButtonText}>{isCurrentSaved ? 'Saved' : 'Save'}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={actionLabel}
+                onPress={() => confirmInterest(currentItem)}
+                disabled={pendingId === currentItem.id}
+                style={[styles.primaryAction, pendingId === currentItem.id && styles.disabledAction]}
+              >
+                {pendingId === currentItem.id ? (
+                  <ActivityIndicator size="small" color={Colors.textOnPrimary} />
+                ) : (
+                  <Ionicons
+                    name={mode === 'services' ? 'hand-left-outline' : mode === 'people' ? 'chatbubble-ellipses-outline' : 'person-add-outline'}
+                    size={17}
+                    color={Colors.textOnPrimary}
+                  />
+                )}
+                <Text style={styles.primaryActionText}>
+                  {pendingId === currentItem.id ? 'Sending…' : actionLabel}
+                </Text>
+              </Pressable>
+            </View>
+          </>
         ) : (
           <EmptyState
-            icon="people-outline"
-            title="All Caught Up!"
-            description={`You've reviewed all available students matching ${selectedRole === 'All' ? 'your preferences' : selectedRole}.`}
-            actionTitle="Reset Deck"
-            onAction={handleResetDeck}
-            style={styles.emptyContainer}
+            icon={hasModeRecords ? 'options-outline' : 'people-outline'}
+            title={hasModeRecords ? 'No matching items' : emptyTitle}
+            description={hasModeRecords
+              ? 'Try another filter or clear the current filter to see more student-submitted records.'
+              : 'Discovery uses public student-submitted posts. There are no matching records to show right now.'}
+            actionTitle={filter !== 'All' ? 'Clear filters' : isRefreshing ? 'Refreshing…' : 'Refresh'}
+            onAction={() => {
+              if (filter !== 'All') setFilter('All');
+              else void loadDiscovery(true);
+            }}
+            style={styles.emptyState}
           />
         )}
       </View>
 
-      {/* MUTUAL MATCH MODAL */}
-      <Modal
-        visible={showMatchModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMatchModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.matchCard}>
-            <View style={styles.matchIconGlow}>
-              <Ionicons name="flash" size={32} color="#FFF" />
-            </View>
-
-            <Text style={styles.matchTitle}>IT’S A MUTUAL MATCH!</Text>
-            <Text style={styles.matchSubtitle}>
-              You and <Text style={{ color: Colors.primary, fontWeight: '700' }}>{matchedStudent?.name}</Text> both want to collaborate!
-            </Text>
-
-            {/* Avatars connection visual */}
-            <View style={styles.matchAvatarsRow}>
-              <View style={styles.avatarBorderWrap}>
-                <Avatar uri={user.avatar} name={user.name} size={64} />
-              </View>
-              <View style={styles.matchPlusWrap}>
-                <Ionicons name="sparkles" size={18} color={Colors.primary} />
-              </View>
-              <View style={styles.avatarBorderWrap}>
-                <Avatar uri={matchedStudent?.avatar} name={matchedStudent?.name} size={64} />
-              </View>
-            </View>
-
-            <Text style={styles.matchHint}>
-              {matchedStudent?.name} is a {matchedStudent?.primaryRole} at {matchedStudent?.college}. Start a conversation now to discuss project milestones.
-            </Text>
-
-            <View style={styles.matchActions}>
-              <Button
-                title="Send a Message"
-                variant="primary"
-                size="md"
-                onPress={startConversationWithMatch}
-                style={{ width: '100%', marginBottom: 10 }}
-              />
-              <Button
-                title="Keep Swiping"
-                variant="ghost"
-                size="md"
-                onPress={() => {
-                  setShowMatchModal(false);
-                  handlePass();
-                }}
-                style={{ width: '100%' }}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* FILTER MODAL */}
       <Modal
         visible={showFilterModal}
         transparent
         animationType="slide"
         onRequestClose={() => setShowFilterModal(false)}
       >
-        <View style={styles.filterModalOverlay}>
+        <View style={styles.modalOverlay}>
           <View style={styles.filterSheet}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Collaborator Filters</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </TouchableOpacity>
+              <View>
+                <Text style={styles.sheetTitle}>Discovery filters</Text>
+                <Text style={styles.sheetSubtitle}>Only filters with submitted data are shown.</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close filters"
+                onPress={() => setShowFilterModal(false)}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={20} color={Colors.textPrimary} />
+              </Pressable>
             </View>
-
-            <Text style={styles.filterGroupTitle}>PREFERRED ROLE</Text>
-            <View style={styles.filterChipsGrid}>
-              {ROLE_FILTERS.map((r) => (
-                <Chip
-                  key={r}
-                  label={r}
-                  selected={selectedRole === r}
-                  onPress={() => {
-                    setSelectedRole(r);
-                    setCurrentIndex(0);
-                  }}
-                  style={{ marginBottom: 8 }}
-                />
+            <ScrollView contentContainerStyle={styles.modalFilters}>
+              <Chip label="All" selected={filter === 'All'} onPress={() => setFilter('All')} />
+              {filterOptions.map((option) => (
+                <Chip key={option} label={option} selected={filter === option} onPress={() => setFilter(option)} />
               ))}
-            </View>
+            </ScrollView>
+            <Button title="Done" variant="primary" onPress={() => setShowFilterModal(false)} />
+          </View>
+        </View>
+      </Modal>
 
-            <Button
-              title="Apply Filters"
-              variant="primary"
-              size="lg"
-              onPress={() => setShowFilterModal(false)}
-              style={{ marginTop: 24 }}
-            />
+      <Modal
+        visible={Boolean(detailsItem)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailsItem(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.detailSheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Details</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close details"
+                onPress={() => setDetailsItem(null)}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={20} color={Colors.textPrimary} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+              {renderDetails()}
+            </ScrollView>
+            {detailsItem ? (
+              <View style={styles.detailActions}>
+                <Button
+                  title={
+                    detailsItem.kind === 'person'
+                      ? 'Invite to collaborate'
+                      : detailsItem.post.type === 'service'
+                        ? 'Request service'
+                        : detailsItem.post.type === 'event_collab'
+                          ? 'Request to join'
+                          : 'Express interest'
+                  }
+                  variant="primary"
+                  onPress={() => {
+                    const item = detailsItem;
+                    setDetailsItem(null);
+                    confirmInterest(item);
+                  }}
+                />
+              </View>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -300,180 +678,277 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.screenPadding,
-    paddingTop: 8,
+    paddingTop: 7,
     paddingBottom: 10,
+    gap: 10,
+  },
+  headerCopy: {
+    flex: 1,
   },
   headerTitle: {
+    color: Colors.textPrimary,
     fontSize: Typography.title2,
     fontWeight: Typography.bold,
-    color: Colors.textPrimary,
   },
   headerSubtitle: {
-    fontSize: Typography.caption,
     color: Colors.textMuted,
-    marginTop: 2,
+    fontSize: Typography.caption,
+    lineHeight: 15,
+    marginTop: 3,
+    maxWidth: 290,
   },
   headerActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
-  filterBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  iconButton: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.border,
+    borderWidth: 1,
     position: 'relative',
   },
-  activeFilterDot: {
+  filterDot: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 8,
-    height: 8,
+    right: 8,
+    top: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: Colors.primary,
   },
-  flagBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
+  modeTabs: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.screenPadding,
+    padding: 4,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
     borderColor: Colors.border,
+    borderWidth: 1,
+  },
+  modeTab: {
+    minHeight: 48,
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 4,
+    borderRadius: BorderRadius.sm,
   },
-  rolesRow: {
-    marginBottom: 10,
+  modeTabSelected: {
+    backgroundColor: Colors.surfaceHighlight,
   },
-  rolesScroll: {
+  modeText: {
+    color: Colors.textMuted,
+    fontSize: Typography.caption,
+    fontWeight: Typography.medium,
+  },
+  modeTextSelected: {
+    color: Colors.textPrimary,
+    fontWeight: Typography.semiBold,
+  },
+  filterChips: {
+    marginTop: 10,
+  },
+  filterScroll: {
     paddingHorizontal: Spacing.screenPadding,
+    gap: 7,
   },
   arena: {
     flex: 1,
     paddingHorizontal: Spacing.screenPadding,
-    paddingBottom: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  emptyContainer: {
-    marginTop: 80,
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingTop: 12,
+    paddingBottom: 2,
+  },
+  actionButton: {
+    minHeight: 52,
+    minWidth: 62,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderWidth: 1,
+  },
+  skipButton: {
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  saveButton: {
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  actionButtonText: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: Typography.medium,
+  },
+  primaryAction: {
+    minHeight: 52,
+    flex: 1,
+    maxWidth: 260,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 13,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary,
+  },
+  primaryActionText: {
+    color: Colors.textOnPrimary,
+    fontSize: Typography.caption,
+    fontWeight: Typography.bold,
+  },
+  disabledAction: {
+    opacity: 0.65,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    marginVertical: 0,
+  },
+  refreshing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingBottom: 8,
+  },
+  refreshingText: {
+    color: Colors.textMuted,
+    fontSize: Typography.caption,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: Colors.overlay,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  matchCard: {
-    width: '100%',
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  matchIconGlow: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  matchTitle: {
-    fontSize: Typography.title3,
-    fontWeight: '900',
-    color: '#FFF',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  matchSubtitle: {
-    fontSize: Typography.body,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  matchAvatarsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 16,
-  },
-  avatarBorderWrap: {
-    padding: 3,
-    borderRadius: 36,
-    backgroundColor: Colors.primary,
-  },
-  matchPlusWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  matchHint: {
-    fontSize: Typography.footnote,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 24,
-  },
-  matchActions: {
-    width: '100%',
-  },
-  filterModalOverlay: {
-    flex: 1,
-    backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
+    backgroundColor: Colors.overlay,
   },
   filterSheet: {
-    backgroundColor: Colors.surfaceElevated,
+    maxHeight: '78%',
+    padding: Spacing.screenPadding,
+    paddingBottom: 28,
+    backgroundColor: Colors.card,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    padding: 24,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 14,
+  },
+  detailSheet: {
+    maxHeight: '88%',
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   sheetHeader: {
+    minHeight: 54,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.screenPadding,
   },
   sheetTitle: {
+    color: Colors.textPrimary,
     fontSize: Typography.title3,
     fontWeight: Typography.bold,
-    color: Colors.textPrimary,
   },
-  filterGroupTitle: {
-    fontSize: 11,
-    fontWeight: '800',
+  sheetSubtitle: {
     color: Colors.textMuted,
-    letterSpacing: 0.8,
-    marginBottom: 12,
+    fontSize: Typography.caption,
+    marginTop: 3,
   },
-  filterChipsGrid: {
+  closeButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  modalFilters: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  detailContent: {
+    padding: Spacing.screenPadding,
+    paddingBottom: 22,
+    gap: 12,
+  },
+  detailAuthor: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  detailAuthorText: {
+    flex: 1,
+  },
+  detailTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.headline,
+    fontWeight: Typography.bold,
+  },
+  detailMuted: {
+    color: Colors.textMuted,
+    fontSize: Typography.caption,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  detailLink: {
+    minHeight: 44,
+    color: Colors.primary,
+    fontSize: Typography.body,
+    fontWeight: Typography.semiBold,
+    textDecorationLine: 'underline',
+    textAlignVertical: 'center',
+  },
+  detailEntry: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 5,
+  },
+  detailSectionTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.body,
+    fontWeight: Typography.semiBold,
+  },
+  detailBody: {
+    color: Colors.textSecondary,
+    fontSize: Typography.body,
+    lineHeight: 21,
+    marginTop: 8,
+  },
+  detailActions: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingHorizontal: Spacing.screenPadding,
+    paddingVertical: 12,
+    paddingBottom: 24,
   },
 });
