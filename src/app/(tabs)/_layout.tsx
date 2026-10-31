@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Tabs, type BottomTabBarProps } from 'expo-router/tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Shadows } from '../../constants/theme';
@@ -10,20 +10,23 @@ export default function TabLayout() {
 
   // Custom TabBar that renders exactly 4 tab destinations in order:
   // 1. Home, 2. Explore, 3. Swipe, 4. Profile
-  const renderCustomTabBar = ({ state, descriptors, navigation }: any) => {
+  const renderCustomTabBar = ({ state, emitter, navigateToTab }: BottomTabBarProps) => {
     const focusedRouteName = state.routes[state.index].name;
 
     const renderTabItem = (routeName: string, title: string, iconOutline: any, iconFilled: any, badgeCount?: number) => {
+      const route = state.routes.find((tabRoute) => tabRoute.name === routeName);
+      if (!route) return null;
+
       const isFocused = focusedRouteName === routeName;
       const onPress = () => {
-        const event = navigation.emit({
+        const event = emitter.emit({
           type: 'tabPress',
-          target: routeName,
+          target: route.key,
           canPreventDefault: true,
         });
 
         if (!isFocused && !event.defaultPrevented) {
-          navigation.navigate(routeName);
+          navigateToTab(route.key);
         }
       };
 
