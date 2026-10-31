@@ -12,7 +12,6 @@ import {
   LeaderboardUser,
   CommunityPost,
   CommunityPostComment,
-  CommunityPostType,
 } from '../types';
 import {
   CURRENT_USER,

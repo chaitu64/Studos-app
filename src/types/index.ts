@@ -264,7 +264,9 @@ export type CommunityPostType =
   | 'story'
   | 'event_collab'
   | 'project'
-  | 'question';
+  | 'question'
+  | 'study_material'
+  | 'achievement';
 
 export interface CommunityPostComment {
   id: string;
@@ -295,6 +297,9 @@ export interface CommunityPost {
   tags?: string[];
   skills?: string[];
   images?: string[];
+  demo?: boolean;
+  demoLabel?: string;
+  document?: StudyResource;
 
   // For Ideas:
   problemStatement?: string;
@@ -326,5 +331,39 @@ export interface CommunityPost {
   isLiked?: boolean;
   isSaved?: boolean;
   comments?: CommunityPostComment[];
+}
+
+export type StudyResourceType =
+  | 'notes'
+  | 'previous_paper'
+  | 'important_questions'
+  | 'lab_manual'
+  | 'study_guide';
+
+export interface StudyResource {
+  id: string;
+  type: StudyResourceType;
+  title: string;
+  subject: string;
+  academicYear: string;
+  pageCount: number;
+  description: string;
+  aiSummary?: string;
+  summaryIsPreview?: boolean;
+  topics: string[];
+  fileName: string;
+  pdfUrl?: string;
+  thumbnailUrl?: string;
+  thumbnailAsset?: number;
+  fileSize?: number;
+  fileType: 'application/pdf';
+  semester?: string;
+  branch?: string;
+  thumbnailStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  summaryStatus?: 'pending' | 'processing' | 'completed' | 'unavailable' | 'failed';
+  uploader: CommunityPost['author'];
+  uploadedAt: string;
+  isBookmarked?: boolean;
+  demo?: boolean;
 }
 

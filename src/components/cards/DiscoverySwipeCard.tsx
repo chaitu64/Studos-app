@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+/* Reanimated shared values are intentionally mutated inside UI-thread worklets. */
+/* eslint-disable react-hooks/immutability */
+import React, { forwardRef, useImperativeHandle } from 'react';
 import {
-  Animated,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +9,16 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  FadeIn,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Shadows, Typography } from '../../constants/theme';
@@ -33,6 +43,11 @@ interface DiscoverySwipeCardProps {
   onSkip: () => void;
   onInterest: () => void;
   onDetails: () => void;
+}
+
+export interface DiscoverySwipeCardHandle {
+  swipeLeft: () => void;
+  swipeRight: () => void;
 }
 
 const SWIPE_DISTANCE_RATIO = 0.24;
@@ -65,112 +80,67 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-export function DiscoverySwipeCard({
+export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, DiscoverySwipeCardProps>(function DiscoverySwipeCard({
   item,
   actionLabel,
   disabled = false,
   onSkip,
   onInterest,
   onDetails,
-}: DiscoverySwipeCardProps) {
-  const [pan] = useState(() => new Animated.ValueXY());
+}: DiscoverySwipeCardProps, ref) {
   const { width: screenWidth } = useWindowDimensions();
   const swipeThreshold = Math.min(120, Math.max(84, screenWidth * SWIPE_DISTANCE_RATIO));
+  const translateX = useSharedValue(0);
+  const gestureStartX = useSharedValue(0);
 
-  useEffect(() => {
-    pan.setValue({ x: 0, y: 0 });
-  }, [item.id, pan]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          !disabled && Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-        onPanResponderMove: (_, gesture) => pan.setValue({ x: gesture.dx, y: 0 }),
-        onPanResponderRelease: (_, gesture) => {
-          const direction =
-            gesture.dx > swipeThreshold ||
-            (gesture.dx > SWIPE_FLICK_DISTANCE && gesture.vx > SWIPE_FLICK_VELOCITY)
-              ? 'right'
-              : gesture.dx < -swipeThreshold ||
-                (gesture.dx < -SWIPE_FLICK_DISTANCE && gesture.vx < -SWIPE_FLICK_VELOCITY)
-                ? 'left'
-                : null;
-
-          if (!direction) {
-            Animated.spring(pan, {
-              toValue: { x: 0, y: 0 },
-              velocity: { x: gesture.vx, y: 0 },
-              tension: 85,
-              friction: 12,
-              useNativeDriver: true,
-            }).start();
-            return;
-          }
-
-          Animated.spring(pan, {
-            toValue: {
-              x: direction === 'right' ? screenWidth + 100 : -screenWidth - 100,
-              y: 0,
-            },
-            velocity: { x: gesture.vx, y: 0 },
-            tension: 70,
-            friction: 12,
-            overshootClamping: true,
-            useNativeDriver: true,
-          }).start(({ finished }) => {
-            if (!finished) return;
-            pan.setValue({ x: 0, y: 0 });
-            if (direction === 'right') onInterest();
-            else onSkip();
-          });
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            tension: 85,
-            friction: 12,
-            useNativeDriver: true,
-          }).start();
-        },
-      }),
-    [disabled, onInterest, onSkip, pan, screenWidth, swipeThreshold]
-  );
-
-  const rotate = pan.x.interpolate({
-    inputRange: [-screenWidth / 2, 0, screenWidth / 2],
-    outputRange: ['-7deg', '0deg', '7deg'],
-    extrapolate: 'clamp',
-  });
-  const scale = pan.x.interpolate({
-    inputRange: [-screenWidth, 0, screenWidth],
-    outputRange: [0.96, 1, 0.96],
-    extrapolate: 'clamp',
-  });
-  const interestOpacity = pan.x.interpolate({
-    inputRange: [16, swipeThreshold],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-  const skipOpacity = pan.x.interpolate({
-    inputRange: [-swipeThreshold, -16],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-
-  const stylesForTransform = {
-    transform: [{ translateX: pan.x }, { rotate }, { scale }],
+  const completeSwipe = (direction: 'left' | 'right') => {
+    'worklet';
+    translateX.value = withTiming(direction === 'right' ? screenWidth + 120 : -screenWidth - 120, { duration: 210 }, (finished) => {
+      if (finished) {
+        translateX.value = 0;
+        runOnJS(direction === 'right' ? onInterest : onSkip)();
+      }
+    });
   };
 
+  useImperativeHandle(ref, () => ({
+    swipeLeft: () => completeSwipe('left'),
+    swipeRight: () => completeSwipe('right'),
+  }));
+
+  const panGesture = Gesture.Pan()
+    .enabled(!disabled)
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-18, 18])
+    .onBegin(() => { gestureStartX.value = translateX.value; })
+    .onUpdate((event) => { translateX.value = gestureStartX.value + event.translationX; })
+    .onEnd((event) => {
+      const projectedX = translateX.value + event.velocityX * 0.12;
+      const right = projectedX > swipeThreshold || (translateX.value > SWIPE_FLICK_DISTANCE && event.velocityX > SWIPE_FLICK_VELOCITY * 1000);
+      const left = projectedX < -swipeThreshold || (translateX.value < -SWIPE_FLICK_DISTANCE && event.velocityX < -SWIPE_FLICK_VELOCITY * 1000);
+      if (right) completeSwipe('right');
+      else if (left) completeSwipe('left');
+      else translateX.value = withSpring(0, { damping: 18, stiffness: 210, mass: 0.75 });
+    });
+
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(Math.abs(translateX.value), [0, screenWidth], [1, 0.76]),
+    transform: [
+      { translateX: translateX.value },
+      { rotate: `${interpolate(translateX.value, [-screenWidth / 2, 0, screenWidth / 2], [-7, 0, 7])}deg` },
+      { scale: interpolate(Math.abs(translateX.value), [0, screenWidth], [1, 0.96]) },
+    ],
+  }));
+  const interestStyle = useAnimatedStyle(() => ({ opacity: interpolate(translateX.value, [16, swipeThreshold], [0, 1], 'clamp') }));
+  const skipStyle = useAnimatedStyle(() => ({ opacity: interpolate(translateX.value, [-swipeThreshold, -16], [1, 0], 'clamp') }));
+
   return (
-    <Animated.View
-      {...panResponder.panHandlers}
-      style={[styles.card, stylesForTransform]}
-    >
-      <Animated.View style={[styles.stamp, styles.interestStamp, { opacity: interestOpacity }]}>
+    <GestureDetector gesture={panGesture}>
+    <Animated.View entering={FadeIn.duration(180)} style={[styles.card, cardAnimatedStyle]}>
+      <Animated.View style={[styles.stamp, styles.interestStamp, interestStyle]}>
         <Text style={styles.interestStampText}>EXPRESS INTEREST</Text>
       </Animated.View>
-      <Animated.View style={[styles.stamp, styles.skipStamp, { opacity: skipOpacity }]}>
+      <Animated.View style={[styles.stamp, styles.skipStamp, skipStyle]}>
         <Text style={styles.skipStampText}>SKIP</Text>
       </Animated.View>
 
@@ -205,13 +175,15 @@ export function DiscoverySwipeCard({
         </Pressable>
       </View>
     </Animated.View>
+    </GestureDetector>
   );
-}
+});
 
 function PersonCard({ person }: { person: DiscoveryPerson }) {
-  const recentPosts = person.posts.slice(0, 2);
   const primaryPost = person.sourcePost;
   const role = person.author.role;
+  const interests = primaryPost.tags || [];
+  const lookingFor = primaryPost.eventRoleNeeded || primaryPost.rolesNeeded?.join(', ');
 
   return (
     <>
@@ -219,7 +191,8 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
         <Avatar
           uri={person.author.avatar}
           name={person.author.name}
-          size={64}
+          size={88}
+          isOnline={!primaryPost.demo}
           isVerified={person.author.isVerified}
         />
         <View style={styles.personIdentity}>
@@ -236,28 +209,32 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
         </View>
       </View>
 
-      <View style={styles.divider} />
-      <Section label="RECENT CONTRIBUTION">
-        <Text style={styles.cardTitle} numberOfLines={2}>{primaryPost.title}</Text>
-        <Text style={styles.bodyText} numberOfLines={3}>
-          {primaryPost.content.trim()}
-        </Text>
-      </Section>
+      <Text style={styles.personBio} numberOfLines={3}>{primaryPost.content.trim()}</Text>
 
       {person.skills.length > 0 ? (
-        <Section label="SHARED SKILLS">
+        <Section label="TOP SKILLS">
           <SkillTags skills={person.skills} />
         </Section>
       ) : null}
 
-      {recentPosts.length > 1 ? (
-        <Section label="ALSO SHARED">
-          {recentPosts.slice(1).map((post) => (
-            <View key={post.id} style={styles.relatedPost}>
-              <Ionicons name="document-text-outline" size={15} color={Colors.textMuted} />
-              <Text style={styles.relatedPostText} numberOfLines={1}>{post.title}</Text>
-            </View>
-          ))}
+      <View style={styles.profileGrid}>
+        <View style={styles.profileFact}>
+          <View style={styles.factIcon}><Ionicons name="rocket-outline" size={15} color={Colors.primary} /></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>BUILDING</Text><Text style={styles.factValue} numberOfLines={2}>{primaryPost.title}</Text></View>
+        </View>
+        {lookingFor ? <View style={styles.profileFact}>
+          <View style={styles.factIcon}><Ionicons name="people-outline" size={15} color={Colors.accentCyan} /></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>LOOKING FOR</Text><Text style={styles.factValue} numberOfLines={2}>{lookingFor}</Text></View>
+        </View> : null}
+        {primaryPost.serviceAvailability ? <View style={styles.profileFact}>
+          <View style={styles.factIcon}><Ionicons name="calendar-outline" size={15} color={Colors.accentGreen} /></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>AVAILABILITY</Text><Text style={styles.factValue} numberOfLines={2}>{primaryPost.serviceAvailability}</Text></View>
+        </View> : null}
+      </View>
+
+      {interests.length ? (
+        <Section label="INTERESTS">
+          <Text style={styles.interestsText}>{interests.join('  ·  ')}</Text>
         </Section>
       ) : null}
     </>
@@ -465,6 +442,13 @@ const styles = StyleSheet.create({
     fontSize: Typography.caption,
     lineHeight: 16,
   },
+  personBio: { color: Colors.textSecondary, fontSize: Typography.body, lineHeight: 21, marginTop: 16 },
+  profileGrid: { gap: 9, marginTop: 16 },
+  profileFact: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceSubtle, borderWidth: 1, borderColor: Colors.border },
+  factIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: Colors.surfaceHighlight },
+  factCopy: { flex: 1 },
+  factValue: { color: Colors.textPrimary, fontSize: Typography.caption, lineHeight: 17, fontWeight: Typography.semiBold },
+  interestsText: { color: Colors.textSecondary, fontSize: Typography.caption, lineHeight: 18 },
   divider: {
     height: 1,
     backgroundColor: Colors.border,

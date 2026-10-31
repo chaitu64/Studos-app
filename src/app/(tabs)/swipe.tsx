@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, BorderRadius, Spacing, Typography } from '../../constants/theme';
 import { Avatar } from '../../components/ui/Avatar';
@@ -22,10 +23,11 @@ import {
   DiscoveryItem,
   DiscoveryPerson,
   DiscoverySwipeCard,
+  DiscoverySwipeCardHandle,
 } from '../../components/cards/DiscoverySwipeCard';
 import { useApp } from '../../context/AppContext';
 import { CommunityPost } from '../../types';
-import { DEMO_DISCOVERY_POSTS } from '../../services/demoDiscoveryData';
+import { SWIPE_DEMO_POSTS } from '../../services/swipeDemoData';
 
 type DiscoveryMode = 'people' | 'ideas' | 'services';
 
@@ -66,6 +68,7 @@ export default function SwipeScreen() {
   const [skippedIds, setSkippedIds] = useState<string[]>([]);
   const [actionedIds, setActionedIds] = useState<string[]>([]);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const swipeCardRef = useRef<DiscoverySwipeCardHandle>(null);
 
   const loadDiscovery = useCallback(async (refresh = false) => {
     if (refresh) setIsRefreshing(true);
@@ -105,7 +108,7 @@ export default function SwipeScreen() {
   const discoverablePosts = useMemo(() => {
     const byIdeaId = new Map(ideas.map((idea) => [idea.id, idea]));
 
-    return [...DEMO_DISCOVERY_POSTS, ...communityPosts].filter((post) => {
+    return communityPosts.filter((post) => {
       if (
         !post.author.id ||
         post.author.id === 'unknown' ||
@@ -127,7 +130,8 @@ export default function SwipeScreen() {
 
   const people = useMemo<DiscoveryPerson[]>(() => {
     const grouped = new Map<string, CommunityPost[]>();
-    for (const post of discoverablePosts.filter((entry) =>
+    const peopleSource = [...discoverablePosts, ...(__DEV__ ? SWIPE_DEMO_POSTS : [])];
+    for (const post of peopleSource.filter((entry) =>
       entry.type === 'idea' ||
       entry.type === 'project' ||
       entry.type === 'event_collab' ||
@@ -245,6 +249,7 @@ export default function SwipeScreen() {
   const submitInterest = useCallback(async (item: DiscoveryItem) => {
     const post = getItemPost(item);
     if (post.id.startsWith('demo_')) {
+      setActionedIds((previous) => previous.includes(item.id) ? previous : [...previous, item.id]);
       Alert.alert('Demo preview', 'This is sample content for checking the design. No request was sent.');
       return;
     }
@@ -346,14 +351,6 @@ export default function SwipeScreen() {
     }
   };
 
-  const openOverflowMenu = () => {
-    Alert.alert('Discovery options', 'Choose an action for your current feed.', [
-      { text: 'Refresh discovery', onPress: () => { void loadDiscovery(true); } },
-      ...(currentItem ? [{ text: 'Skip this item', onPress: skipCurrent }] : []),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
   const renderDetails = () => {
     if (!detailsItem) return null;
     if (detailsItem.kind === 'person') {
@@ -439,8 +436,8 @@ export default function SwipeScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>Discover & Connect</Text>
-          <Text style={styles.headerSubtitle}>Find your next teammate, project, or opportunity to contribute.</Text>
+          <Text style={styles.headerTitle}>Find Your People</Text>
+          <Text style={styles.headerSubtitle}>Discover students who share your ambition.</Text>
         </View>
         <View style={styles.headerActions}>
           <Pressable
@@ -455,12 +452,12 @@ export default function SwipeScreen() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="More discovery options"
-            onPress={openOverflowMenu}
+            accessibilityLabel="Search students"
+            onPress={() => router.push('/search' as never)}
             style={styles.iconButton}
             hitSlop={8}
           >
-            <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textPrimary} />
+            <Ionicons name="search-outline" size={20} color={Colors.textPrimary} />
           </Pressable>
         </View>
       </View>
@@ -516,7 +513,13 @@ export default function SwipeScreen() {
                 <Text style={styles.refreshingText}>Refreshing discovery…</Text>
               </View>
             ) : null}
+            {visibleItems[1] ? <View pointerEvents="none" style={styles.nextCardPreview}>
+              <Text style={styles.nextCardEyebrow}>UP NEXT</Text>
+              <Text style={styles.nextCardName}>{visibleItems[1].kind === 'person' ? visibleItems[1].person.author.name : visibleItems[1].post.title}</Text>
+            </View> : null}
             <DiscoverySwipeCard
+              key={currentItem.id}
+              ref={swipeCardRef}
               item={currentItem}
               actionLabel={actionLabel}
               disabled={pendingId === currentItem.id}
@@ -528,7 +531,7 @@ export default function SwipeScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Skip this item"
-                onPress={skipCurrent}
+                onPress={() => swipeCardRef.current?.swipeLeft()}
                 disabled={pendingId === currentItem.id}
                 style={[styles.actionButton, styles.skipButton]}
                 hitSlop={4}
@@ -552,7 +555,7 @@ export default function SwipeScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={actionLabel}
-                onPress={() => confirmInterest(currentItem)}
+                onPress={() => swipeCardRef.current?.swipeRight()}
                 disabled={pendingId === currentItem.id}
                 style={[styles.primaryAction, pendingId === currentItem.id && styles.disabledAction]}
               >
@@ -767,7 +770,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screenPadding,
     paddingTop: 12,
     paddingBottom: 8,
+    position: 'relative',
   },
+  nextCardPreview: {
+    position: 'absolute',
+    left: Spacing.screenPadding + 8,
+    right: Spacing.screenPadding + 8,
+    top: 22,
+    bottom: 22,
+    padding: 18,
+    justifyContent: 'flex-end',
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    transform: [{ scale: 0.97 }],
+  },
+  nextCardEyebrow: { color: Colors.textMuted, fontSize: 9, fontWeight: Typography.bold, letterSpacing: 0.7 },
+  nextCardName: { color: Colors.textSecondary, fontSize: Typography.body, fontWeight: Typography.semiBold, marginTop: 4 },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -15,7 +15,6 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Avatar } from '../ui/Avatar';
-import { Badge } from '../ui/Badge';
 import { CommunityPost } from '../../types';
 
 export interface CollaborateModalProps {

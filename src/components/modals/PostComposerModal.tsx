@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -11,27 +11,30 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Chip } from '../ui/Chip';
-import { Badge } from '../ui/Badge';
 import { CommunityPostType, CommunityPost, StudentRole, ProjectStage } from '../../types';
+import { PdfUpload } from '../../services/resourceApi';
 
 export interface PostComposerModalProps {
   visible: boolean;
   initialType?: CommunityPostType;
   onClose: () => void;
-  onSubmit: (post: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => Promise<any>;
+  onSubmit: (post: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>, pdf?: PdfUpload) => Promise<any>;
 }
 
 const POST_TYPES: { id: CommunityPostType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+  { id: 'study_material', label: 'PDF / Notes', icon: 'document-text-outline', color: Colors.primary },
   { id: 'idea', label: 'Idea', icon: 'bulb-outline', color: Colors.accentAmber },
   { id: 'service', label: 'Service', icon: 'construct-outline', color: Colors.accentCyan },
   { id: 'story', label: 'Story', icon: 'book-outline', color: Colors.accentPurple },
   { id: 'event_collab', label: 'Event Collab', icon: 'trophy-outline', color: Colors.primary },
   { id: 'project', label: 'Project', icon: 'rocket-outline', color: Colors.accentGreen },
   { id: 'question', label: 'Question', icon: 'help-circle-outline', color: Colors.info },
+  { id: 'achievement', label: 'Achievement', icon: 'ribbon-outline', color: Colors.accentAmber },
 ];
 
 const AVAILABLE_ROLES: StudentRole[] = [
@@ -56,11 +59,14 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [skillsInput, setSkillsInput] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState<PdfUpload | null>(null);
+  const [subject, setSubject] = useState('');
+  const [academicYear, setAcademicYear] = useState('');
 
   // Idea fields
   const [problemStatement, setProblemStatement] = useState('');
   const [proposedSolution, setProposedSolution] = useState('');
-  const [stage, setStage] = useState<ProjectStage>('Concept');
+  const [stage] = useState<ProjectStage>('Concept');
   const [selectedRoles, setSelectedRoles] = useState<StudentRole[]>(['Developer']);
 
   // Service fields
@@ -76,12 +82,6 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [demoUrl, setDemoUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
 
-  useEffect(() => {
-    if (visible) {
-      setPostType(initialType);
-    }
-  }, [visible, initialType]);
-
   const resetForm = () => {
     setTitle('');
     setContent('');
@@ -96,6 +96,9 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setEventDate('');
     setDemoUrl('');
     setGithubUrl('');
+    setSelectedPdf(null);
+    setSubject('');
+    setAcademicYear('');
   };
 
   const toggleRole = (r: StudentRole) => {
@@ -115,6 +118,10 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     }
     if (!content.trim()) {
       Alert.alert('Missing Field', 'Please enter a description or details for your post.');
+      return;
+    }
+    if (postType === 'study_material' && !selectedPdf) {
+      Alert.alert('Select a PDF', 'Choose the original PDF before publishing this study resource.');
       return;
     }
 
@@ -152,7 +159,13 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         demoUrl: postType === 'project' ? demoUrl.trim() || undefined : undefined,
         githubUrl: postType === 'project' ? githubUrl.trim() || undefined : undefined,
         technologies: postType === 'project' && skills.length > 0 ? skills : undefined,
-      });
+        document: postType === 'study_material' ? {
+          id: 'uploading', type: 'notes', title: title.trim(), description: content.trim(), subject: subject.trim() || 'General',
+          academicYear: academicYear.trim(), pageCount: 0, fileName: selectedPdf!.name, fileType: 'application/pdf',
+          fileSize: selectedPdf!.size, thumbnailStatus: 'pending', summaryStatus: 'pending', topics: tags,
+          uploader: { id: '', name: '', avatar: '' }, uploadedAt: 'Just now',
+        } : undefined,
+      }, selectedPdf || undefined);
 
       resetForm();
       onClose();
@@ -210,6 +223,19 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
           {/* Form Scroll View */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContainer}>
+            {postType === 'study_material' ? <View style={styles.pdfSection}>
+              <TouchableOpacity style={styles.pdfPicker} onPress={async () => {
+                const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true, multiple: false });
+                if (!result.canceled) {
+                  const asset = result.assets[0];
+                  setSelectedPdf({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/pdf', size: asset.size });
+                }
+              }}>
+                <Ionicons name={selectedPdf ? 'checkmark-circle' : 'cloud-upload-outline'} size={24} color={selectedPdf ? Colors.success : Colors.primary} />
+                <View style={{ flex: 1 }}><Text style={styles.pdfPickerTitle}>{selectedPdf ? selectedPdf.name : 'Choose original PDF'}</Text><Text style={styles.pdfPickerMeta}>{selectedPdf ? `${Math.max(1, Math.round((selectedPdf.size || 0) / 1024))} KB · Ready to upload` : 'PDF only · Maximum 40 MB'}</Text></View>
+              </TouchableOpacity>
+              <View style={styles.twoColRow}><View style={{ flex: 1, marginRight: 8 }}><Input label="Subject" value={subject} onChangeText={setSubject} placeholder="Computer Networks" /></View><View style={{ flex: 1 }}><Input label="Academic year" value={academicYear} onChangeText={setAcademicYear} placeholder="3rd Year" /></View></View>
+            </View> : null}
             {/* Title */}
             <Input
               label={
@@ -471,6 +497,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 32,
   },
+  pdfSection: { marginBottom: 8 },
+  pdfPicker: { minHeight: 68, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12, marginBottom: 14 },
+  pdfPickerTitle: { color: Colors.textPrimary, fontSize: 13, fontWeight: Typography.semiBold },
+  pdfPickerMeta: { color: Colors.textMuted, fontSize: 10, marginTop: 3 },
   twoColRow: {
     flexDirection: 'row',
   },

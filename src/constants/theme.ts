@@ -1,16 +1,16 @@
 export const Colors = {
   // Backgrounds - Dark charcoal & deep near-black
-  background: '#090B0F',
+  background: '#090A0F',
   surface: '#11151F',
-  surfaceElevated: '#171D2B',
+  surfaceElevated: '#171D2D',
   surfaceHighlight: '#1E2638',
   surfaceSubtle: '#141A26',
-  card: '#121622',
-  cardBorder: '#1F293D',
+  card: '#121624',
+  cardBorder: '#252C3D',
   cardBorderHover: '#2E3D5B',
 
   // Vivid Red Accent - Selective, punchy, high-tech
-  primary: '#FF3B30',
+  primary: '#FF4545',
   primaryHover: '#E02D22',
   primarySubtle: '#FF3B301A',
   primaryBorder: '#FF3B304D',

@@ -1,696 +1,204 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { Header } from '../../components/navigation/Header';
-import { Avatar } from '../../components/ui/Avatar';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { CardSkeleton } from '../../components/ui/Skeleton';
+import { CompactPostComposer } from '../../components/home/CompactPostComposer';
+import { StudyHubSection } from '../../components/home/StudyHubSection';
+import { AskCommunitySection, BuiltByStudentsSection, CommunityChatSection, SkillsServicesSection, StudentSpotlightSection } from '../../components/home/DiscoverySections';
 import { CommunityPostCard } from '../../components/cards/CommunityPostCard';
 import { PostComposerModal } from '../../components/modals/PostComposerModal';
 import { PostCommentsModal } from '../../components/modals/PostCommentsModal';
 import { CollaborateModal } from '../../components/modals/CollaborateModal';
 import { AuthorProfileModal } from '../../components/modals/AuthorProfileModal';
 import { useApp } from '../../context/AppContext';
-import { CommunityPost, CommunityPostType } from '../../types';
-import { DEMO_DISCOVERY_POSTS } from '../../services/demoDiscoveryData';
+import { dataService } from '../../services/dataService';
+import { DEMO_STUDY_RESOURCES, getDemoHomePage } from '../../services/demoHomeData';
+import { DEMO_COMMUNITY_QUESTIONS, DEMO_STUDENT_PROJECTS, DEMO_STUDENT_SERVICES, DEMO_STUDENT_SPOTLIGHTS, StudentSpotlight } from '../../services/homeDiscoveryData';
+import { fetchResource, PdfUpload, uploadPdfResource } from '../../services/resourceApi';
+import { CommunityPost, CommunityPostType, StudyResource, StudyResourceType } from '../../types';
+import { Colors, Spacing, Typography } from '../../constants/theme';
 
-interface FilterCategory {
-  id: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  type?: CommunityPostType;
-}
-
-const FEED_FILTERS: FilterCategory[] = [
-  { id: 'all', label: 'All Activity', icon: 'grid-outline' },
-  { id: 'idea', label: 'Ideas & Innovation', icon: 'bulb-outline', type: 'idea' },
-  { id: 'service', label: 'Student Services', icon: 'construct-outline', type: 'service' },
-  { id: 'story', label: 'Experiences & Stories', icon: 'book-outline', type: 'story' },
-  { id: 'event_collab', label: 'Hackathons & Events', icon: 'trophy-outline', type: 'event_collab' },
-  { id: 'project', label: 'Projects & Updates', icon: 'rocket-outline', type: 'project' },
-  { id: 'question', label: 'Questions & Help', icon: 'help-circle-outline', type: 'question' },
+const PAGE_SIZE = 5;
+type HomeListItem =
+  | { kind: 'post'; post: CommunityPost }
+  | { kind: 'study' }
+  | { kind: 'questions' }
+  | { kind: 'chat' }
+  | { kind: 'empty' };
+const filters: { id: string; label: string; types?: CommunityPostType[] }[] = [
+  { id: 'all', label: 'All' }, { id: 'stories', label: 'Stories', types: ['story'] },
+  { id: 'achievement', label: 'Achievements', types: ['achievement'] }, { id: 'ideas', label: 'Ideas', types: ['idea'] },
+  { id: 'hackathons', label: 'Hackathons', types: ['story'] }, { id: 'help', label: 'Help', types: ['question'] }, { id: 'team', label: 'Team Up', types: ['event_collab'] },
 ];
 
+const mergeUnique = (current: CommunityPost[], incoming: CommunityPost[]) => {
+  const map = new Map(current.map((item) => [item.id, item]));
+  incoming.forEach((item) => map.set(item.id, { ...map.get(item.id), ...item }));
+  return [...map.values()];
+};
+
 export default function HomeScreen() {
-  const {
-    user,
-    communityPosts,
-    refreshCommunityPosts,
-    addCommunityPost,
-    toggleLikePost,
-    toggleSavePost,
-    addPostComment,
-    applyToCollaborate,
-  } = useApp();
+  const { user, conversations, addCommunityPost, toggleLikePost, toggleSavePost, addPostComment, applyToCollaborate } = useApp();
+  const [posts, setPosts] = useState<CommunityPost[]>([]); const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); const [error, setError] = useState<string | null>(null); const [selectedFilter, setSelectedFilter] = useState('all');
+  const [resourceFilter, setResourceFilter] = useState<StudyResourceType | 'all'>('all'); const [resources, setResources] = useState<StudyResource[]>(__DEV__ ? DEMO_STUDY_RESOURCES : []);
+  const [composerVisible, setComposerVisible] = useState(false); const [composerType, setComposerType] = useState<CommunityPostType>('story');
+  const [activeCommentPost, setActiveCommentPost] = useState<CommunityPost | null>(null); const [activeCollabPost, setActiveCollabPost] = useState<CommunityPost | null>(null);
+  const [selectedAuthor, setSelectedAuthor] = useState<CommunityPost['author'] | null>(null);
+  const requestInFlight = useRef(false); const endReachedDuringMomentum = useRef(false); const mounted = useRef(true);
 
-  const [refreshing, setRefreshing] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  useEffect(() => () => { mounted.current = false; }, []);
 
-  // Modals state
-  const [composerVisible, setComposerVisible] = useState(false);
-  const [composerInitialType, setComposerInitialType] = useState<CommunityPostType>('idea');
-
-  const [activeCommentPost, setActiveCommentPost] = useState<CommunityPost | null>(null);
-  const [activeCollabPost, setActiveCollabPost] = useState<CommunityPost | null>(null);
-  const [selectedAuthor, setSelectedAuthor] = useState<{
-    id: string;
-    name: string;
-    avatar: string;
-    college?: string;
-    role?: string;
-    isVerified?: boolean;
-  } | null>(null);
-
-  // Initial load of real community feed
-  const loadFeed = useCallback(async () => {
+  const loadPage = useCallback(async (nextPage: number, replace = false) => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true; setError(null);
+    if (nextPage > 1) setLoadingMore(true); else if (!replace) setLoading(true);
     try {
-      setErrorMessage(null);
-      await refreshCommunityPosts();
+      const real = await dataService.getCommunityPosts({ page: nextPage, perPage: PAGE_SIZE });
+      const demo = __DEV__ ? getDemoHomePage(nextPage, PAGE_SIZE) : { items: [], hasMore: false };
+      if (!mounted.current) return;
+      const incoming = mergeUnique(real.posts, demo.items);
+      setPosts((current) => replace ? incoming : mergeUnique(current, incoming));
+      setPage(nextPage); setHasMore(real.hasMore || demo.hasMore);
     } catch {
-      setErrorMessage('Unable to load student community feed. Please check your connection and retry.');
+      if (mounted.current) setError(nextPage === 1 ? 'Couldn’t load the community feed. Try again.' : 'Couldn’t load more posts. Try again.');
     } finally {
-      setInitialLoading(false);
+      requestInFlight.current = false; if (mounted.current) { setLoading(false); setLoadingMore(false); setRefreshing(false); }
     }
-  }, [refreshCommunityPosts]);
+  }, []);
 
-  useEffect(() => {
-    loadFeed();
-  }, [loadFeed]);
+  useEffect(() => { void Promise.resolve().then(() => loadPage(1, true)); }, [loadPage]);
+  const refresh = useCallback(() => { setRefreshing(true); setHasMore(true); loadPage(1, true); }, [loadPage]);
+  const loadMore = useCallback(() => { if (!endReachedDuringMomentum.current || loadingMore || !hasMore || requestInFlight.current) return; endReachedDuringMomentum.current = false; loadPage(page + 1); }, [hasMore, loadPage, loadingMore, page]);
+  const selectedTypes = filters.find((item) => item.id === selectedFilter)?.types;
+  const filteredPosts = useMemo(() => posts.filter((post) => {
+    if (selectedFilter === 'hackathons') return post.category === 'Hackathon' || post.tags?.includes('Hackathon');
+    return selectedTypes ? selectedTypes.includes(post.type) : !post.document;
+  }), [posts, selectedFilter, selectedTypes]);
+  const allResources = useMemo(() => {
+    const realResources = posts.filter((post) => !post.demo && post.document).map((post) => post.document!);
+    const map = new Map([...realResources, ...resources].map((item) => [item.id, item]));
+    return [...map.values()];
+  }, [posts, resources]);
+  const visibleResources = useMemo(() => allResources.filter((resource) => resourceFilter === 'all' || resource.type === resourceFilter), [allResources, resourceFilter]);
+  const realStudents = useMemo<StudentSpotlight[]>(() => {
+    const map = new Map<string, StudentSpotlight>();
+    posts.filter((post) => !post.demo && post.author.id !== user.id).forEach((post) => {
+      if (!map.has(post.author.id)) map.set(post.author.id, {
+        id: post.author.id, name: post.author.name, avatar: post.author.avatar,
+        branchYear: post.author.college || 'StudOS student', role: post.author.role || 'Student builder',
+        intro: post.content, skills: (post.skills || post.tags || []).slice(0, 3), currentWork: post.title,
+      });
+    });
+    return [...map.values()].slice(0, 8);
+  }, [posts, user.id]);
+  const spotlightStudents = useMemo(() => __DEV__
+    ? [...realStudents, ...DEMO_STUDENT_SPOTLIGHTS].filter((student, index, all) => all.findIndex((entry) => entry.id === student.id) === index).slice(0, 8)
+    : realStudents, [realStudents]);
+  const serviceOfferings = useMemo(() => {
+    const real = posts.filter((post) => !post.demo && post.type === 'service').map((post) => ({
+      id: post.id, title: post.title, description: post.content,
+      provider: realStudents.find((student) => student.id === post.author.id) || { id: post.author.id, name: post.author.name, avatar: post.author.avatar, branchYear: post.author.college || '', role: post.author.role || 'Student', intro: '', skills: post.skills || [], currentWork: post.title },
+      skills: post.skills || [], availability: post.serviceAvailability || 'Contact for availability',
+    }));
+    return __DEV__ ? [...real, ...DEMO_STUDENT_SERVICES] : real;
+  }, [posts, realStudents]);
+  const projectFeatures = useMemo(() => {
+    const real = posts.filter((post) => !post.demo && post.type === 'project').map((post) => ({
+      id: post.id, title: post.title, summary: post.content, author: post.author.name,
+      branchYear: post.author.college || post.author.role || '', image: post.images?.[0],
+      technologies: post.technologies || post.skills || [], seeking: post.rolesNeeded?.join(', '),
+    }));
+    return __DEV__ ? [...real, ...DEMO_STUDENT_PROJECTS] : real;
+  }, [posts]);
+  const questionPreviews = useMemo(() => {
+    const real = posts.filter((post) => !post.demo && post.type === 'question').map((post) => ({
+      id: post.id, author: post.author.name, branchYear: post.author.college || '', title: post.title,
+      replies: post.commentsCount, topic: post.tags?.[0] || 'Community',
+    }));
+    return __DEV__ ? [...real, ...DEMO_COMMUNITY_QUESTIONS] : real;
+  }, [posts]);
+  const homeConversations = useMemo(() => __DEV__
+    ? conversations
+    : conversations.filter((conversation) => !conversation.id.startsWith('conv_')),
+  [conversations]);
+  const feedItems = useMemo<HomeListItem[]>(() => {
+    const storyItems = filteredPosts.map((post) => ({ kind: 'post' as const, post }));
+    const firstBatch = storyItems.slice(0, PAGE_SIZE);
+    const laterBatches = storyItems.slice(PAGE_SIZE);
+    return [
+      ...(firstBatch.length ? firstBatch : [{ kind: 'empty' as const }]),
+      { kind: 'study' as const }, { kind: 'questions' as const }, { kind: 'chat' as const },
+      ...laterBatches,
+    ];
+  }, [filteredPosts]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadFeed();
-    setRefreshing(false);
+  const openComposer = (type: CommunityPostType) => { setComposerType(type); setComposerVisible(true); };
+  const submitPost = async (value: Parameters<typeof addCommunityPost>[0], pdf?: PdfUpload) => {
+    let postValue = value;
+    if (value.type === 'study_material' && pdf && value.document) {
+      const uploaded = await uploadPdfResource(pdf, {
+        type: value.document.type, title: value.title, description: value.content,
+        subject: value.document.subject, academicYear: value.document.academicYear,
+        uploadedBy: user.id, createdAt: 'Just now',
+      }, { id: user.id, name: user.name, avatar: user.avatar, college: user.college, role: user.primaryRole });
+      postValue = { ...value, document: uploaded };
+    }
+    const created = await addCommunityPost(postValue);
+    setPosts((current) => mergeUnique([created], current));
+    if (created.document?.thumbnailStatus !== 'completed') {
+      void new Promise((resolve) => setTimeout(resolve, 800)).then(async () => {
+        try {
+          const processed = await fetchResource(created.document!.id, created.document!.uploader);
+          setPosts((current) => current.map((post) => post.id === created.id ? { ...post, document: processed } : post));
+          setResources((current) => [...current.filter((item) => item.id !== processed.id), processed]);
+        } catch { /* Card keeps its pending or failed state; refresh can retry. */ }
+      });
+    }
+    return created;
   };
-
-  // Open Composer with specific type from quick action
-  const handleOpenComposer = (type: CommunityPostType) => {
-    setComposerInitialType(type);
-    setComposerVisible(true);
+  const updatePost = (id: string, change: Partial<CommunityPost>) => setPosts((current) => current.map((item) => item.id === id ? { ...item, ...change } : item));
+  const openPost = (post: CommunityPost) => {
+    if (post.document) router.push({ pathname: '/resource/[id]', params: { id: post.document.id } } as never);
+    else if (post.ideaId) router.push(`/ideahub/${post.ideaId}` as never); else if (post.projectId) router.push(`/projects/${post.projectId}` as never); else setActiveCommentPost(post);
   };
+  const openAuthor = (id: string) => { if (id === user.id) router.push('/(tabs)/profile' as never); else { const author = posts.find((post) => post.author.id === id)?.author; if (author && !author.id.startsWith('preview_')) setSelectedAuthor(author); } };
 
-  // Filter posts based on selected category tab
-  const filteredPosts = useMemo(() => {
-    const feedPosts = [...DEMO_DISCOVERY_POSTS, ...communityPosts];
-    if (selectedFilter === 'all') {
-      return feedPosts;
-    }
-    return feedPosts.filter((post) => post.type === selectedFilter);
-  }, [communityPosts, selectedFilter]);
+  const listHeader = <>
+    <CompactPostComposer user={user} onOpen={openComposer} />
+    <StudentSpotlightSection students={spotlightStudents} />
+    <SkillsServicesSection services={serviceOfferings.slice(0, 6)} />
+    <BuiltByStudentsSection projects={projectFeatures.slice(0, 6)} />
+    <View style={styles.feedHeader}><Text style={styles.feedTitle}>Campus Stories</Text><Text style={styles.feedSubtitle}>Experiences, ideas, and moments shared by students.</Text></View>
+    <FlatList horizontal data={filters} keyExtractor={(item) => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} renderItem={({ item }) => <TouchableOpacity onPress={() => setSelectedFilter(item.id)} style={[styles.filter, selectedFilter === item.id && styles.filterActive]}><Text style={[styles.filterText, selectedFilter === item.id && styles.filterTextActive]}>{item.label}</Text></TouchableOpacity>} />
+    {loading ? <View style={styles.initialLoading}><ActivityIndicator color={Colors.primary} /><Text style={styles.loadingText}>Loading your campus feed...</Text></View> : null}
+    {!loading && error && posts.length === 0 ? <View style={styles.state}><Ionicons name="cloud-offline-outline" size={28} color={Colors.textMuted} /><Text style={styles.stateText}>{error}</Text><TouchableOpacity style={styles.retry} onPress={() => loadPage(1, true)}><Text style={styles.retryText}>Try again</Text></TouchableOpacity></View> : null}
+  </>;
 
-  // Suggested discovery: real active collaboration requests
-  const activeCollabRequests = useMemo(() => {
-    return communityPosts.filter(
-      (p) =>
-        (p.type === 'idea' && p.rolesNeeded && p.rolesNeeded.length > 0) ||
-        (p.type === 'event_collab' && Boolean(p.eventRoleNeeded))
-    );
-  }, [communityPosts]);
-
-  // Author press handling
-  const handleAuthorPress = (authorId: string) => {
-    if (authorId === user.id) {
-      router.push('/(tabs)/profile' as any);
-      return;
-    }
-    const foundPost = communityPosts.find((p) => p.author.id === authorId);
-    if (foundPost) {
-      setSelectedAuthor(foundPost.author);
-    }
-  };
-
-  // Card press handling
-  const handleCardPress = (post: CommunityPost) => {
-    if (post.type === 'idea' && post.ideaId) {
-      router.push(`/ideahub/${post.ideaId}` as any);
-    } else if (post.type === 'project' && post.projectId) {
-      router.push(`/projects/${post.projectId}` as any);
-    } else if (post.type === 'event_collab' && post.teamId) {
-      router.push(`/teams/${post.teamId}` as any);
-    } else {
-      setActiveCommentPost(post);
-    }
-  };
-
-  const firstName = user?.name ? user.name.trim().split(' ')[0] : 'Student';
-
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Top Header with Wordmark, Search, Notifications, Avatar */}
-      <Header hideGreeting={true} />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.primary}
-          />
-        }
-      >
-        {/* WELCOME SECTION: Personalized Greeting & Subtle Mission */}
-        <View style={styles.welcomeSection}>
-          <Text style={styles.greetingTitle}>Welcome back, {firstName}</Text>
-          <Text style={styles.greetingSubtitle}>
-            Connect with student builders, share ideas, offer services, and collaborate on real projects.
-          </Text>
-        </View>
-
-        {/* CREATE-POST COMPOSER BAR & QUICK ACTIONS */}
-        <View style={styles.composerCard}>
-          <View style={styles.composerHeaderRow}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push('/(tabs)/profile' as any)}
-            >
-              <Avatar uri={user.avatar} name={user.name} size={38} isVerified={user.isVerified} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.composerInputTrigger}
-              activeOpacity={0.8}
-              onPress={() => handleOpenComposer('idea')}
-            >
-              <Text style={styles.composerPlaceholder}>
-                What are you working on or looking for?
-              </Text>
-              <Ionicons name="create-outline" size={18} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* 6 Quick Post Actions */}
-          <View style={styles.quickActionsGrid}>
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('idea')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentAmberSubtle }]}>
-                <Ionicons name="bulb-outline" size={16} color={Colors.accentAmber} />
-              </View>
-              <Text style={styles.quickActionLabel}>Share an Idea</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('service')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentCyanSubtle }]}>
-                <Ionicons name="construct-outline" size={16} color={Colors.accentCyan} />
-              </View>
-              <Text style={styles.quickActionLabel}>Offer a Service</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('story')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentPurpleSubtle }]}>
-                <Ionicons name="book-outline" size={16} color={Colors.accentPurple} />
-              </View>
-              <Text style={styles.quickActionLabel}>Share a Story</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('event_collab')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.primarySubtle }]}>
-                <Ionicons name="trophy-outline" size={16} color={Colors.primary} />
-              </View>
-              <Text style={styles.quickActionLabel}>Organize an Event</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('project')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.accentGreenSubtle }]}>
-                <Ionicons name="rocket-outline" size={16} color={Colors.accentGreen} />
-              </View>
-              <Text style={styles.quickActionLabel}>Showcase a Project</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionItem}
-              activeOpacity={0.7}
-              onPress={() => handleOpenComposer('question')}
-            >
-              <View style={[styles.quickActionIcon, { backgroundColor: Colors.infoSubtle }]}>
-                <Ionicons name="help-circle-outline" size={16} color={Colors.info} />
-              </View>
-              <Text style={styles.quickActionLabel}>Ask Community</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* OPTIONAL SUGGESTED DISCOVERY: Only shown when genuine active collaboration requests exist */}
-        {activeCollabRequests.length > 0 && selectedFilter === 'all' ? (
-          <View style={styles.discoverySection}>
-            <View style={styles.discoveryHeader}>
-              <View style={styles.discoveryTitleRow}>
-                <View style={styles.pulseDot} />
-                <Text style={styles.discoveryTitle}>ACTIVE COLLABORATION REQUESTS</Text>
-              </View>
-              <Text style={styles.discoveryCount}>{activeCollabRequests.length} Open</Text>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.discoveryScroll}
-            >
-              {activeCollabRequests.slice(0, 5).map((collab) => (
-                <TouchableOpacity
-                  key={`collab_${collab.id}`}
-                  style={styles.collabSnippetCard}
-                  activeOpacity={0.8}
-                  onPress={() => handleCardPress(collab)}
-                >
-                  <View style={styles.collabSnippetTop}>
-                    <Avatar uri={collab.author.avatar} name={collab.author.name} size={28} />
-                    <Text style={styles.collabSnippetAuthor} numberOfLines={1}>
-                      {collab.author.name}
-                    </Text>
-                  </View>
-                  <Text style={styles.collabSnippetTitle} numberOfLines={2}>
-                    {collab.title}
-                  </Text>
-                  <View style={styles.collabSnippetFooter}>
-                    <Text style={styles.collabSnippetSeeking} numberOfLines={1}>
-                      {collab.rolesNeeded?.join(', ') || collab.eventRoleNeeded || 'Collaborators'}
-                    </Text>
-                    <Ionicons name="arrow-forward-circle" size={16} color={Colors.primary} />
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* COMMUNITY FEED HEADER & CATEGORY FILTER TABS */}
-        <View style={styles.feedHeaderSection}>
-          <View style={styles.feedTitleRow}>
-            <Text style={styles.feedTitle}>Community Activity</Text>
-            <Text style={styles.feedSubtitle}>Live posts from students and innovators</Text>
-          </View>
-
-          {/* Horizontally Scrollable Category Filter Chips */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScroll}
-          >
-            {FEED_FILTERS.map((f) => {
-              const isSelected = selectedFilter === f.id;
-              return (
-                <TouchableOpacity
-                  key={f.id}
-                  style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                  onPress={() => setSelectedFilter(f.id)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={f.icon}
-                    size={13}
-                    color={isSelected ? '#FFF' : Colors.textMuted}
-                  />
-                  <Text
-                    style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}
-                  >
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* FEED CONTENT STATES: Loading / Error / Empty / Real Posts */}
-        <View style={styles.feedContent}>
-          {initialLoading ? (
-            <View style={styles.loadingContainer}>
-              <CardSkeleton />
-              <CardSkeleton />
-            </View>
-          ) : errorMessage ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={36} color={Colors.error} />
-              <Text style={styles.errorText}>{errorMessage}</Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={loadFeed} activeOpacity={0.8}>
-                <Ionicons name="refresh-outline" size={16} color="#FFF" />
-                <Text style={styles.retryBtnText}>Retry Connection</Text>
-              </TouchableOpacity>
-            </View>
-          ) : filteredPosts.length === 0 ? (
-            <EmptyState
-              icon={
-                selectedFilter === 'idea'
-                  ? 'bulb-outline'
-                  : selectedFilter === 'service'
-                  ? 'construct-outline'
-                  : selectedFilter === 'story'
-                  ? 'book-outline'
-                  : selectedFilter === 'event_collab'
-                  ? 'trophy-outline'
-                  : selectedFilter === 'project'
-                  ? 'rocket-outline'
-                  : selectedFilter === 'question'
-                  ? 'help-circle-outline'
-                  : 'people-outline'
-              }
-              title={
-                selectedFilter === 'all'
-                  ? 'No Student Posts Shared Yet'
-                  : `No ${FEED_FILTERS.find((f) => f.id === selectedFilter)?.label || 'Posts'} Yet`
-              }
-              description="Be the first student to share an idea, offer a service, post a story, or recruit collaborators for an initiative."
-              actionTitle="Share your first post"
-              onAction={() =>
-                handleOpenComposer(
-                  selectedFilter !== 'all' ? (selectedFilter as CommunityPostType) : 'idea'
-                )
-              }
-            />
-          ) : (
-            filteredPosts.map((post) => (
-              <CommunityPostCard
-                key={post.id}
-                post={post}
-                onLike={post.id.startsWith('demo_') ? undefined : () => toggleLikePost(post.id)}
-                onComment={post.id.startsWith('demo_') ? undefined : () => setActiveCommentPost(post)}
-                onSave={post.id.startsWith('demo_') ? undefined : () => toggleSavePost(post.id)}
-                onCollaborate={post.id.startsWith('demo_') ? undefined : () => setActiveCollabPost(post)}
-                onAuthorPress={post.id.startsWith('demo_') ? undefined : handleAuthorPress}
-                onCardPress={post.id.startsWith('demo_') ? undefined : handleCardPress}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Post Composer Modal */}
-      <PostComposerModal
-        visible={composerVisible}
-        initialType={composerInitialType}
-        onClose={() => setComposerVisible(false)}
-        onSubmit={addCommunityPost}
-      />
-
-      {/* Post Comments Discussion Modal */}
-      <PostCommentsModal
-        visible={Boolean(activeCommentPost)}
-        post={activeCommentPost}
-        onClose={() => setActiveCommentPost(null)}
-        onAddComment={addPostComment}
-      />
-
-      {/* Collaboration / Inquiry Modal */}
-      <CollaborateModal
-        visible={Boolean(activeCollabPost)}
-        post={activeCollabPost}
-        onClose={() => setActiveCollabPost(null)}
-        onSubmit={applyToCollaborate}
-      />
-
-      {/* Student Author Profile Modal */}
-      <AuthorProfileModal
-        visible={Boolean(selectedAuthor)}
-        author={selectedAuthor}
-        onClose={() => setSelectedAuthor(null)}
-      />
-    </SafeAreaView>
-  );
+  const paginationFooter = loadingMore ? <View style={styles.footer}><ActivityIndicator size="small" color={Colors.primary} /><Text style={styles.footerText}>Loading more stories...</Text></View> : error && posts.length > 0 ? <View style={styles.footer}><Text style={styles.footerText}>Couldn’t load more stories.</Text><TouchableOpacity onPress={() => loadPage(page + 1)}><Text style={styles.retryText}>Try again</Text></TouchableOpacity></View> : !hasMore && posts.length > 0 ? <View style={styles.footer}><Ionicons name="checkmark-circle-outline" size={18} color={Colors.textMuted} /><Text style={styles.footerText}>You’re all caught up.</Text></View> : null;
+  return <SafeAreaView style={styles.safeArea} edges={['top']}><Header hideGreeting />
+    <FlatList data={loading ? [] : feedItems} keyExtractor={(item) => item.kind === 'post' ? item.post.id : `home-section-${item.kind}`} renderItem={({ item }) => {
+      if (item.kind === 'study') return <StudyHubSection resources={visibleResources} selected={resourceFilter} onSelect={setResourceFilter} onOpen={(resource) => router.push({ pathname: '/resource/[id]', params: { id: resource.id } } as never)} onBookmark={(resource) => setResources((current) => current.map((entry) => entry.id === resource.id ? { ...entry, isBookmarked: !entry.isBookmarked } : entry))} />;
+      if (item.kind === 'questions') return <AskCommunitySection questions={questionPreviews.slice(0, 5)} onAsk={() => openComposer('question')} />;
+      if (item.kind === 'chat') return <CommunityChatSection conversations={homeConversations} />;
+      if (item.kind === 'empty') return <View style={styles.state}><Text style={styles.stateText}>Nothing here yet. Share something with your campus community.</Text></View>;
+      const post = item.post;
+      return <CommunityPostCard post={post} onLike={post.demo ? undefined : async () => { await toggleLikePost(post.id); updatePost(post.id, { isLiked: !post.isLiked, likesCount: post.isLiked ? Math.max(0, post.likesCount - 1) : post.likesCount + 1 }); }} onComment={post.demo ? undefined : () => setActiveCommentPost(post)} onSave={post.demo ? undefined : async () => { await toggleSavePost(post.id); updatePost(post.id, { isSaved: !post.isSaved }); }} onCollaborate={post.demo ? undefined : () => setActiveCollabPost(post)} onAuthorPress={post.demo ? undefined : openAuthor} onCardPress={() => openPost(post)} />;
+    }}
+      ListHeaderComponent={listHeader} ListFooterComponent={paginationFooter || undefined}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.primary} colors={[Colors.primary]} />} onEndReached={loadMore} onEndReachedThreshold={0.45} onMomentumScrollBegin={() => { endReachedDuringMomentum.current = true; }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} initialNumToRender={5} maxToRenderPerBatch={5} windowSize={7} removeClippedSubviews />
+    <PostComposerModal key={composerType} visible={composerVisible} initialType={composerType} onClose={() => setComposerVisible(false)} onSubmit={submitPost} />
+    <PostCommentsModal visible={Boolean(activeCommentPost)} post={activeCommentPost} onClose={() => setActiveCommentPost(null)} onAddComment={addPostComment} />
+    <CollaborateModal visible={Boolean(activeCollabPost)} post={activeCollabPost} onClose={() => setActiveCollabPost(null)} onSubmit={applyToCollaborate} />
+    <AuthorProfileModal visible={Boolean(selectedAuthor)} author={selectedAuthor} onClose={() => setSelectedAuthor(null)} />
+  </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  scrollContainer: {
-    paddingBottom: 40,
-  },
-  welcomeSection: {
-    paddingHorizontal: Spacing.screenPadding,
-    paddingTop: 16,
-    paddingBottom: 14,
-  },
-  greetingTitle: {
-    fontSize: Typography.title2,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-    letterSpacing: -0.4,
-  },
-  greetingSubtitle: {
-    fontSize: Typography.subhead,
-    color: Colors.textMuted,
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  composerCard: {
-    marginHorizontal: Spacing.screenPadding,
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 14,
-    marginBottom: 20,
-    ...Shadows.card,
-  },
-  composerHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  composerInputTrigger: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  composerPlaceholder: {
-    fontSize: Typography.body,
-    color: Colors.textMuted,
-    flex: 1,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: 12,
-  },
-  quickActionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.full,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 6,
-  },
-  quickActionIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickActionLabel: {
-    fontSize: 11,
-    fontWeight: Typography.semiBold,
-    color: Colors.textSecondary,
-  },
-  discoverySection: {
-    marginBottom: 20,
-  },
-  discoveryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.screenPadding,
-    marginBottom: 10,
-  },
-  discoveryTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  pulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
-  },
-  discoveryTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-  },
-  discoveryCount: {
-    fontSize: 11,
-    fontWeight: Typography.bold,
-    color: Colors.primary,
-  },
-  discoveryScroll: {
-    paddingHorizontal: Spacing.screenPadding,
-    gap: 10,
-  },
-  collabSnippetCard: {
-    width: 200,
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-    padding: 12,
-  },
-  collabSnippetTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  collabSnippetAuthor: {
-    fontSize: 11,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  collabSnippetTitle: {
-    fontSize: 12,
-    fontWeight: Typography.semiBold,
-    color: Colors.textSecondary,
-    lineHeight: 16,
-    minHeight: 32,
-    marginBottom: 8,
-  },
-  collabSnippetFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: 6,
-  },
-  collabSnippetSeeking: {
-    fontSize: 10,
-    color: Colors.accentAmber,
-    fontWeight: Typography.bold,
-    maxWidth: 150,
-  },
-  feedHeaderSection: {
-    marginBottom: 14,
-  },
-  feedTitleRow: {
-    paddingHorizontal: Spacing.screenPadding,
-    marginBottom: 10,
-  },
-  feedTitle: {
-    fontSize: Typography.title3,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-  },
-  feedSubtitle: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  filterScroll: {
-    paddingHorizontal: Spacing.screenPadding,
-    gap: 8,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 5,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontWeight: Typography.medium,
-    color: Colors.textSecondary,
-  },
-  filterChipTextActive: {
-    color: '#FFF',
-    fontWeight: Typography.bold,
-  },
-  feedContent: {
-    paddingHorizontal: Spacing.screenPadding,
-  },
-  loadingContainer: {
-    gap: 12,
-  },
-  errorBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.lg,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginVertical: 16,
-    gap: 10,
-  },
-  errorText: {
-    fontSize: Typography.body,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 280,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: BorderRadius.sm,
-    gap: 6,
-    marginTop: 4,
-  },
-  retryBtnText: {
-    fontSize: 12,
-    fontWeight: Typography.bold,
-    color: '#FFF',
-  },
+  safeArea: { flex: 1, backgroundColor: '#090A0F' }, content: { paddingBottom: 34 }, feedHeader: { paddingHorizontal: Spacing.screenPadding, marginTop: 28 }, feedTitle: { color: '#FFF', fontSize: 20, fontWeight: Typography.bold, letterSpacing: -0.4 }, feedSubtitle: { color: Colors.textMuted, fontSize: 12, marginTop: 4 },
+  filters: { paddingHorizontal: Spacing.screenPadding, gap: 8, paddingVertical: 14 }, filter: { backgroundColor: '#121624', borderWidth: 1, borderColor: '#252C3D', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }, filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary }, filterText: { color: Colors.textMuted, fontSize: 11, fontWeight: Typography.semiBold }, filterTextActive: { color: '#FFF' },
+  initialLoading: { padding: 30, alignItems: 'center', gap: 10 }, loadingText: { color: Colors.textMuted, fontSize: 12 }, state: { marginHorizontal: 16, padding: 28, backgroundColor: '#121624', borderWidth: 1, borderColor: '#252C3D', borderRadius: 16, alignItems: 'center', gap: 10 }, stateText: { color: Colors.textMuted, fontSize: 12, textAlign: 'center' }, retry: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { color: '#FF7777', fontSize: 12, fontWeight: Typography.bold }, footer: { minHeight: 70, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, footerText: { color: Colors.textMuted, fontSize: 11 },
 });

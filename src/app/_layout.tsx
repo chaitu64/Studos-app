@@ -2,13 +2,15 @@ import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppProvider } from '../context/AppContext';
 import { Colors } from '../constants/theme';
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <AppProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -54,7 +56,8 @@ export default function RootLayout() {
           <Stack.Screen name="search/index" options={{ headerShown: false }} />
           <Stack.Screen name="settings/index" options={{ title: 'Settings & Privacy' }} />
         </Stack>
-      </AppProvider>
-    </SafeAreaProvider>
+        </AppProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

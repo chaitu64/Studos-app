@@ -1,0 +1,6 @@
+*
+!.gitignore
+!resources.json
+!demo-*/
+!demo-*/*.pdf
+!demo-*/page-1.png

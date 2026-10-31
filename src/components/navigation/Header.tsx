@@ -21,9 +21,9 @@ export const Header: React.FC<HeaderProps> = ({
   const { user, unreadNotifsCount } = useApp();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, hideGreeting && styles.containerCompact]}>
       {/* Top Bar: Wordmark, Search trigger, Notifications, Avatar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, hideGreeting && styles.topBarCompact]}>
         <TouchableOpacity
           style={styles.brandContainer}
           activeOpacity={0.8}
@@ -94,12 +94,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  containerCompact: { paddingTop: 6, paddingBottom: 7 },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
+  topBarCompact: { marginBottom: 0 },
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',

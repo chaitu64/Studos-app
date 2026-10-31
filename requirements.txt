@@ -26,3 +26,6 @@ react-native-screens=~4.4.0
 typescript=~5.9.2
 eslint=^9.23.0
 eslint-config-expo=~9.2.0
+
+# Python backend PDF processing (first-page thumbnails, metadata, page rendering)
+PyMuPDF==1.26.5

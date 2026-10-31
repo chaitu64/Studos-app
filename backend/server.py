@@ -7,10 +7,19 @@ Zero heavy dependencies required: runs on Python's built-in http.server.
 
 import json
 import logging
+import cgi
+import mimetypes
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Dict, List, Any, Optional
+from resource_service import (
+    PdfValidationError,
+    create_resource,
+    get_resource,
+    list_resources,
+    resource_file,
+)
 
 from unstop_extractor import (
     CATEGORIES,
@@ -43,7 +52,7 @@ def get_cached_opportunities(force_refresh: bool = False) -> List[Dict[str, Any]
 class StudOsApiHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def do_OPTIONS(self):
@@ -72,6 +81,35 @@ class StudOsApiHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "categories": list(CATEGORIES.keys())
             }).encode("utf-8"))
+            return
+
+        if path == "/api/resources":
+            self.send_json({"items": list(list_resources())})
+            return
+
+        if path.startswith("/api/resources/"):
+            parts = [part for part in path.split("/") if part]
+            resource_id = parts[2] if len(parts) > 2 else ""
+            if len(parts) == 3:
+                resource = get_resource(resource_id)
+                if resource:
+                    self.send_json(resource)
+                else:
+                    self.send_json({"error": "Resource not found"}, 404)
+                return
+            kind = parts[3] if len(parts) > 3 else ""
+            page_number = None
+            if kind == "pages" and len(parts) == 5:
+                try:
+                    page_number = int(parts[4].split(".")[0])
+                    kind = "page"
+                except ValueError:
+                    page_number = None
+            file_path = resource_file(resource_id, kind, page_number)
+            if file_path:
+                self.send_file(file_path)
+            else:
+                self.send_json({"error": "File not found or processing incomplete"}, 404)
             return
 
         if path == "/api/opportunities":
@@ -150,6 +188,68 @@ class StudOsApiHandler(BaseHTTPRequestHandler):
         self.send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps({"error": "Not found"}).encode("utf-8"))
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/resources":
+            self.send_json({"error": "Not found"}, 404)
+            return
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.startswith("multipart/form-data"):
+            self.send_json({"error": "multipart/form-data is required"}, 415)
+            return
+        try:
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
+            )
+            upload = form["pdf"] if "pdf" in form else None
+            if upload is None or not getattr(upload, "file", None):
+                self.send_json({"error": "A PDF field named 'pdf' is required"}, 400)
+                return
+            fields = {
+                key: form.getfirst(key, "")
+                for key in ("type", "title", "description", "subject", "academicYear", "semester", "branch", "uploadedBy", "createdAt")
+            }
+            upload.file.seek(0, 2)
+            size = upload.file.tell()
+            upload.file.seek(0)
+            host = self.headers.get("Host", "localhost:5001")
+            base_url = f"http://{host}"
+            resource = create_resource(
+                stream=upload.file,
+                file_name=upload.filename or "document.pdf",
+                content_type=upload.type or "application/pdf",
+                size=size,
+                fields=fields,
+                base_url=base_url,
+            )
+            self.send_json(resource, 202)
+        except PdfValidationError as exc:
+            self.send_json({"error": str(exc)}, 400)
+        except Exception as exc:
+            logger.exception("Resource upload failed")
+            self.send_json({"error": str(exc)}, 500)
+
+    def send_json(self, body: Any, status: int = 200):
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_cors_headers()
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def send_file(self, path):
+        payload = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_cors_headers()
+        self.end_headers()
+        self.wfile.write(payload)
 
     def log_message(self, format, *args):
         logger.info("%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), format % args))

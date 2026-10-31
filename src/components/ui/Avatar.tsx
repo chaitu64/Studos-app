@@ -46,7 +46,7 @@ export const Avatar: React.FC<AvatarProps> = ({
       <View style={containerStyle}>
         {uri && !hasError ? (
           <Image
-            source={{ uri }}
+            source={{ uri, cache: 'force-cache' }}
             style={{ width: size, height: size }}
             onError={() => setHasError(true)}
           />
