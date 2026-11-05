@@ -93,7 +93,7 @@ export default function AcademicLibraryScreen() {
     <FlatList
       data={items}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <ResourceCard resource={item} onOpen={() => router.push({ pathname: '/resource/[id]', params: { id: item.id } } as never)} onBookmark={() => { void saveResource(item.id, !item.isBookmarked).then(() => setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, isBookmarked: !item.isBookmarked } : row))).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not update saved resources.')); }} />}
+      renderItem={({ item }) => <ResourceCard compact resource={item} onOpen={() => router.push({ pathname: '/resource/[id]', params: { id: item.id } } as never)} onBookmark={() => { void saveResource(item.id, !item.isBookmarked).then(() => setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, isBookmarked: !item.isBookmarked } : row))).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not update saved resources.')); }} />}
       contentContainerStyle={styles.content}
       ListHeaderComponent={<View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={21} color="#FFF" /></TouchableOpacity>
@@ -119,11 +119,11 @@ export default function AcademicLibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#090B0F' }, content: { paddingHorizontal: 16, paddingBottom: 30 },
+  safe: { flex: 1, backgroundColor: '#090A0F' }, content: { paddingHorizontal: 16, paddingBottom: 30 },
   back: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#171D2D', alignItems: 'center', justifyContent: 'center', marginVertical: 14 },
-  title: { color: '#FFF', fontSize: 30, fontWeight: '900' }, subtitle: { color: '#A5ACBA', fontSize: 13, marginTop: 5, marginBottom: 18 },
-  input: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 10, minHeight: 44, paddingHorizontal: 12, marginBottom: 9 },
-  filtersRow: { flexDirection: 'row', gap: 8 }, smallInput: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 9, minHeight: 40, paddingHorizontal: 10, flex: 0.65 }, subjectInput: { flex: 1.7 },
-  categoryRow: { gap: 7, paddingVertical: 12 }, category: { borderWidth: 1, borderColor: '#303749', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#121624' }, categorySelected: { backgroundColor: '#E5433B', borderColor: '#E5433B' }, categoryText: { color: '#A5ACBA', fontSize: 11, fontWeight: '700' }, categoryTextSelected: { color: '#FFF' },
+  title: { color: '#FFF', fontSize: 28, lineHeight: 34, fontWeight: '800' }, subtitle: { color: '#A5ACBA', fontSize: 14, lineHeight: 20, marginTop: 5, marginBottom: 16 },
+  input: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 12, minHeight: 48, paddingHorizontal: 14, marginBottom: 9, fontSize: 15 },
+  filtersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, smallInput: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 10, minHeight: 44, paddingHorizontal: 12, flex: 1, minWidth: 76, fontSize: 14 }, subjectInput: { flex: 1.5, minWidth: 110 },
+  categoryRow: { gap: 7, paddingVertical: 12 }, category: { minHeight: 40, justifyContent: 'center', borderWidth: 1, borderColor: '#303749', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#121624' }, categorySelected: { backgroundColor: '#C92F32', borderColor: '#C92F32' }, categoryText: { color: '#A5ACBA', fontSize: 12, fontWeight: '600' }, categoryTextSelected: { color: '#FFF' },
   subjectHints: { color: '#929AAA', fontSize: 11, lineHeight: 17, marginBottom: 6 }, count: { color: '#929AAA', fontSize: 11, marginBottom: 12 }, state: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 36, paddingHorizontal: 24 }, stateText: { color: '#A5ACBA', fontSize: 13, textAlign: 'center', lineHeight: 20 }, retryButton: { backgroundColor: '#E5433B', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 9 }, retryText: { color: '#FFF', fontWeight: '800', fontSize: 12 }, loadMore: { backgroundColor: '#171D2D', padding: 14, alignItems: 'center', borderRadius: 9, marginTop: 10 },
 });

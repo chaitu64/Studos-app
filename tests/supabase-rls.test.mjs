@@ -20,18 +20,40 @@ test('two authenticated identities cannot read private data or mutate another ow
   assert.notEqual(idA, idB, 'test accounts must be distinct');
   const ownPublicProfile = await a.from('profiles').select('id,first_name').eq('id', idA).single();
   assert.ifError(ownPublicProfile.error);
+  const otherPublicProfile = await a.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('id', idB).single();
+  assert.ifError(otherPublicProfile.error);
+  assert.equal(otherPublicProfile.data.id, idB, 'authenticated students should discover another real profile');
+  const reversePublicProfile = await b.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('id', idA).single();
+  assert.ifError(reversePublicProfile.error);
+  assert.equal(reversePublicProfile.data.id, idA, 'profile visibility should work in both directions');
+  const privateProfileColumns = await b.from('profiles').select('email,date_of_birth').eq('id', idA).maybeSingle();
+  assert.ok(privateProfileColumns.error, 'private fields must not be selectable through profiles');
 
   const privateProfile = await b.from('profile_private').select('id,date_of_birth,college_email').eq('id', idA);
   assert.ifError(privateProfile.error);
   assert.equal(privateProfile.data.length, 0, 'private profile rows must be invisible across accounts');
 
   const title = `RLS test ${Date.now()}`;
-  const created = await a.from('posts').insert({ author_id: idA, user_id: idA, title, content: 'Disposable authorization test', post_type: 'story', tags: [], image_urls: [] }).select('id').single();
+  const created = await a.from('posts').insert({ author_id: idA, user_id: idA, title, content: 'Disposable authorization test', category: 'story', tags: [], image_urls: [] }).select('id').single();
   assert.ifError(created.error);
   const postId = created.data.id;
+  let ideaId;
+  let projectId;
   try {
     const visible = await b.from('posts').select('id').eq('id', postId).single();
     assert.ifError(visible.error);
+    const idea = await a.from('ideas').insert({ user_id: idA, title: `RLS idea ${Date.now()}`, payload: { description: 'Temporary RLS verification' } }).select('id').single();
+    assert.ifError(idea.error); ideaId = idea.data.id;
+    const visibleIdea = await b.from('ideas').select('id').eq('id', ideaId).single();
+    assert.ifError(visibleIdea.error); assert.equal(visibleIdea.data.id, ideaId);
+    const ideaMutation = await b.from('ideas').update({ title: 'forbidden' }).eq('id', ideaId).select('id');
+    assert.ifError(ideaMutation.error); assert.equal(ideaMutation.data.length, 0, 'ideas remain owner-editable');
+    const project = await a.from('projects').insert({ owner_id: idA, title: `RLS project ${Date.now()}`, payload: { description: 'Temporary RLS verification' } }).select('id').single();
+    assert.ifError(project.error); projectId = project.data.id;
+    const visibleProject = await b.from('projects').select('id').eq('id', projectId).single();
+    assert.ifError(visibleProject.error); assert.equal(visibleProject.data.id, projectId);
+    const projectMutation = await b.from('projects').update({ title: 'forbidden' }).eq('id', projectId).select('id');
+    assert.ifError(projectMutation.error); assert.equal(projectMutation.data.length, 0, 'projects remain owner-editable');
     const like = await b.from('post_likes').insert({ post_id: postId, user_id: idB });
     assert.ifError(like.error);
     const comment = await b.from('post_comments').insert({ post_id: postId, user_id: idB, content: 'RLS comment test' }).select('id').single();
@@ -57,6 +79,8 @@ test('two authenticated identities cannot read private data or mutate another ow
       assert.ifError(attemptedDelete.error); assert.equal(attemptedDelete.data.length, 0);
       const stillThere = await a.from('study_resources').select('id').eq('id', resource.data.id).single();
       assert.ifError(stillThere.error);
+      const visibleResource = await b.from('study_resources').select('id,title,subject,academic_year,drive_url').eq('id', resource.data.id).single();
+      assert.ifError(visibleResource.error); assert.equal(visibleResource.data.id, resource.data.id, 'authorized users should be able to read Study Hub records');
     } finally {
       await a.from('study_resources').delete().eq('id', resource.data.id);
     }
@@ -70,6 +94,8 @@ test('two authenticated identities cannot read private data or mutate another ow
       await a.storage.from('studos-media').remove([mediaPath]);
     }
   } finally {
+    if (ideaId) await a.from('ideas').delete().eq('id', ideaId);
+    if (projectId) await a.from('projects').delete().eq('id', projectId);
     await a.from('posts').delete().eq('id', postId);
     await a.auth.signOut(); await b.auth.signOut();
   }

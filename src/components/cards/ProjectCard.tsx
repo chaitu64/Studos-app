@@ -46,7 +46,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
       <View style={styles.content}>
         {/* Title & Likes */}
-        <Text style={styles.title} numberOfLines={1}>{project.title}</Text>
+        <Text style={styles.title} numberOfLines={2}>{project.title}</Text>
 
         {/* Tagline */}
         <Text style={styles.tagline} numberOfLines={2}>
@@ -132,7 +132,8 @@ const styles = StyleSheet.create({
   },
   thumbnailContainer: {
     width: '100%',
-    height: 150,
+    aspectRatio: 2.3,
+    maxHeight: 168,
     position: 'relative',
     backgroundColor: Colors.surfaceElevated,
   },
@@ -159,6 +160,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
     flex: 1,
+    minWidth: 0,
     marginRight: 8,
   },
   statsRow: {

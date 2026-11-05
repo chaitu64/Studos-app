@@ -22,6 +22,9 @@ import { Colors, Spacing, Typography } from '../../constants/theme';
 const PAGE_SIZE = 5;
 type HomeListItem =
   | { kind: 'post'; post: CommunityPost }
+  | { kind: 'students' }
+  | { kind: 'services' }
+  | { kind: 'projects' }
   | { kind: 'study' }
   | { kind: 'questions' }
   | { kind: 'chat' }
@@ -135,9 +138,13 @@ export default function HomeScreen() {
     const storyItems = filteredPosts.map((post) => ({ kind: 'post' as const, post }));
     const firstBatch = storyItems.slice(0, PAGE_SIZE);
     const laterBatches = storyItems.slice(PAGE_SIZE);
+    const earlyStories = firstBatch.slice(0, 2);
+    const remainingFirstBatch = firstBatch.slice(2);
     return [
-      ...(firstBatch.length ? firstBatch : [{ kind: 'empty' as const }]),
-      { kind: 'study' as const }, { kind: 'questions' as const }, { kind: 'chat' as const },
+      ...(firstBatch.length ? earlyStories : [{ kind: 'empty' as const }]),
+      ...(firstBatch.length > 1 ? [{ kind: 'students' as const }, { kind: 'services' as const }] : []),
+      ...remainingFirstBatch,
+      { kind: 'study' as const }, { kind: 'projects' as const }, { kind: 'questions' as const }, { kind: 'chat' as const },
       ...laterBatches,
     ];
   }, [filteredPosts]);
@@ -156,9 +163,6 @@ export default function HomeScreen() {
 
   const listHeader = <>
     <CompactPostComposer user={user} onOpen={openComposer} />
-    <StudentSpotlightSection students={spotlightStudents} loading={directoryLoading} error={directoryError} />
-    <SkillsServicesSection services={serviceOfferings.slice(0, 6)} />
-    <BuiltByStudentsSection projects={projectFeatures.slice(0, 6)} />
     <View style={styles.feedHeader}><Text style={styles.feedTitle}>Campus Stories</Text><Text style={styles.feedSubtitle}>Experiences, ideas, and moments shared by students.</Text></View>
     <TextInput accessibilityLabel="Search community posts" value={searchQuery} onChangeText={setSearchQuery} placeholder="Search posts, tags, topics" placeholderTextColor="#777F90" style={styles.searchInput} />
     <FlatList horizontal data={filters} keyExtractor={(item) => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} renderItem={({ item }) => <TouchableOpacity onPress={() => setSelectedFilter(item.id)} style={[styles.filter, selectedFilter === item.id && styles.filterActive]}><Text style={[styles.filterText, selectedFilter === item.id && styles.filterTextActive]}>{item.label}</Text></TouchableOpacity>} />
@@ -170,6 +174,9 @@ export default function HomeScreen() {
   const paginationFooter = loadingMore ? <View style={styles.footer}><ActivityIndicator size="small" color={Colors.primary} /><Text style={styles.footerText}>Loading more stories...</Text></View> : error && posts.length > 0 ? <View style={styles.footer}><Text style={styles.footerText}>Couldn’t load more stories.</Text><TouchableOpacity onPress={() => loadPage(page + 1)}><Text style={styles.retryText}>Try again</Text></TouchableOpacity></View> : !hasMore && posts.length > 0 ? <View style={styles.footer}><Ionicons name="checkmark-circle-outline" size={18} color={Colors.textMuted} /><Text style={styles.footerText}>You’re all caught up.</Text></View> : null;
   return <SafeAreaView style={styles.safeArea} edges={['top']}><Header hideGreeting />
     <FlatList data={loading ? [] : feedItems} keyExtractor={(item) => item.kind === 'post' ? item.post.id : `home-section-${item.kind}`} renderItem={({ item }) => {
+      if (item.kind === 'students') return <StudentSpotlightSection students={spotlightStudents} loading={directoryLoading} error={directoryError} />;
+      if (item.kind === 'services') return <SkillsServicesSection services={serviceOfferings.slice(0, 6)} />;
+      if (item.kind === 'projects') return <BuiltByStudentsSection projects={projectFeatures.slice(0, 6)} />;
       if (item.kind === 'study') return <StudyHubSection resources={visibleResources} loading={resourcesLoading} loadingMore={resourcesLoadingMore} hasMore={resourcesHasMore} error={resourcesError} selected={resourceFilter} onSelect={setResourceFilter} onFiltersChange={setResourceQuery} onLoadMore={() => void loadMoreResources()} onRetry={() => setResourceReload((value) => value + 1)} onOpen={(resource) => router.push({ pathname: '/resource/[id]', params: { id: resource.id } } as never)} onBookmark={async (resource) => { const saved = !resource.isBookmarked; try { await saveResource(resource.id, saved); setResources((current) => current.map((entry) => entry.id === resource.id ? { ...entry, isBookmarked: saved } : entry)); } catch { setError('Could not save this resource. Sign in and try again.'); } }} />;
       if (item.kind === 'questions') return <AskCommunitySection questions={questionPreviews.slice(0, 5)} onAsk={() => openComposer('question')} />;
       if (item.kind === 'chat') return <CommunityChatSection conversations={homeConversations} />;
@@ -185,7 +192,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#090A0F' }, content: { paddingBottom: 34 }, feedHeader: { paddingHorizontal: Spacing.screenPadding, marginTop: 28 }, feedTitle: { color: '#FFF', fontSize: 20, fontWeight: Typography.bold, letterSpacing: -0.4 }, feedSubtitle: { color: Colors.textMuted, fontSize: 12, marginTop: 4 },
-  filters: { paddingHorizontal: Spacing.screenPadding, gap: 8, paddingVertical: 14 }, filter: { backgroundColor: '#121624', borderWidth: 1, borderColor: '#252C3D', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }, filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary }, filterText: { color: Colors.textMuted, fontSize: 11, fontWeight: Typography.semiBold }, filterTextActive: { color: '#FFF' },
-  initialLoading: { padding: 30, alignItems: 'center', gap: 10 }, loadingText: { color: Colors.textMuted, fontSize: 12 }, state: { marginHorizontal: 16, padding: 28, backgroundColor: '#121624', borderWidth: 1, borderColor: '#252C3D', borderRadius: 16, alignItems: 'center', gap: 10 }, stateText: { color: Colors.textMuted, fontSize: 12, textAlign: 'center' }, retry: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { color: '#FF7777', fontSize: 12, fontWeight: Typography.bold }, footer: { minHeight: 70, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, footerText: { color: Colors.textMuted, fontSize: 11 }, searchInput: { marginHorizontal: Spacing.screenPadding, minHeight: 42, borderRadius: 9, paddingHorizontal: 12, borderWidth: 1, borderColor: '#252C3D', backgroundColor: '#121624', color: '#FFF', fontSize: 12, marginBottom: 8 },
+  safeArea: { flex: 1, backgroundColor: Colors.background }, content: { paddingBottom: 28 }, feedHeader: { paddingHorizontal: Spacing.screenPadding, marginTop: 22, marginBottom: 4 }, feedTitle: { color: Colors.textPrimary, fontSize: 22, lineHeight: 29, fontWeight: Typography.bold, letterSpacing: -0.3 }, feedSubtitle: { color: Colors.textMuted, fontSize: 14, lineHeight: 21, marginTop: 5 },
+  filters: { paddingHorizontal: Spacing.screenPadding, gap: 8, paddingVertical: 12 }, filter: { minHeight: 44, justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 999, paddingHorizontal: 15 }, filterActive: { backgroundColor: Colors.primary, borderColor: Colors.primary }, filterText: { color: Colors.textMuted, fontSize: 13, fontWeight: Typography.semiBold }, filterTextActive: { color: Colors.textOnPrimary },
+  initialLoading: { padding: 30, alignItems: 'center', gap: 10 }, loadingText: { color: Colors.textMuted, fontSize: 13 }, state: { marginHorizontal: 16, padding: 22, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.cardBorder, borderRadius: 16, alignItems: 'center', gap: 10 }, stateText: { color: Colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' }, retry: { minHeight: 44, justifyContent: 'center', backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 16 }, retryText: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: Typography.bold }, footer: { minHeight: 64, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, footerText: { color: Colors.textMuted, fontSize: 12 }, searchInput: { marginHorizontal: Spacing.screenPadding, minHeight: 48, borderRadius: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, color: Colors.textPrimary, fontSize: 14, marginBottom: 8 },
 });

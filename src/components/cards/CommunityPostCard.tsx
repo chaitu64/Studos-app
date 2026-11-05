@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dimensions, FlatList, Image, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, Image, Share, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { Colors, Typography } from '../../constants/theme';
@@ -11,18 +11,29 @@ export interface CommunityPostCardProps {
   onAuthorPress?: (authorId: string) => void; onCardPress?: (post: CommunityPost) => void;
 }
 
-const mediaWidth = Dimensions.get('window').width - 34;
 const labels: Record<CommunityPost['type'], string> = { idea: 'Idea', service: 'Service', story: 'Campus life', event_collab: 'Team up', project: 'Project', question: 'Help', study_material: 'Study material', achievement: 'Achievement' };
 
+function formatPostDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const elapsed = Date.now() - date.getTime();
+  if (elapsed >= 0 && elapsed < 60_000) return 'Just now';
+  if (elapsed >= 0 && elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;
+  if (elapsed >= 0 && elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export const CommunityPostCard = React.memo(function CommunityPostCard({ post, onLike, onComment, onSave, onCollaborate, onAuthorPress, onCardPress }: CommunityPostCardProps) {
+  const { width } = useWindowDimensions();
+  const mediaWidth = Math.max(220, width - 34);
   const share = () => Share.share({ title: post.title, message: `${post.title}\n\n${post.content}\n\nShared via StudOS` }).catch(() => undefined);
   return <View style={styles.card}>
     <View style={styles.header}>
       <TouchableOpacity style={styles.author} onPress={() => onAuthorPress?.(post.author.id)} disabled={!onAuthorPress}>
         <Avatar uri={post.author.avatar} name={post.author.name} size={40} />
-        <View style={styles.authorCopy}><Text style={styles.name}>{post.author.name}</Text><Text style={styles.meta} numberOfLines={1}>{post.author.college || post.author.role} · {post.createdAt}</Text></View>
+        <View style={styles.authorCopy}><Text style={styles.name} numberOfLines={1}>{post.author.name}</Text><Text style={styles.meta} numberOfLines={1}>{[post.author.college || post.author.role, formatPostDate(post.createdAt)].filter(Boolean).join(' · ')}</Text></View>
       </TouchableOpacity>
-      <View style={styles.headerRight}><Text style={styles.category}>{labels[post.type]}</Text><TouchableOpacity accessibilityLabel="More options"><Ionicons name="ellipsis-horizontal" size={19} color={Colors.textMuted} /></TouchableOpacity></View>
+      <View style={styles.headerRight}><Text style={styles.category}>{labels[post.type]}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="More options" style={styles.moreButton}><Ionicons name="ellipsis-horizontal" size={19} color={Colors.textMuted} /></TouchableOpacity></View>
     </View>
     <TouchableOpacity activeOpacity={0.9} onPress={() => onCardPress?.(post)} disabled={!onCardPress}>
       <Text style={styles.title}>{post.title}</Text><Text style={styles.content}>{post.content}</Text>
@@ -42,11 +53,11 @@ export const CommunityPostCard = React.memo(function CommunityPostCard({ post, o
 });
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#121624', borderRadius: 16, borderWidth: 1, borderColor: '#252C3D', marginHorizontal: 16, marginBottom: 12, padding: 15, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, author: { flexDirection: 'row', alignItems: 'center', flex: 1 }, authorCopy: { marginLeft: 10, flex: 1 }, name: { color: '#FFF', fontSize: 14, fontWeight: Typography.bold }, meta: { color: Colors.textMuted, fontSize: 10, marginTop: 2 }, headerRight: { flexDirection: 'row', alignItems: 'center', gap: 9 }, category: { color: '#FF7777', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  title: { color: '#FFF', fontSize: 17, lineHeight: 23, fontWeight: Typography.bold, marginTop: 14 }, content: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 },
-  document: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#171D2D', borderWidth: 1, borderColor: '#252C3D', borderRadius: 12, padding: 10, marginTop: 12 }, docIcon: { width: 38, height: 42, borderRadius: 8, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }, docCopy: { flex: 1, marginLeft: 10 }, docName: { color: '#FFF', fontSize: 12, fontWeight: Typography.semiBold }, docMeta: { color: Colors.textMuted, fontSize: 10, marginTop: 3 },
+  card: { backgroundColor: Colors.card, borderRadius: 20, borderWidth: 1, borderColor: Colors.cardBorder, marginHorizontal: 16, marginBottom: 16, padding: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, author: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 }, authorCopy: { marginLeft: 10, flex: 1, minWidth: 0 }, name: { color: Colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: Typography.bold }, meta: { color: Colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 3 }, headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }, category: { color: Colors.primary, backgroundColor: Colors.primarySubtle, fontSize: 11, lineHeight: 16, fontWeight: '700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 }, moreButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { color: Colors.textPrimary, fontSize: 18, lineHeight: 25, fontWeight: Typography.bold, marginTop: 15 }, content: { color: Colors.textSecondary, fontSize: 15, lineHeight: 23, marginTop: 7 },
+  document: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 12, marginTop: 14 }, docIcon: { width: 42, height: 46, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }, docCopy: { flex: 1, minWidth: 0, marginLeft: 10 }, docName: { color: Colors.textPrimary, fontSize: 13, lineHeight: 18, fontWeight: Typography.semiBold }, docMeta: { color: Colors.textMuted, fontSize: 12, lineHeight: 16, marginTop: 3 },
   mediaList: { marginHorizontal: -15, marginTop: 12 }, image: { height: 245, resizeMode: 'cover' }, counter: { position: 'absolute', right: 10, top: 10, backgroundColor: 'rgba(9,10,15,.72)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4 }, counterText: { color: '#FFF', fontSize: 9, fontWeight: Typography.bold },
   callout: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#171D2D', padding: 10, borderRadius: 10, marginTop: 10 }, calloutText: { color: Colors.textSecondary, fontSize: 11, flex: 1 }, tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 11 }, tag: { color: Colors.textMuted, fontSize: 11 },
-  actions: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#252C3D', marginTop: 13, paddingTop: 12, gap: 18 }, action: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 19 }, actionText: { color: Colors.textMuted, fontSize: 11 }, teamButton: { marginLeft: 'auto', borderWidth: 1, borderColor: '#5B3037', backgroundColor: '#2A1B22', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }, teamText: { color: '#FF7777', fontSize: 10, fontWeight: '800' },
+  actions: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: Colors.border, marginTop: 14, paddingTop: 8, gap: 6 }, action: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, flex: 1, minWidth: 40, minHeight: 44 }, actionText: { color: Colors.textMuted, fontSize: 12 }, teamButton: { marginLeft: 'auto', flexShrink: 0, minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: Colors.primaryBorder, backgroundColor: Colors.primarySubtle, borderRadius: 12, paddingHorizontal: 12 }, teamText: { color: Colors.primary, fontSize: 12, fontWeight: '700' },
 });

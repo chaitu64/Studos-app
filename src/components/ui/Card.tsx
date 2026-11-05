@@ -21,7 +21,7 @@ export const Card: React.FC<CardProps> = ({
         return {
           backgroundColor: Colors.surfaceElevated,
           borderColor: Colors.borderLight,
-          ...Shadows.card,
+          ...Shadows.subtle,
         };
       case 'outline':
         return {
@@ -32,7 +32,6 @@ export const Card: React.FC<CardProps> = ({
         return {
           backgroundColor: Colors.card,
           borderColor: Colors.cardBorder,
-          ...Shadows.subtle,
         };
     }
   };
@@ -57,7 +56,6 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    padding: 16,
-    overflow: 'hidden',
+    padding: 18,
   },
 });

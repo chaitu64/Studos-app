@@ -74,7 +74,7 @@ export const Badge: React.FC<BadgeProps> = ({
           { color: getTextColor() },
           textStyle,
         ]}
-        numberOfLines={1}
+        numberOfLines={2}
       >
         {label}
       </Text>

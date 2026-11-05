@@ -51,8 +51,8 @@ export const TeamCard: React.FC<TeamCardProps> = ({ team }) => {
           {team.openRoles.map((r, idx) => (
             <View key={idx} style={styles.roleChip}>
               <Ionicons name="person-add-outline" size={12} color={Colors.primary} />
-              <Text style={styles.roleChipText}>{r.role}</Text>
-              <Text style={styles.roleCommitment}>({r.commitment})</Text>
+            <Text style={styles.roleChipText} numberOfLines={1}>{r.role}</Text>
+            <Text style={styles.roleCommitment} numberOfLines={1}>· {r.commitment}</Text>
             </View>
           ))}
         </View>
@@ -80,8 +80,9 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   name: {
@@ -105,6 +106,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.footnote,
     color: Colors.textMuted,
     marginLeft: 8,
+    flex: 1,
   },
   rolesSection: {
     marginBottom: 12,
@@ -125,7 +127,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surfaceHighlight,
-    paddingVertical: 4,
+    minHeight: 36,
+    maxWidth: '100%',
+    paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
@@ -162,7 +166,8 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   applyBtn: {
-    paddingVertical: 6,
+    minHeight: 44,
+    paddingVertical: 8,
     paddingHorizontal: 14,
   },
 });

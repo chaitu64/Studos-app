@@ -72,7 +72,7 @@ export default function ResourceDetailScreen() {
       {resource.fileSizeMb != null ? <View style={styles.meta}><Text style={styles.metaLabel}>File size</Text><Text style={styles.metaValue}>{resource.fileSizeMb.toFixed(2)} MB</Text></View> : null}
       <View style={styles.meta}><Text style={styles.metaLabel}>Uploaded by</Text><Text style={styles.metaValue}>{resource.uploader.name}</Text></View>
       {resource.createdAt ? <View style={styles.meta}><Text style={styles.metaLabel}>Created</Text><Text style={styles.metaValue}>{new Date(resource.createdAt).toLocaleDateString()}</Text></View> : null}
-      <DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} height={520} />
+      <DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} height={320} />
       <TouchableOpacity style={styles.open} onPress={() => resource.pdfUrl && openDriveResource(resource.pdfUrl)}><Ionicons name="open-outline" size={18} color="#FFF"/><Text style={styles.openText}>Open in Google Drive</Text></TouchableOpacity>
       <TouchableOpacity style={styles.report} onPress={report}><Text style={styles.reportText}>Report a broken PDF link</Text></TouchableOpacity>
     </ScrollView> : <ScrollView contentContainerStyle={styles.content}>

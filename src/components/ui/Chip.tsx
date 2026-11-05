@@ -70,7 +70,8 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
+    minHeight: 44,
+    paddingVertical: 9,
     paddingHorizontal: 14,
     borderRadius: BorderRadius.full,
     marginRight: 8,

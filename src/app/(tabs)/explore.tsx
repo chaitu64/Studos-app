@@ -35,6 +35,7 @@ const ALL_CATEGORIES: (OpportunityCategory | 'All')[] = [
   'Workshops',
   'Conferences / Meets',
 ];
+const QUICK_CATEGORIES: (OpportunityCategory | 'All')[] = ['All', 'Hackathons', 'Internships', 'Jobs'];
 
 const SUGGESTED_SEARCHES = [
   'Remote',
@@ -354,10 +355,8 @@ export default function ExploreScreen() {
       {/* Header bar */}
       <View style={styles.header}>
         <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Explore Opportunities</Text>
-          <Text style={styles.headerSubtitle}>
-            Live verified hackathons, internships, jobs & scholarships
-          </Text>
+          <Text style={styles.headerTitle}>Explore</Text>
+          <Text style={styles.headerSubtitle}>Opportunities and ways to grow</Text>
         </View>
 
         <TouchableOpacity
@@ -411,44 +410,23 @@ export default function ExploreScreen() {
       {/* Suggested Search Shortcuts (when search input is empty) */}
       {!searchQuery.trim() ? (
         <View style={styles.suggestedBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.suggestedScroll}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.suggestedLabel}>Trending:</Text>
-            {SUGGESTED_SEARCHES.map((term) => (
-              <TouchableOpacity
-                key={term}
-                style={styles.suggestedPill}
-                onPress={() => setSearchQuery(term)}
-                activeOpacity={0.7}
-              >
+          <Text style={styles.suggestedLabel}>Popular searches</Text>
+          <View style={styles.suggestedWrap}>
+            {SUGGESTED_SEARCHES.slice(0, 4).map((term) => (
+              <TouchableOpacity key={term} style={styles.suggestedPill} onPress={() => setSearchQuery(term)} activeOpacity={0.7}>
                 <Text style={styles.suggestedPillText}>{term}</Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </View>
       ) : null}
 
-      {/* Horizontal Category Filter Chips */}
-      <View style={styles.categoryBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryScroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {ALL_CATEGORIES.map((cat) => (
-            <Chip
-              key={cat}
-              label={cat}
-              selected={selectedCategory === cat}
-              onPress={() => handleSelectQuickCategory(cat)}
-            />
-          ))}
-        </ScrollView>
+      <View style={styles.categoryBar} accessibilityRole="tablist">
+        {QUICK_CATEGORIES.map((cat) => (
+          <TouchableOpacity key={cat} accessibilityRole="tab" accessibilityState={{ selected: selectedCategory === cat }} style={[styles.quickCategory, selectedCategory === cat && styles.quickCategoryActive]} onPress={() => handleSelectQuickCategory(cat)}>
+            <Text numberOfLines={1} style={[styles.quickCategoryText, selectedCategory === cat && styles.quickCategoryTextActive]}>{cat}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Active Dismissible Filters Strip */}
@@ -889,13 +867,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerTitle: {
-    fontSize: Typography.title1,
+    fontSize: Typography.title2,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
     lineHeight: 32,
   },
   headerSubtitle: {
-    fontSize: Typography.footnote,
+    fontSize: Typography.body,
     color: Colors.textMuted,
     marginTop: 2,
   },
@@ -960,8 +938,10 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   suggestedBar: {
+    paddingHorizontal: Spacing.screenPadding,
     marginBottom: 10,
   },
+  suggestedWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 6 },
   suggestedScroll: {
     paddingHorizontal: Spacing.screenPadding,
     alignItems: 'center',
@@ -975,7 +955,9 @@ const styles = StyleSheet.create({
   },
   suggestedPill: {
     backgroundColor: Colors.surfaceHighlight,
-    paddingVertical: 4,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
@@ -987,8 +969,19 @@ const styles = StyleSheet.create({
     fontWeight: Typography.medium,
   },
   categoryBar: {
-    marginBottom: 10,
+    flexDirection: 'row',
+    marginHorizontal: Spacing.screenPadding,
+    marginBottom: 8,
+    padding: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
+  quickCategory: { minWidth: 0, minHeight: 42, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderRadius: BorderRadius.sm },
+  quickCategoryActive: { backgroundColor: Colors.surfaceHighlight },
+  quickCategoryText: { color: Colors.textMuted, fontSize: Typography.caption, fontWeight: Typography.medium },
+  quickCategoryTextActive: { color: Colors.textPrimary, fontWeight: Typography.semiBold },
   categoryScroll: {
     paddingHorizontal: Spacing.screenPadding,
     gap: 8,

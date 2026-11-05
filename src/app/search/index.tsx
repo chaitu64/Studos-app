@@ -116,14 +116,13 @@ export default function GlobalSearchScreen() {
       {/* Tabs */}
       <View style={styles.tabsRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
-          {SEARCH_TABS.map((tab) => (
-            <Chip
-              key={tab}
-              label={tab}
-              selected={selectedTab === tab}
-              onPress={() => setSelectedTab(tab)}
-            />
-          ))}
+          <View style={styles.segmented}>
+            {SEARCH_TABS.map((tab) => (
+              <TouchableOpacity key={tab} accessibilityRole="tab" accessibilityState={{ selected: selectedTab === tab }} style={[styles.segment, selectedTab === tab && styles.segmentActive]} onPress={() => setSelectedTab(tab)}>
+                <Text style={[styles.segmentText, selectedTab === tab && styles.segmentTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </ScrollView>
       </View>
 
@@ -190,8 +189,8 @@ export default function GlobalSearchScreen() {
                   >
                     <Avatar uri={s.avatar} name={s.name} size={40} isVerified={s.isVerified} />
                     <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{s.name}{s.isDemo ? ' · Demo profile' : ''}</Text>
-                      <Text style={styles.resultSub}>{s.college} • {s.branch || 'Student'}</Text>
+                      <Text style={styles.resultName} numberOfLines={1}>{s.name}{s.isDemo ? ' · Demo profile' : ''}</Text>
+                      <Text style={styles.resultSub} numberOfLines={2}>{[s.college, s.branch || 'Student'].filter(Boolean).join(' · ')}</Text>
                     </View>
                     <Badge label={s.branch || 'Student'} variant="primary" size="sm" />
                     {!s.isDemo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Message ${s.name}`} onPress={() => { void messageStudent(s.id); }} style={{ padding: 10 }}><Ionicons name="chatbubble-ellipses-outline" size={19} color={Colors.primary}/></TouchableOpacity> : null}
@@ -212,7 +211,7 @@ export default function GlobalSearchScreen() {
                     onPress={() => router.push(`/ideahub/${i.id}` as any)}
                   >
                     <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{i.title}</Text>
+                      <Text style={styles.resultName} numberOfLines={2}>{i.title}</Text>
                       <Text style={styles.resultSub} numberOfLines={1}>{i.tagline}</Text>
                     </View>
                     <Badge label={i.category} variant="outline" size="sm" />
@@ -233,7 +232,7 @@ export default function GlobalSearchScreen() {
                     onPress={() => router.push(`/teams/${t.id}` as any)}
                   >
                     <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{t.name}</Text>
+                      <Text style={styles.resultName} numberOfLines={2}>{t.name}</Text>
                       <Text style={styles.resultSub} numberOfLines={1}>{t.tagline}</Text>
                     </View>
                     <Badge label={t.stage} variant="purple" size="sm" />
@@ -254,8 +253,8 @@ export default function GlobalSearchScreen() {
                     onPress={() => router.push(`/opportunities/${o.id}` as any)}
                   >
                     <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{o.title}</Text>
-                      <Text style={styles.resultSub}>{o.organizer} • {o.deadline}</Text>
+                      <Text style={styles.resultName} numberOfLines={2}>{o.title}</Text>
+                      <Text style={styles.resultSub} numberOfLines={2}>{o.organizer} · {o.deadline}</Text>
                     </View>
                     <Badge label={o.type} variant="green" size="sm" />
                   </Card>
@@ -299,11 +298,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingTop: 6,
     paddingBottom: 8,
   },
   backBtn: {
-    padding: 8,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 4,
   },
   searchInputWrap: {
@@ -328,8 +330,13 @@ const styles = StyleSheet.create({
   },
   tabsScroll: {
     paddingHorizontal: 16,
-    gap: 6,
+    paddingBottom: 4,
   },
+  segmented: { flexDirection: 'row', padding: 4, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, gap: 2 },
+  segment: { minWidth: 70, minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderRadius: BorderRadius.sm },
+  segmentActive: { backgroundColor: Colors.surfaceHighlight },
+  segmentText: { color: Colors.textMuted, fontSize: Typography.caption, fontWeight: Typography.medium },
+  segmentTextActive: { color: Colors.textPrimary, fontWeight: Typography.semiBold },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
@@ -393,19 +400,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
+    minHeight: 72,
+    gap: 8,
   },
   resultInfo: {
     flex: 1,
-    marginHorizontal: 10,
+    minWidth: 0,
+    marginHorizontal: 6,
   },
   resultName: {
     fontSize: Typography.body,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
+    lineHeight: 20,
   },
   resultSub: {
-    fontSize: Typography.caption,
+    fontSize: Typography.footnote,
     color: Colors.textMuted,
     marginTop: 2,
+    lineHeight: 17,
   },
 });

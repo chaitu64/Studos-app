@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Tabs, type BottomTabBarProps } from 'expo-router/tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,8 +61,8 @@ export default function TabLayout() {
         style={[
           styles.tabBarContainer,
           {
-            height: Platform.OS === 'ios' ? 84 : 64 + insets.bottom,
-            paddingBottom: Platform.OS === 'ios' ? 24 : insets.bottom + 6,
+            height: 64 + insets.bottom,
+            paddingBottom: Math.max(insets.bottom, 8),
           },
         ]}
       >
@@ -152,17 +152,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: Colors.surface,
     borderTopColor: Colors.border,
     borderTopWidth: 1,
-    paddingTop: 8,
-    ...Shadows.card,
+    paddingTop: 5,
+    ...Shadows.subtle,
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 2,
+    minHeight: 48,
+    paddingVertical: 3,
   },
   iconContainer: {
     position: 'relative',

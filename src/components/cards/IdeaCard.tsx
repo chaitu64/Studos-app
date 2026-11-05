@@ -43,8 +43,8 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({ idea, showFullDetails = fals
         <TouchableOpacity style={styles.creatorRow} onPress={() => idea.creator.identity && router.push(`/student/${idea.creator.identity.type}/${idea.creator.identity.id}` as any)}>
           <Avatar uri={idea.creator.avatar} name={idea.creator.name} size={36} />
           <View style={styles.creatorInfo}>
-            <Text style={styles.creatorName}>{idea.creator.name}</Text>
-            <Text style={styles.creatorCollege}>
+            <Text style={styles.creatorName} numberOfLines={1}>{idea.creator.name}</Text>
+            <Text style={styles.creatorCollege} numberOfLines={1}>
               {idea.creator.college} • {idea.creator.role}
             </Text>
           </View>
@@ -112,6 +112,7 @@ const styles = StyleSheet.create({
   creatorInfo: {
     marginLeft: 10,
     flex: 1,
+    minWidth: 0,
   },
   creatorName: {
     fontSize: Typography.body,

@@ -31,14 +31,25 @@ export const authService = {
       const fullName = String(metadata.full_name || metadata.name || '').trim().split(/\s+/);
       const firstName = String(metadata.first_name || metadata.given_name || fullName[0] || '').trim();
       const lastName = String(metadata.last_name || metadata.family_name || fullName.slice(1).join(' ') || '').trim();
+      const googleAvatar = user.app_metadata?.provider === 'google'
+        ? String(metadata.avatar_url || metadata.picture || '').trim()
+        : '';
+      const updates = [];
       if (firstName || lastName) {
         // The Auth session is already valid. Best-effort profile enrichment
         // must not keep the user on the callback screen.
-        const updates = [];
         if (firstName) updates.push(db.from('profiles').update({ first_name: firstName }).eq('id', user.id).eq('first_name', ''));
         if (lastName) updates.push(db.from('profiles').update({ last_name: lastName }).eq('id', user.id).eq('last_name', ''));
-        void Promise.all(updates).catch(() => undefined);
       }
+      if (googleAvatar) {
+        updates.push((async () => {
+          const current = await db.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle();
+          if (!current.error && !current.data?.avatar_url) {
+            await db.from('profiles').update({ avatar_url: googleAvatar }).eq('id', user.id);
+          }
+        })());
+      }
+      void Promise.all(updates).catch(() => undefined);
     }
     return result;
     })();

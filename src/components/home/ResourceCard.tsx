@@ -5,9 +5,24 @@ import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Typography } from '../../constants/theme';
 import { StudyResource } from '../../types';
 
-type Props = { resource: StudyResource; onOpen: () => void; onBookmark: () => void };
+type Props = { resource: StudyResource; onOpen: () => void; onBookmark: () => void; compact?: boolean };
 
-export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen, onBookmark }: Props) {
+export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen, onBookmark, compact = false }: Props) {
+  if (compact) return (
+    <View style={styles.listCard}>
+      <TouchableOpacity accessibilityRole="button" onPress={onOpen} style={styles.listMain} activeOpacity={0.84}>
+        <View style={styles.listIcon}><Ionicons name="document-text" size={22} color={Colors.primary} /></View>
+        <View style={styles.listCopy}>
+          <Text style={styles.listTitle} numberOfLines={2}>{resource.pdfFileName || resource.fileName}</Text>
+          <Text style={styles.listSubject} numberOfLines={1}>{resource.subject}</Text>
+          <Text style={styles.listMeta} numberOfLines={2}>{[resource.studyYear ? `Year ${resource.studyYear}` : null, resource.semester ? `Semester ${resource.semester}` : null, resource.type.replaceAll('_', ' '), resource.fileSizeMb != null ? `${resource.fileSizeMb.toFixed(1)} MB` : null].filter(Boolean).join(' · ')}</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={resource.isBookmarked ? 'Remove bookmark' : 'Bookmark resource'} onPress={onBookmark} style={styles.listBookmark}>
+        <Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} />
+      </TouchableOpacity>
+    </View>
+  );
   return (
     <View style={styles.card}>
       <TouchableOpacity accessibilityRole="button" onPress={onOpen} activeOpacity={0.88}>
@@ -34,8 +49,16 @@ export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen,
 });
 
 const styles = StyleSheet.create({
-  card: { width: 286, backgroundColor: '#121624', borderRadius: 16, borderWidth: 1, borderColor: '#252C3D', overflow: 'hidden', marginRight: 12 },
-  preview: { height: 178, backgroundColor: '#0D1018', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  listCard: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: 14, borderWidth: 1, borderColor: Colors.cardBorder, padding: 12, marginBottom: 10, gap: 8 },
+  listMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  listIcon: { width: 44, height: 48, borderRadius: 11, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center' },
+  listCopy: { flex: 1, minWidth: 0, gap: 3 },
+  listTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 19, fontWeight: Typography.semiBold },
+  listSubject: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  listMeta: { color: Colors.textMuted, fontSize: 11, lineHeight: 16, textTransform: 'capitalize' },
+  listBookmark: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  card: { width: 272, backgroundColor: '#121624', borderRadius: 16, borderWidth: 1, borderColor: '#252C3D', overflow: 'hidden', marginRight: 12 },
+  preview: { height: 132, backgroundColor: '#0D1018', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   thumbnail: { width: '100%', height: '100%', backgroundColor: '#E8E9EC' },
   placeholder: { alignItems: 'center', gap: 8 }, placeholderText: { color: Colors.textMuted, fontSize: 10 },
   pdfBadge: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primary, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 7 },

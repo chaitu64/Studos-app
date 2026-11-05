@@ -60,14 +60,11 @@ function SkillTags({ skills }: { skills: string[] }) {
 
   return (
     <View style={styles.tags}>
-      {skills.slice(0, 4).map((skill) => (
-        <View key={skill} style={styles.tag}>
-          <Text style={styles.tagText} numberOfLines={1}>{skill}</Text>
+      {skills.map((skill, index) => (
+        <View key={`${skill}-${index}`} style={styles.tag}>
+          <Text style={styles.tagText}>{skill}</Text>
         </View>
       ))}
-      {skills.length > 4 ? (
-        <Text style={styles.moreSkills}>+{skills.length - 4}</Text>
-      ) : null}
     </View>
   );
 }
@@ -192,20 +189,20 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
         />
         <View style={styles.personIdentity}>
           <View style={styles.nameRow}>
-            <Text style={styles.personName} numberOfLines={1}>{person.author.name}</Text>
+            <Text style={styles.personName}>{person.author.name}</Text>
             {person.author.isVerified ? (
               <Ionicons name="checkmark-circle" size={16} color={Colors.accentCyan} />
             ) : null}
           </View>
-          {role ? <Text style={styles.subtleText} numberOfLines={1}>{role}</Text> : null}
+          {role ? <Text style={styles.subtleText}>{role}</Text> : null}
           {person.author.college ? (
-            <Text style={styles.subtleText} numberOfLines={2}>{person.author.college}</Text>
+            <Text style={styles.subtleText}>{person.author.college}</Text>
           ) : null}
         </View>
       </View>
 
       {person.profile?.isDemo ? <Text style={styles.demoNoticeText}>DEMO PROFILE</Text> : null}
-      <Text style={styles.personBio} numberOfLines={3}>{(person.profile?.shortBio || primaryPost?.content || 'Student profile').trim()}</Text>
+      <Text style={styles.personBio}>{(person.profile?.shortBio || primaryPost?.content || 'Student profile').trim()}</Text>
 
       {person.skills.length > 0 ? (
         <Section label="TOP SKILLS">
@@ -216,11 +213,11 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
       <View style={styles.profileGrid}>
         <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="rocket-outline" size={15} color={Colors.primary} /></View>
-          <View style={styles.factCopy}><Text style={styles.sectionLabel}>{person.profile ? 'STUDY' : 'BUILDING'}</Text><Text style={styles.factValue} numberOfLines={2}>{person.profile ? [person.profile.degree, person.profile.studyYear && `Year ${person.profile.studyYear}`, person.profile.gradYear && `Class of ${person.profile.gradYear}`].filter(Boolean).join(' · ') || person.profile.branch || 'Student' : primaryPost?.title}</Text></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>{person.profile ? 'STUDY' : 'BUILDING'}</Text><Text style={styles.factValue}>{person.profile ? [person.profile.degree, person.profile.studyYear && `Year ${person.profile.studyYear}`, person.profile.gradYear && `Class of ${person.profile.gradYear}`].filter(Boolean).join(' · ') || person.profile.branch || 'Student' : primaryPost?.title}</Text></View>
         </View>
         {lookingFor ? <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="people-outline" size={15} color={Colors.accentCyan} /></View>
-          <View style={styles.factCopy}><Text style={styles.sectionLabel}>LOOKING FOR</Text><Text style={styles.factValue} numberOfLines={2}>{lookingFor}</Text></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>LOOKING FOR</Text><Text style={styles.factValue}>{lookingFor}</Text></View>
         </View> : null}
         {primaryPost?.serviceAvailability ? <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="calendar-outline" size={15} color={Colors.accentGreen} /></View>
@@ -350,7 +347,7 @@ function ServiceCard({ post }: { post: CommunityPost }) {
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    minHeight: 260,
+    minHeight: 0,
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: Colors.card,
@@ -360,7 +357,7 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   cardContent: {
-    padding: 18,
+    padding: 16,
     paddingBottom: 12,
   },
   demoNotice: {
@@ -415,7 +412,7 @@ const styles = StyleSheet.create({
   },
   personHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   personIdentity: {
@@ -424,6 +421,7 @@ const styles = StyleSheet.create({
   },
   nameRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 5,
   },
@@ -490,6 +488,7 @@ const styles = StyleSheet.create({
   tagText: {
     color: Colors.textSecondary,
     fontSize: Typography.caption,
+    flexShrink: 1,
   },
   moreSkills: {
     color: Colors.textMuted,

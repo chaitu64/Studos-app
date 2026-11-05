@@ -206,20 +206,19 @@ export default function ProfileScreen() {
           /> : <Text style={styles.detailLine}>Sign in to add or edit your profile details.</Text>}
         </Card>
 
-        <Card variant="default" style={{ marginTop: 14, marginBottom: 14 }}>
+        {(user.email || user.college || user.collegeEmail || user.degree || user.branch || user.studyYear) ? <Card variant="default" style={{ marginTop: 14, marginBottom: 14 }}>
           <Text style={styles.cardSectionTitle}>PERSONAL DETAILS</Text>
-          <Text style={styles.detailLine}>Name: {user.name || 'Not provided'}</Text>
-          {session ? <Text style={styles.detailLine}>Given name: {user.givenName || 'Not provided'}</Text> : null}
-          {session ? <Text style={styles.detailLine}>Family name: {user.familyName || 'Not provided'}</Text> : null}
-          <Text style={styles.detailLine}>Email: {user.email || 'Not provided'}</Text>
-          {session ? <Text style={styles.detailLine}>Sign-in method: {user.authProvider || 'Not provided'}</Text> : null}
-          <Text style={styles.detailLine}>College: {user.college || 'Not provided'}</Text>
-          <Text style={styles.detailLine}>College email: {user.collegeEmail || 'Not provided'}</Text>
-          <Text style={styles.detailLine}>Branch: {user.branch || 'Not provided'}</Text>
-          <Text style={styles.detailLine}>Degree: {user.degree || 'Not provided'}</Text>
-          <Text style={styles.detailLine}>Study year: {user.studyYear || 'Not provided'}</Text>
-          <Text style={styles.detailLine}>Date of birth: {user.dateOfBirth || 'Not provided'}</Text>
-        </Card>
+          {[
+            ['Email', user.email], ['College', user.college], ['College email', user.collegeEmail],
+            ['Program', [user.degree, user.branch].filter(Boolean).join(' · ')],
+            ['Study year', user.studyYear ? `Year ${user.studyYear}` : ''],
+          ].filter(([, value]) => Boolean(value)).map(([label, value]) => (
+            <View key={label} style={styles.detailRow}>
+              <Text style={styles.detailLabel}>{label}</Text>
+              <Text style={styles.detailValue}>{value}</Text>
+            </View>
+          ))}
+        </Card> : null}
 
         {/* Stats Grid */}
         <Text style={[styles.cardSectionTitle, { marginBottom: 8 }]}>ACTIVITY FROM STUDOS</Text>
@@ -377,7 +376,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Tab Controls: Overview / Projects / Ideas / Badges */}
-        <View style={styles.tabBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tabItem, activeTab === 'overview' ? styles.tabItemActive : undefined]}
             onPress={() => setActiveTab('overview')}
@@ -422,23 +421,23 @@ export default function ProfileScreen() {
               Badges ({(user.badges || []).length})
             </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         {/* Tab Content */}
         {activeTab === 'overview' && (
           <View style={styles.tabContent}>
             {/* Goals */}
-            <Card variant="default" style={styles.sectionCard}>
+            {(user.goals || user.availability) ? <Card variant="default" style={styles.sectionCard}>
               <Text style={styles.cardSectionTitle}>CURRENT GOALS & SQUAD FOCUS</Text>
               <Text style={styles.goalsText}>{user.goals}</Text>
               {user.availability ? <View style={styles.availabilityRow}>
                 <Ionicons name="time-outline" size={16} color={Colors.accentCyan} />
                 <Text style={styles.availabilityText}>Available: {user.availability}</Text>
               </View> : null}
-            </Card>
+            </Card> : null}
 
             {/* Skills & Technologies */}
-            <Card variant="default" style={styles.sectionCard}>
+            {user.skills.length ? <Card variant="default" style={styles.sectionCard}>
               <Text style={styles.cardSectionTitle}>VERIFIED SKILLS</Text>
               <View style={styles.chipsWrap}>
                 {user.skills.map((skill) => (
@@ -447,17 +446,20 @@ export default function ProfileScreen() {
                   </View>
                 ))}
               </View>
-            </Card>
+            </Card> : null}
 
             {/* Interests & Domains */}
-            <Card variant="default" style={styles.sectionCard}>
+            {user.interests.length ? <Card variant="default" style={styles.sectionCard}>
               <Text style={styles.cardSectionTitle}>PASSION DOMAINS</Text>
               <View style={styles.chipsWrap}>
                 {user.interests.map((interest) => (
                   <Badge key={interest} label={interest} variant="cyan" size="sm" />
                 ))}
               </View>
-            </Card>
+            </Card> : null}
+            {!user.goals && !user.availability && !user.skills.length && !user.interests.length ? (
+              <Text style={styles.goalsText}>Add a short bio, goals, skills, or interests to show what you’re working toward.</Text>
+            ) : null}
           </View>
         )}
 
@@ -891,12 +893,16 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     marginBottom: 16,
+    gap: 4,
   },
   tabItem: {
-    paddingVertical: 10,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
@@ -927,6 +933,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   detailLine: { color: Colors.textSecondary, fontSize: Typography.footnote, lineHeight: 22 },
+  detailRow: { paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, gap: 4 },
+  detailLabel: { color: Colors.textMuted, fontSize: Typography.caption, fontWeight: Typography.semiBold, textTransform: 'uppercase', letterSpacing: 0.4 },
+  detailValue: { color: Colors.textPrimary, fontSize: Typography.body, lineHeight: 21 },
   goalsText: {
     fontSize: Typography.body,
     color: Colors.textSecondary,
