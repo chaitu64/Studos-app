@@ -173,13 +173,23 @@ class StudOsApiHandler(BaseHTTPRequestHandler):
                 self.send_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps(response_body).encode("utf-8"))
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                # A client may leave while the first cache fill is fetching
+                # opportunities. The cache is still populated; don't try to
+                # send a second (500) response over the closed socket.
+                logger.info("Client disconnected before the opportunities response was sent")
             except Exception as e:
                 logger.error(f"Error handling /api/opportunities: {e}")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_cors_headers()
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+                try:
+                    payload = json.dumps({"error": str(e)}).encode("utf-8")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(payload)
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    logger.info("Client disconnected before the error response was sent")
             return
 
         # 404 for unknown endpoints

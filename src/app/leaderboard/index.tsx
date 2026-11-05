@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,87 +15,27 @@ import { useApp } from '../../context/AppContext';
 
 export default function LeaderboardScreen() {
   const { user, leaderboard } = useApp();
-  const [timeframe, setTimeframe] = useState<'weekly' | 'alltime'>('weekly');
-  const [showPointRules, setShowPointRules] = useState(false);
-
-  const POINT_RULES = [
-    { title: 'Shipped & Live Project', points: '+250 pts', desc: 'Deploying an open MVP or live test site' },
-    { title: 'Hackathon Award Track', points: '+200 pts', desc: 'Winning a track at verified collegiate hackathons' },
-    { title: 'Idea with Working Prototype', points: '+150 pts', desc: 'Advancing an IdeaHub concept to tested stage' },
-    { title: 'Peer Mentoring & Review', points: '+50 pts', desc: 'Giving code or architecture feedback to other students' },
-    { title: 'Anti-Spam Filter', points: '0 pts', desc: 'Likes, repetitive posts, and duplicate ideas award 0 points' },
-  ];
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      {/* Timeframe Toggle */}
-      <View style={styles.timeframeRow}>
-        <View style={styles.timeframeSwitch}>
-          <TouchableOpacity
-            style={[styles.switchOption, timeframe === 'weekly' ? styles.switchActive : undefined]}
-            onPress={() => setTimeframe('weekly')}
-          >
-            <Text style={[styles.switchText, timeframe === 'weekly' ? styles.switchTextActive : undefined]}>
-              ⚡ This Week
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.switchOption, timeframe === 'alltime' ? styles.switchActive : undefined]}
-            onPress={() => setTimeframe('alltime')}
-          >
-            <Text style={[styles.switchText, timeframe === 'alltime' ? styles.switchTextActive : undefined]}>
-              🏆 All Time
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={styles.rulesToggleBtn}
-          onPress={() => setShowPointRules(!showPointRules)}
-        >
-          <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
-          <Text style={styles.rulesToggleText}>{showPointRules ? 'Hide Rules' : 'Point Rules'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Point Rules Card */}
-      {showPointRules ? (
-        <Card variant="outline" style={styles.rulesCard}>
-          <Text style={styles.rulesHeader}>TRANSPARENT CONTRIBUTION SYSTEM</Text>
-          <Text style={styles.rulesSub}>
-            StuDos rewards verified engineering, shipped code, and peer mentorship:
-          </Text>
-          {POINT_RULES.map((rule, idx) => (
-            <View key={idx} style={styles.ruleItem}>
-              <View style={styles.ruleLeft}>
-                <Text style={styles.ruleTitle}>{rule.title}</Text>
-                <Text style={styles.ruleDesc}>{rule.desc}</Text>
-              </View>
-              <Text style={styles.rulePts}>{rule.points}</Text>
-            </View>
-          ))}
-        </Card>
-      ) : null}
-
       {/* Current User Spotlight Rank Card */}
       <Card variant="elevated" style={styles.userRankCard}>
         <View style={styles.userRankHeader}>
           <Text style={styles.userRankLabel}>YOUR RANKING</Text>
-          <Badge label={`Top 5% of Builders`} variant="primary" size="sm" />
+          <Badge label="Leaderboard" variant="primary" size="sm" />
         </View>
         <View style={styles.userRankRow}>
           <View style={styles.rankBadge}>
-            <Text style={styles.rankNum}>#{user.leaderboardRank}</Text>
+            <Text style={styles.rankNum}>{user.leaderboardRank ? `#{user.leaderboardRank}` : '—'}</Text>
           </View>
           <Avatar uri={user.avatar} name={user.name} size={44} isVerified={user.isVerified} />
           <View style={styles.userRankInfo}>
             <Text style={styles.userRankName}>{user.name} (You)</Text>
-            <Text style={styles.userRankCollege}>{user.college} • {user.primaryRole}</Text>
+            <Text style={styles.userRankCollege}>{user.college} • {user.branch || user.degree || ''}</Text>
           </View>
           <View style={styles.userPointsBlock}>
             <Text style={styles.userPointsValue}>{user.points}</Text>
-            <Text style={styles.userGainText}>+250 this week</Text>
+            <Text style={styles.userGainText}>Points</Text>
           </View>
         </View>
       </Card>
@@ -132,17 +71,17 @@ export default function LeaderboardScreen() {
               <View style={styles.leadCardInfo}>
                 <View style={styles.nameBadgesRow}>
                   <Text style={styles.leadCardName}>{lead.name}</Text>
-                  {isTop3 ? (
+                  {isTop3 && lead.categoryRank ? (
                     <Badge label={lead.categoryRank} variant="amber" size="sm" style={{ marginLeft: 6 }} />
                   ) : null}
                 </View>
                 <Text style={styles.leadCardCollege}>
-                  {lead.college} • {lead.role}
+                  {lead.college} â€¢ {lead.role}
                 </Text>
                 <View style={styles.badgeTagsRow}>
-                  {lead.badges.slice(0, 1).map((b) => (
+                  {(lead.badges || []).slice(0, 1).map((b) => (
                     <Text key={b} style={styles.badgeTagText}>
-                      🎖 {b}
+                      ðŸŽ– {b}
                     </Text>
                   ))}
                 </View>
@@ -150,7 +89,7 @@ export default function LeaderboardScreen() {
 
               <View style={styles.leadCardPoints}>
                 <Text style={styles.leadCardPtsValue}>{lead.points}</Text>
-                <Text style={styles.leadCardGain}>+{lead.weeklyGain}</Text>
+                <Text style={styles.leadCardGain}>points</Text>
               </View>
             </Card>
           );

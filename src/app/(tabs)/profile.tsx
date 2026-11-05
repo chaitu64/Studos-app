@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -20,19 +20,66 @@ import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
 import { ActionSheet } from '../../components/ui/ActionSheet';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { postService } from '../../services/postService';
+import { listStudyResources } from '../../services/resourceApi';
+import { supabaseConfigured } from '../../services/supabase';
+import { CommunityPost, StudyResource } from '../../types';
 
 export default function ProfileScreen() {
-  const { user, ideas, projects, updateProfile, conversations, unreadNotifsCount } = useApp();
+  const { user: appUser, ideas, projects, studentServices, updateProfile, conversations, unreadNotifsCount, communityPosts } = useApp();
+  const { session } = useAuth();
+  const user = session ? appUser : { ...appUser, name: 'Not provided', givenName: '', familyName: '', email: '', emailVerified: false, avatar: '', college: '', collegeEmail: '', dateOfBirth: '', branch: '', degree: '', studyYear: '', gradYear: '', shortBio: '', goals: '', skills: [], interests: [], githubUrl: undefined, linkedinUrl: undefined, portfolioUrl: undefined, badges: [], isVerified: false };
+  const profileCompletion = Math.round([user.name !== 'Not provided', Boolean(user.email), Boolean(user.college), Boolean(user.branch), Boolean(user.degree), Boolean(user.studyYear)].filter(Boolean).length / 6 * 100);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [bioInput, setBioInput] = useState(user.shortBio);
   const [goalsInput, setGoalsInput] = useState(user.goals);
   const [skillsInput, setSkillsInput] = useState(user.skills.join(', '));
-  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'ideas' | 'achievements'>('overview');
+  const [interestsInput, setInterestsInput] = useState(user.interests.join(', '));
+  const [nameInput, setNameInput] = useState(user.name);
+  const [avatarInput, setAvatarInput] = useState(user.avatar);
+  const [collegeInput, setCollegeInput] = useState(user.college);
+  const [branchInput, setBranchInput] = useState(user.branch || '');
+  const [degreeInput, setDegreeInput] = useState(user.degree);
+  const [studyYearInput, setStudyYearInput] = useState(user.studyYear || '');
+  const [graduationYearInput, setGraduationYearInput] = useState(user.gradYear);
+  const [collegeEmailInput, setCollegeEmailInput] = useState(user.collegeEmail || '');
+  const [dateOfBirthInput, setDateOfBirthInput] = useState(user.dateOfBirth || '');
+  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'ideas' | 'contributions' | 'achievements'>('overview');
+  const [myPosts, setMyPosts] = useState<CommunityPost[]>([]);
+  const [myResources, setMyResources] = useState<StudyResource[]>([]);
+  const [myDataUserId, setMyDataUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBioInput(user.shortBio); setGoalsInput(user.goals); setSkillsInput(user.skills.join(', '));
+      setInterestsInput(user.interests.join(', ')); setNameInput(user.name); setAvatarInput(user.avatar);
+      setCollegeInput(user.college); setBranchInput(user.branch || ''); setDegreeInput(user.degree);
+      setStudyYearInput(user.studyYear || ''); setGraduationYearInput(user.gradYear);
+      setCollegeEmailInput(user.collegeEmail || ''); setDateOfBirthInput(user.dateOfBirth || '');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [user.id, user.name, user.avatar, user.shortBio, user.goals, user.skills, user.interests, user.college, user.branch, user.degree, user.studyYear, user.gradYear, user.collegeEmail, user.dateOfBirth]);
+
+  useEffect(() => {
+    let active = true;
+    if (!session || !supabaseConfigured) {
+      void Promise.resolve().then(() => { if (active) { setMyPosts(communityPosts.filter((post) => post.author.id === user.id)); setMyResources([]); setMyDataUserId(user.id); } });
+      return () => { active = false; };
+    }
+    void Promise.all([postService.feed(1, 40, undefined, session.user.id), listStudyResources({ ownerId: session.user.id })])
+      .then(([posts, resources]) => { if (active) { setMyPosts(posts.posts); setMyResources(resources); setMyDataUserId(session.user.id); } })
+      .catch(() => { if (active) { setMyPosts(communityPosts.filter((post) => post.author.id === user.id)); setMyResources([]); setMyDataUserId(session.user.id); } });
+    return () => { active = false; };
+  }, [communityPosts, session, user.id]);
 
   const myIdeas = ideas.filter((i) => i.creator.id === user.id);
   const myProjects = projects.filter((p) => p.contributors.some((c) => c.id === user.id));
+  const myServices = studentServices.filter((service) => service.provider.id === user.id);
+  const visibleMyPosts = myDataUserId === user.id ? myPosts : [];
+  const visibleMyResources = myDataUserId === user.id ? myResources : [];
   const totalUnreadChat = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
   const handleSaveProfile = async () => {
@@ -40,11 +87,22 @@ export default function ProfileScreen() {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+    const updatedInterests = interestsInput.split(',').map((item) => item.trim()).filter(Boolean);
 
     await updateProfile({
       shortBio: bioInput,
       goals: goalsInput,
       skills: updatedSkills,
+      interests: updatedInterests,
+      name: nameInput.trim(),
+      avatar: avatarInput.trim(),
+      college: collegeInput,
+      branch: branchInput,
+      degree: degreeInput,
+      studyYear: studyYearInput,
+      gradYear: graduationYearInput,
+      collegeEmail: collegeEmailInput.trim(),
+      dateOfBirth: dateOfBirthInput.trim(),
     });
     setShowEditModal(false);
     Alert.alert('Profile Updated', 'Your profile details have been saved.');
@@ -78,22 +136,21 @@ export default function ProfileScreen() {
         {/* Profile Card Header */}
         <Card variant="elevated" style={styles.profileHeaderCard}>
           <View style={styles.avatarRow}>
-            <Avatar uri={user.avatar} name={user.name} size={76} isVerified={user.isVerified} />
+            <Avatar uri={user.avatar} name={user.name} size={76} isVerified={Boolean(session && user.emailVerified)} />
             <View style={styles.headerRightInfo}>
               <View style={styles.nameRow}>
                 <Text style={styles.userName}>{user.name}</Text>
-                {user.isVerified ? (
+              {session && user.emailVerified ? (
                   <Ionicons name="checkmark-circle" size={18} color={Colors.primary} style={{ marginLeft: 4 }} />
                 ) : null}
               </View>
-              <Text style={styles.userCollege}>{user.college}</Text>
-              <Text style={styles.userDegree}>{user.degree} • {user.gradYear}</Text>
-              <Badge label={user.primaryRole} variant="primary" size="sm" style={{ marginTop: 6 }} />
+              <Text style={styles.userCollege}>{session ? (user.email || 'Not provided') : (user.college || 'Not provided')}</Text>
+              <Text style={styles.userDegree}>{session ? (user.emailVerified ? 'Verified account' : 'Email not verified') : (user.degree || 'Not provided')}</Text>
             </View>
           </View>
 
           {/* Short Bio */}
-          <Text style={styles.bioText}>{user.shortBio}</Text>
+          <Text style={styles.bioText}>{user.shortBio || 'Not provided'}</Text>
 
           {/* Social Links */}
           <View style={styles.socialRow}>
@@ -132,27 +189,43 @@ export default function ProfileScreen() {
           <View style={styles.completionBox}>
             <View style={styles.completionHeader}>
               <Text style={styles.completionTitle}>PROFILE COMPLETION</Text>
-              <Text style={styles.completionPercent}>95%</Text>
+              <Text style={styles.completionPercent}>{profileCompletion}%</Text>
             </View>
             <View style={styles.completionTrack}>
-              <View style={[styles.completionFill, { width: '95%' }]} />
+              <View style={[styles.completionFill, { width: `${profileCompletion}%` }]} />
             </View>
           </View>
 
-          <Button
+          {session ? <Button
             title="Edit Profile & Skills"
             variant="secondary"
             size="sm"
             icon={<Ionicons name="pencil" size={14} color={Colors.textPrimary} />}
             onPress={() => setShowEditModal(true)}
             style={{ marginTop: 14 }}
-          />
+          /> : <Text style={styles.detailLine}>Sign in to add or edit your profile details.</Text>}
+        </Card>
+
+        <Card variant="default" style={{ marginTop: 14, marginBottom: 14 }}>
+          <Text style={styles.cardSectionTitle}>PERSONAL DETAILS</Text>
+          <Text style={styles.detailLine}>Name: {user.name || 'Not provided'}</Text>
+          {session ? <Text style={styles.detailLine}>Given name: {user.givenName || 'Not provided'}</Text> : null}
+          {session ? <Text style={styles.detailLine}>Family name: {user.familyName || 'Not provided'}</Text> : null}
+          <Text style={styles.detailLine}>Email: {user.email || 'Not provided'}</Text>
+          {session ? <Text style={styles.detailLine}>Sign-in method: {user.authProvider || 'Not provided'}</Text> : null}
+          <Text style={styles.detailLine}>College: {user.college || 'Not provided'}</Text>
+          <Text style={styles.detailLine}>College email: {user.collegeEmail || 'Not provided'}</Text>
+          <Text style={styles.detailLine}>Branch: {user.branch || 'Not provided'}</Text>
+          <Text style={styles.detailLine}>Degree: {user.degree || 'Not provided'}</Text>
+          <Text style={styles.detailLine}>Study year: {user.studyYear || 'Not provided'}</Text>
+          <Text style={styles.detailLine}>Date of birth: {user.dateOfBirth || 'Not provided'}</Text>
         </Card>
 
         {/* Stats Grid */}
+        <Text style={[styles.cardSectionTitle, { marginBottom: 8 }]}>ACTIVITY FROM STUDOS</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>#{user.leaderboardRank}</Text>
+            <Text style={styles.statValue}>{user.leaderboardRank ? `#${user.leaderboardRank}` : '—'}</Text>
             <Text style={styles.statLabel}>Leaderboard</Text>
           </View>
           <View style={styles.statBox}>
@@ -164,8 +237,8 @@ export default function ProfileScreen() {
             <Text style={styles.statLabel}>Projects</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{user.hackathonsCount}</Text>
-            <Text style={styles.statLabel}>Hackathons</Text>
+            <Text style={styles.statValue}>{communityPosts.filter((post) => post.author.id === user.id).length}</Text>
+            <Text style={styles.statLabel}>Posts</Text>
           </View>
         </View>
 
@@ -210,7 +283,7 @@ export default function ProfileScreen() {
                 <Ionicons name="trophy-outline" size={18} color={Colors.accentAmber} />
               </View>
               <Text style={styles.hubGridTitle}>Leaderboard</Text>
-              <Text style={styles.hubGridSub}>Rank #{user.leaderboardRank}</Text>
+              <Text style={styles.hubGridSub}>{user.leaderboardRank ? `Rank #${user.leaderboardRank}` : 'No leaderboard rank'}</Text>
             </TouchableOpacity>
 
             {/* 3. Idea Hub / Submit an Idea */}
@@ -263,6 +336,14 @@ export default function ProfileScreen() {
               </View>
               <Text style={styles.hubGridTitle}>Saved Opps</Text>
               <Text style={styles.hubGridSub}>Deadlines</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.hubGridCard} onPress={() => router.push('/saved' as any)} activeOpacity={0.8}>
+              <View style={[styles.miniIconWrap, { backgroundColor: Colors.accentPurpleSubtle }]}>
+                <Ionicons name="bookmark" size={18} color={Colors.accentPurple} />
+              </View>
+              <Text style={styles.hubGridTitle}>Saved Content</Text>
+              <Text style={styles.hubGridSub}>Posts & study PDFs</Text>
             </TouchableOpacity>
 
             {/* 7. Notifications */}
@@ -325,11 +406,20 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'contributions' ? styles.tabItemActive : undefined]}
+            onPress={() => setActiveTab('contributions')}
+          >
+            <Text style={[styles.tabText, activeTab === 'contributions' ? styles.tabTextActive : undefined]}>
+              Contributions
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.tabItem, activeTab === 'achievements' ? styles.tabItemActive : undefined]}
             onPress={() => setActiveTab('achievements')}
           >
             <Text style={[styles.tabText, activeTab === 'achievements' ? styles.tabTextActive : undefined]}>
-              Badges ({user.badges.length})
+              Badges ({(user.badges || []).length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -341,10 +431,10 @@ export default function ProfileScreen() {
             <Card variant="default" style={styles.sectionCard}>
               <Text style={styles.cardSectionTitle}>CURRENT GOALS & SQUAD FOCUS</Text>
               <Text style={styles.goalsText}>{user.goals}</Text>
-              <View style={styles.availabilityRow}>
+              {user.availability ? <View style={styles.availabilityRow}>
                 <Ionicons name="time-outline" size={16} color={Colors.accentCyan} />
                 <Text style={styles.availabilityText}>Available: {user.availability}</Text>
-              </View>
+              </View> : null}
             </Card>
 
             {/* Skills & Technologies */}
@@ -400,6 +490,18 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {activeTab === 'contributions' && <View style={styles.tabContent}>
+          <Text style={styles.cardSectionTitle}>MY COMMUNITY POSTS ({visibleMyPosts.length})</Text>
+          {visibleMyPosts.map((post) => <Card key={post.id} variant="default" style={{ marginBottom: 10 }}><Text style={styles.projectTitle}>{post.title}</Text><Text style={styles.projectTagline} numberOfLines={3}>{post.content}</Text></Card>)}
+          {!visibleMyPosts.length ? <Text style={styles.goalsText}>You have not shared a community post yet.</Text> : null}
+          <Text style={[styles.cardSectionTitle, { marginTop: 18 }]}>MY ACTIVE SERVICES ({myServices.length})</Text>
+          {myServices.map((service) => <Card key={service.id} variant="default" style={{ marginBottom: 10 }}><Text style={styles.projectTitle}>{service.title}</Text><Text style={styles.projectTagline}>{service.description}</Text>{service.startingPrice != null ? <Text style={styles.projectTagline}>Starting at ₹{service.startingPrice.toLocaleString('en-IN')}</Text> : null}</Card>)}
+          {!myServices.length ? <Text style={styles.goalsText}>No active services listed.</Text> : null}
+          <Text style={[styles.cardSectionTitle, { marginTop: 18 }]}>MY STUDY RESOURCES ({visibleMyResources.length})</Text>
+          {visibleMyResources.map((resource) => <Card key={resource.id} variant="default" style={{ marginBottom: 10 }} onPress={() => router.push({ pathname: '/resource/[id]', params: { id: resource.id } } as never)}><Text style={styles.projectTitle}>{resource.title}</Text><Text style={styles.projectTagline}>{resource.subject} · {resource.academicYear}</Text></Card>)}
+          {!visibleMyResources.length ? <Text style={styles.goalsText}>Study PDFs you share will appear here.</Text> : null}
+        </View>}
+
         {activeTab === 'ideas' && (
           <View style={styles.tabContent}>
             {myIdeas.map((idea) => (
@@ -414,9 +516,6 @@ export default function ProfileScreen() {
                   <Badge label={idea.stage} variant="purple" size="sm" />
                 </View>
                 <Text style={styles.ideaTagline}>{idea.tagline}</Text>
-                <Text style={styles.ideaStats}>
-                  🚀 {idea.upvotes} upvotes • 💬 {idea.commentsCount} comments
-                </Text>
               </Card>
             ))}
             <Button
@@ -435,7 +534,7 @@ export default function ProfileScreen() {
             <Card variant="default" style={styles.sectionCard}>
               <Text style={styles.cardSectionTitle}>VERIFIED BADGES & ACCOMPLISHMENTS</Text>
               <View style={styles.badgesList}>
-                {user.badges.map((b) => (
+                {(user.badges || []).map((b) => (
                   <View key={b} style={styles.badgeItem}>
                     <View style={styles.badgeIconCircle}>
                       <Ionicons name="ribbon" size={20} color={Colors.accentAmber} />
@@ -469,6 +568,18 @@ export default function ProfileScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
+              <Input label="Student name" value={nameInput} onChangeText={setNameInput} placeholder="Your name" />
+              <Input label="Avatar image URL" value={avatarInput} onChangeText={setAvatarInput} placeholder="https://..." />
+              <Text style={styles.detailLine}>Sign-in email: {user.email || 'Not provided'}</Text>
+              <Input label="College email" value={collegeEmailInput} onChangeText={setCollegeEmailInput} placeholder="Not provided" />
+              <Input label="Date of birth (YYYY-MM-DD)" value={dateOfBirthInput} onChangeText={setDateOfBirthInput} placeholder="Not provided" />
+              <Input label="College" value={collegeInput} onChangeText={setCollegeInput} placeholder="Your college" />
+              <Input label="Degree / Program" value={degreeInput} onChangeText={setDegreeInput} placeholder="B.Tech Computer Science" />
+              <Input label="Branch" value={branchInput} onChangeText={setBranchInput} placeholder="Computer Science" />
+              <View style={{ flexDirection: 'row' }}>
+                <View style={{ flex: 1, marginRight: 8 }}><Input label="Study year" value={studyYearInput} onChangeText={setStudyYearInput} placeholder="2" /></View>
+                <View style={{ flex: 1 }}><Input label="Graduation year" value={graduationYearInput} onChangeText={setGraduationYearInput} placeholder="2028" /></View>
+              </View>
               <Input
                 label="Short Bio"
                 multiline
@@ -494,6 +605,7 @@ export default function ProfileScreen() {
                 placeholder="PyTorch, React Native, Rust, CUDA"
                 helperText="Separate multiple skills with commas"
               />
+              <Input label="Interests (Comma-separated)" value={interestsInput} onChangeText={setInterestsInput} placeholder="AI, robotics, climate tech" helperText="Separate multiple interests with commas" />
 
               <Button
                 title="Save Profile Changes"
@@ -814,6 +926,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 10,
   },
+  detailLine: { color: Colors.textSecondary, fontSize: Typography.footnote, lineHeight: 22 },
   goalsText: {
     fontSize: Typography.body,
     color: Colors.textSecondary,

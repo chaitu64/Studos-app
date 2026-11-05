@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,29 +18,32 @@ import { Chip } from '../../components/ui/Chip';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useApp } from '../../context/AppContext';
-import { MOCK_STUDENTS, MOCK_CHAT_ROOMS } from '../../services/mockData';
+import { studentDirectoryService } from '../../services/studentDirectoryService';
+import { sharedContentService } from '../../services/sharedContentService';
+import { supabaseConfigured } from '../../services/supabase';
+import { ChatRoom, StudentDirectoryProfile } from '../../types';
 
 const SEARCH_TABS = ['All', 'Students', 'Ideas', 'Teams', 'Opportunities', 'Rooms'];
-const TRENDING_KEYWORDS = ['TreeHacks', 'PyTorch', 'Spatial UI', 'CleanTech', 'Rust', 'Assistive Tech'];
+const TRENDING_KEYWORDS: string[] = [];
 
 export default function GlobalSearchScreen() {
   const { ideas, teams, opportunities } = useApp();
+  const [students, setStudents] = useState<StudentDirectoryProfile[]>([]);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  useEffect(() => { let active = true; void studentDirectoryService.list({ limit: 500 }).then((page) => { if (active) setStudents(page.students); }).catch(() => { if (active) setStudents([]); }); if (supabaseConfigured) void sharedContentService.chatRooms().then((rows) => { if (active) setRooms(rows); }).catch(() => { if (active) setRooms([]); }); return () => { active = false; }; }, []);
   const [query, setQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState('All');
-  const [recentSearches, setRecentSearches] = useState<string[]>([
-    'Robotics',
-    'TreeHacks 2026',
-    'React Native',
-  ]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const messageStudent = async (studentId: string) => { try { const conversationId = await sharedContentService.startDirectConversation(studentId); router.push(`/chat/${conversationId}` as never); } catch (cause) { Alert.alert('Could not start a conversation', cause instanceof Error ? cause.message : 'Try again.'); } };
 
   const q = query.trim().toLowerCase();
 
   // Search Results
-  const matchedStudents = MOCK_STUDENTS.filter(
+  const matchedStudents = students.filter(
     (s) =>
       s.name.toLowerCase().includes(q) ||
       s.college.toLowerCase().includes(q) ||
-      s.skills.some((sk) => sk.toLowerCase().includes(q))
+      (s.branch || '').toLowerCase().includes(q) || s.skills.some((sk) => sk.toLowerCase().includes(q)) || s.interests.some((item) => item.toLowerCase().includes(q))
   );
 
   const matchedIdeas = ideas.filter(
@@ -63,7 +67,7 @@ export default function GlobalSearchScreen() {
       o.type.toLowerCase().includes(q)
   );
 
-  const matchedRooms = MOCK_CHAT_ROOMS.filter(
+  const matchedRooms = rooms.filter(
     (r) =>
       r.title.toLowerCase().includes(q) ||
       r.topic.toLowerCase().includes(q)
@@ -182,14 +186,15 @@ export default function GlobalSearchScreen() {
                     key={s.id}
                     variant="default"
                     style={styles.resultCard}
-                    onPress={() => router.push('/(tabs)/discover' as any)}
+                    onPress={() => router.push(`/student/${s.identity.type}/${s.id}` as any)}
                   >
                     <Avatar uri={s.avatar} name={s.name} size={40} isVerified={s.isVerified} />
                     <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{s.name}</Text>
-                      <Text style={styles.resultSub}>{s.college} • {s.primaryRole}</Text>
+                      <Text style={styles.resultName}>{s.name}{s.isDemo ? ' · Demo profile' : ''}</Text>
+                      <Text style={styles.resultSub}>{s.college} • {s.branch || 'Student'}</Text>
                     </View>
-                    <Badge label={s.primaryRole} variant="primary" size="sm" />
+                    <Badge label={s.branch || 'Student'} variant="primary" size="sm" />
+                    {!s.isDemo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Message ${s.name}`} onPress={() => { void messageStudent(s.id); }} style={{ padding: 10 }}><Ionicons name="chatbubble-ellipses-outline" size={19} color={Colors.primary}/></TouchableOpacity> : null}
                   </Card>
                 ))}
               </View>

@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  FadeIn,
   interpolate,
   runOnJS,
   useAnimatedStyle,
@@ -22,14 +21,16 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Shadows, Typography } from '../../constants/theme';
-import { CommunityPost } from '../../types';
+import { CommunityPost, StudentDirectoryProfile, StudentIdentity } from '../../types';
 
 export interface DiscoveryPerson {
   id: string;
   author: CommunityPost['author'];
   posts: CommunityPost[];
-  sourcePost: CommunityPost;
+  sourcePost?: CommunityPost;
   skills: string[];
+  identity?: StudentIdentity;
+  profile?: StudentDirectoryProfile;
 }
 
 export type DiscoveryItem =
@@ -136,7 +137,7 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
 
   return (
     <GestureDetector gesture={panGesture}>
-    <Animated.View entering={FadeIn.duration(180)} style={[styles.card, cardAnimatedStyle]}>
+    <Animated.View style={[styles.card, cardAnimatedStyle]}>
       <Animated.View style={[styles.stamp, styles.interestStamp, interestStyle]}>
         <Text style={styles.interestStampText}>EXPRESS INTEREST</Text>
       </Animated.View>
@@ -148,12 +149,6 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.cardContent}
       >
-        {(item.kind === 'person' ? item.person.sourcePost : item.post).id.startsWith('demo_') ? (
-          <View style={styles.demoNotice}>
-            <Ionicons name="eye-outline" size={13} color={Colors.accentAmber} />
-            <Text style={styles.demoNoticeText}>DEMO PREVIEW · no live request will be sent</Text>
-          </View>
-        ) : null}
         {item.kind === 'person' ? (
           <PersonCard person={item.person} />
         ) : item.post.type === 'service' ? (
@@ -182,8 +177,8 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
 function PersonCard({ person }: { person: DiscoveryPerson }) {
   const primaryPost = person.sourcePost;
   const role = person.author.role;
-  const interests = primaryPost.tags || [];
-  const lookingFor = primaryPost.eventRoleNeeded || primaryPost.rolesNeeded?.join(', ');
+  const interests = person.profile?.interests || primaryPost?.tags || [];
+  const lookingFor = primaryPost?.eventRoleNeeded || primaryPost?.rolesNeeded?.join(', ');
 
   return (
     <>
@@ -192,7 +187,7 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
           uri={person.author.avatar}
           name={person.author.name}
           size={88}
-          isOnline={!primaryPost.demo}
+          isOnline={false}
           isVerified={person.author.isVerified}
         />
         <View style={styles.personIdentity}>
@@ -209,7 +204,8 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
         </View>
       </View>
 
-      <Text style={styles.personBio} numberOfLines={3}>{primaryPost.content.trim()}</Text>
+      {person.profile?.isDemo ? <Text style={styles.demoNoticeText}>DEMO PROFILE</Text> : null}
+      <Text style={styles.personBio} numberOfLines={3}>{(person.profile?.shortBio || primaryPost?.content || 'Student profile').trim()}</Text>
 
       {person.skills.length > 0 ? (
         <Section label="TOP SKILLS">
@@ -220,13 +216,13 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
       <View style={styles.profileGrid}>
         <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="rocket-outline" size={15} color={Colors.primary} /></View>
-          <View style={styles.factCopy}><Text style={styles.sectionLabel}>BUILDING</Text><Text style={styles.factValue} numberOfLines={2}>{primaryPost.title}</Text></View>
+          <View style={styles.factCopy}><Text style={styles.sectionLabel}>{person.profile ? 'STUDY' : 'BUILDING'}</Text><Text style={styles.factValue} numberOfLines={2}>{person.profile ? [person.profile.degree, person.profile.studyYear && `Year ${person.profile.studyYear}`, person.profile.gradYear && `Class of ${person.profile.gradYear}`].filter(Boolean).join(' · ') || person.profile.branch || 'Student' : primaryPost?.title}</Text></View>
         </View>
         {lookingFor ? <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="people-outline" size={15} color={Colors.accentCyan} /></View>
           <View style={styles.factCopy}><Text style={styles.sectionLabel}>LOOKING FOR</Text><Text style={styles.factValue} numberOfLines={2}>{lookingFor}</Text></View>
         </View> : null}
-        {primaryPost.serviceAvailability ? <View style={styles.profileFact}>
+        {primaryPost?.serviceAvailability ? <View style={styles.profileFact}>
           <View style={styles.factIcon}><Ionicons name="calendar-outline" size={15} color={Colors.accentGreen} /></View>
           <View style={styles.factCopy}><Text style={styles.sectionLabel}>AVAILABILITY</Text><Text style={styles.factValue} numberOfLines={2}>{primaryPost.serviceAvailability}</Text></View>
         </View> : null}

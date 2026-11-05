@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,11 +13,16 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { MOCK_CHAT_ROOMS } from '../../services/mockData';
+import { sharedContentService } from '../../services/sharedContentService';
+import { supabaseConfigured } from '../../services/supabase';
+import { ChatRoom } from '../../types';
 
 export default function ChatRoomsScreen() {
-  const handleJoinRoom = (roomId: string) => {
-    router.push('/chat/conv_4' as any);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState(supabaseConfigured ? '' : 'Configure Supabase to load chat rooms.');
+  useEffect(() => { if (!supabaseConfigured) return; let active = true; void sharedContentService.chatRooms().then((rows) => { if (active) setRooms(rows); }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load chat rooms.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
+  const handleJoinRoom = async (roomId: string) => {
+    try { if (supabaseConfigured) await sharedContentService.joinChatRoom(roomId); router.push({ pathname: '/chat/room/[id]', params: { id: roomId } } as never); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not join this room.'); }
   };
 
   return (
@@ -29,8 +35,10 @@ export default function ChatRoomsScreen() {
           </Text>
         </View>
 
+        {loading ? <ActivityIndicator color={Colors.primary} style={{ margin: 30 }} /> : null}
+        {error ? <Text style={styles.subtitle}>{error}</Text> : null}
         <View style={styles.roomsList}>
-          {MOCK_CHAT_ROOMS.map((room) => (
+          {rooms.map((room) => (
             <Card key={room.id} variant="default" style={styles.roomCard}>
               <View style={styles.roomHeader}>
                 <View style={styles.iconCircle}>
@@ -62,11 +70,12 @@ export default function ChatRoomsScreen() {
                   title="Enter Room"
                   variant="primary"
                   size="sm"
-                  onPress={() => handleJoinRoom(room.id)}
+                  onPress={() => { void handleJoinRoom(room.id); }}
                 />
               </View>
             </Card>
           ))}
+          {!loading && !rooms.length ? <Text style={styles.subtitle}>No public chat rooms are available yet.</Text> : null}
         </View>
       </ScrollView>
     </SafeAreaView>

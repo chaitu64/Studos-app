@@ -9,6 +9,16 @@ import { Card } from '../../components/ui/Card';
 export default function CreateScreen() {
   const actions = [
     {
+      id: 'resource',
+      title: 'Share Study PDF',
+      subtitle: 'Share a Google Drive link with course details. STUDOS keeps the PDF in your Drive.',
+      icon: 'document-text-outline' as const,
+      color: Colors.accentAmber,
+      bgColor: Colors.accentAmberSubtle,
+      route: '/share-resource',
+      badge: 'Study Hub',
+    },
+    {
       id: 'idea',
       title: 'Submit an Idea',
       subtitle: 'Post a concept, find co-builders, gather community feedback and form a roadmap.',

@@ -13,9 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
+import { router } from 'expo-router';
 
 export default function SettingsScreen() {
   const { user } = useApp();
+  const { session } = useAuth();
 
   const [publicProfile, setPublicProfile] = useState(true);
   const [allowMatching, setAllowMatching] = useState(true);
@@ -130,6 +134,11 @@ export default function SettingsScreen() {
             <TouchableOpacity style={styles.actionRow} onPress={handleClearCache}>
               <Ionicons name="trash-bin-outline" size={18} color={Colors.error} />
               <Text style={styles.actionRowTextDanger}>Reset Local Session & Cache</Text>
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity style={styles.actionRow} onPress={async () => { const { error } = await authService.signOut(); if (error) Alert.alert('Sign out failed', error.message); else router.replace('/login'); }}>
+              <Ionicons name="log-out-outline" size={18} color={Colors.error} />
+              <Text style={styles.actionRowTextDanger}>Sign out{session?.user.email ? ` · ${session.user.email}` : ''}</Text>
             </TouchableOpacity>
           </Card>
         </View>

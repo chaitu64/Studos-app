@@ -7,7 +7,6 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { useApp } from '../../context/AppContext';
 
 export interface IdeaCardProps {
   idea: Idea;
@@ -15,7 +14,6 @@ export interface IdeaCardProps {
 }
 
 export const IdeaCard: React.FC<IdeaCardProps> = ({ idea, showFullDetails = false }) => {
-  const { toggleUpvoteIdea, toggleBookmarkIdea } = useApp();
 
   const handlePress = () => {
     router.push(`/ideahub/${idea.id}` as any);
@@ -42,7 +40,7 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({ idea, showFullDetails = fals
     <Card variant="default" style={styles.card} onPress={handlePress}>
       {/* Top Header: Creator info & Stage */}
       <View style={styles.header}>
-        <View style={styles.creatorRow}>
+        <TouchableOpacity style={styles.creatorRow} onPress={() => idea.creator.identity && router.push(`/student/${idea.creator.identity.type}/${idea.creator.identity.id}` as any)}>
           <Avatar uri={idea.creator.avatar} name={idea.creator.name} size={36} />
           <View style={styles.creatorInfo}>
             <Text style={styles.creatorName}>{idea.creator.name}</Text>
@@ -50,7 +48,7 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({ idea, showFullDetails = fals
               {idea.creator.college} • {idea.creator.role}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <Badge label={idea.stage} variant={getStageVariant(idea.stage)} size="sm" />
       </View>
@@ -91,49 +89,6 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({ idea, showFullDetails = fals
       {/* Divider */}
       <View style={styles.divider} />
 
-      {/* Footer: Upvote, Comments, Bookmark */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.actionBtn, idea.isUpvoted ? styles.actionBtnUpvoted : undefined]}
-          onPress={(e) => {
-            e.stopPropagation();
-            toggleUpvoteIdea(idea.id);
-          }}
-        >
-          <Ionicons
-            name={idea.isUpvoted ? 'rocket' : 'rocket-outline'}
-            size={16}
-            color={idea.isUpvoted ? Colors.primary : Colors.textMuted}
-          />
-          <Text
-            style={[
-              styles.actionText,
-              idea.isUpvoted ? { color: Colors.primary, fontWeight: '700' } : undefined,
-            ]}
-          >
-            {idea.upvotes}
-          </Text>
-        </TouchableOpacity>
-
-        <View style={styles.actionBtn}>
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={Colors.textMuted} />
-          <Text style={styles.actionText}>{idea.commentsCount} comments</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.bookmarkBtn}
-          onPress={(e) => {
-            e.stopPropagation();
-            toggleBookmarkIdea(idea.id);
-          }}
-        >
-          <Ionicons
-            name={idea.isBookmarked ? 'bookmark' : 'bookmark-outline'}
-            size={18}
-            color={idea.isBookmarked ? Colors.primary : Colors.textMuted}
-          />
-        </TouchableOpacity>
-      </View>
     </Card>
   );
 };

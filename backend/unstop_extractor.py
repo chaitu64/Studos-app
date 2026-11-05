@@ -12,6 +12,7 @@ import time
 import logging
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -417,41 +418,51 @@ def fetch_all_categories(
     start_all = time.perf_counter()
     logger.info("Starting Unstop extraction across 8 retained categories...")
 
-    unique_results: Dict[str, Dict[str, Any]] = {}
-    category_metrics: Dict[str, Dict[str, Any]] = {}
-
-    for cat_name, cat_slug in CATEGORIES.items():
+    def fetch_category(cat_name: str, cat_slug: str) -> Tuple[str, List[Dict[str, Any]], int, float]:
         cat_start = time.perf_counter()
-        cat_count = 0
         total_available = 0
+        items: List[Dict[str, Any]] = []
 
         for page in range(1, pages_per_category + 1):
-            items, total = fetch_category_opportunities(
+            page_items, total = fetch_category_opportunities(
                 category_slug=cat_slug,
                 category_name=cat_name,
                 page=page,
                 per_page=per_page,
             )
             total_available = total
-            for item in items:
-                item_id = item["id"]
-                if item_id not in unique_results:
-                    unique_results[item_id] = item
-                    cat_count += 1
+            items.extend(page_items)
 
-            if len(items) < per_page:
+            if len(page_items) < per_page:
                 break
             # Modest delay between page fetches to avoid rate limits
             time.sleep(0.15)
 
-        elapsed = time.perf_counter() - cat_start
+        return cat_name, items, total_available, time.perf_counter() - cat_start
+
+    unique_results: Dict[str, Dict[str, Any]] = {}
+    category_metrics: Dict[str, Dict[str, Any]] = {}
+    categories = list(CATEGORIES.items())
+
+    # Fetch categories concurrently so one cold cache fill doesn't spend up to
+    # 15 seconds per category waiting on sequential network timeouts.
+    with ThreadPoolExecutor(max_workers=min(8, len(categories))) as executor:
+        fetched = list(executor.map(lambda pair: fetch_category(*pair), categories))
+
+    for cat_name, items, total_available, elapsed in fetched:
+        category_unique = 0
+        for item in items:
+            item_id = item["id"]
+            if item_id not in unique_results:
+                unique_results[item_id] = item
+                category_unique += 1
         category_metrics[cat_name] = {
-            "fetched": cat_count,
+            "fetched": category_unique,
             "total_available": total_available,
             "duration_sec": round(elapsed, 2),
         }
         logger.info(
-            f"Category '{cat_name}' completed: {cat_count} items fetched "
+            f"Category '{cat_name}' completed: {category_unique} items fetched "
             f"(available: {total_available}) in {elapsed:.2f}s"
         )
 

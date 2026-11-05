@@ -33,7 +33,13 @@ python unstop_extractor.py
 python server.py
 ```
 
-## Academic PDF resources
+## Legacy local PDF prototype
+
+The HTTP PDF upload/render endpoints below are legacy development prototype code and are not called by the current Expo app. The STUDOS Study Hub workflow uses contributor-owned Google Drive links and Supabase metadata (`study_resources`); it must not send PDFs to this backend, Supabase Storage, or a proxy/viewer endpoint.
+
+Do not enable the legacy routes for production Study Hub traffic. They are retained so existing local prototype data and developer experiments are not silently removed.
+
+### Legacy endpoints (development only)
 
 - `POST /api/resources` accepts `multipart/form-data` with a PDF field named `pdf`.
 - `GET /api/resources/:id` returns metadata and processing status.
@@ -44,6 +50,52 @@ python server.py
 PyMuPDF performs validation, metadata/text extraction, first-page rendering, and
 lazy viewer-page rendering. Original files and PNG derivatives are stored under
 `backend/storage/resources`; resource records contain URLs and metadata only.
+
+## Study Hub Drive PDF indexing
+
+`index_study_resources.py` reads all Drive-linked parent records directly from
+`public.study_resources` using PostgREST pagination, recursively lists accessible
+Drive folder contents with the Drive API v3, and finds PDF files only. Supabase
+is the sole source of folder metadata; no workbook, CSV, or JSON input is used.
+It does not download or copy PDFs. The default is a dry run; it writes a JSON
+report and JSONL log under `backend/` and does not change Supabase. It proposes
+new, unpublished `academic_pdfs` metadata rows and only inserts them with
+`--apply` after migration 006 and explicit write enablement.
+
+Before indexing, execute migrations 004 and 006 in the Supabase SQL Editor if
+they are not already installed. Migration 004 adds Drive file indexing fields
+to `study_resources`; migration 006 adds source file ID and parent metadata to
+`academic_pdfs`. Both are additive.
+
+Run from PowerShell after setting the values in that terminal session. Keep the
+service key and OAuth token out of Expo `.env` files, source control, and chat.
+The Drive token must have the read-only `https://www.googleapis.com/auth/drive.readonly`
+scope and the account must already have permission to read the folders.
+
+```powershell
+$env:SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co'
+$env:SUPABASE_SERVICE_ROLE_KEY = '<server-only service role key>'
+$env:GOOGLE_DRIVE_ACCESS_TOKEN = '<OAuth access token with Drive read-only scope>'
+python backend/index_study_resources.py
+```
+
+Review `backend/drive_index_report.json` first. It reports database resource and
+folder counts, accessible/inaccessible folders, unique Drive PDFs, duplicate
+file IDs, existing records, proposed inserts, and errors. Discovered records
+remain unpublished with no `pdf_url` until an authorized PDF delivery method is
+configured. After reviewing and approving the proposed metadata inserts, set:
+
+```powershell
+$env:STUDOS_ALLOW_PDF_INDEX_IMPORT = 'yes'
+python backend/index_study_resources.py --apply
+```
+
+Imported metadata inherits academic details and the parent resource ID while
+preserving the Drive file ID, filename, MIME type, and size. Indexing does not
+grant students access to source PDFs or copy document bytes. The private Storage
+reader serves only PDFs with a valid stored `pdf_url` and published/verified
+metadata; newly discovered records remain unreadable until an authorized
+delivery process populates those fields.
 
 ### Endpoints
 

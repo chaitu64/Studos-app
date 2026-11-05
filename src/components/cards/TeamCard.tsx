@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { TeamListing } from '../../types';
@@ -37,12 +37,12 @@ export const TeamCard: React.FC<TeamCardProps> = ({ team }) => {
       </Text>
 
       {/* Lead info */}
-      <View style={styles.leadRow}>
+      <TouchableOpacity style={styles.leadRow} onPress={() => team.lead.identity && router.push(`/student/${team.lead.identity.type}/${team.lead.identity.id}` as any)}>
         <Avatar uri={team.lead.avatar} name={team.lead.name} size={28} />
         <Text style={styles.leadText}>
           Led by <Text style={{ color: Colors.textPrimary, fontWeight: '600' }}>{team.lead.name}</Text>
         </Text>
-      </View>
+      </TouchableOpacity>
 
       {/* Open Roles Needed */}
       <View style={styles.rolesSection}>
@@ -62,13 +62,6 @@ export const TeamCard: React.FC<TeamCardProps> = ({ team }) => {
 
       {/* Footer */}
       <View style={styles.footer}>
-        <View style={styles.applicantStats}>
-          <Ionicons name="people-outline" size={15} color={Colors.textMuted} />
-          <Text style={styles.applicantText}>
-            {team.applicantCount} {team.applicantCount === 1 ? 'applicant' : 'applicants'}
-          </Text>
-        </View>
-
         <Button
           title="View & Apply"
           variant="outline"

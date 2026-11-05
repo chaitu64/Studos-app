@@ -9,25 +9,24 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Chip } from '../ui/Chip';
 import { CommunityPostType, CommunityPost, StudentRole, ProjectStage } from '../../types';
-import { PdfUpload } from '../../services/resourceApi';
+import * as ImagePicker from 'expo-image-picker';
 
 export interface PostComposerModalProps {
   visible: boolean;
   initialType?: CommunityPostType;
   onClose: () => void;
-  onSubmit: (post: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>, pdf?: PdfUpload) => Promise<any>;
+  onSubmit: (post: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => Promise<any>;
 }
 
 const POST_TYPES: { id: CommunityPostType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-  { id: 'study_material', label: 'PDF / Notes', icon: 'document-text-outline', color: Colors.primary },
   { id: 'idea', label: 'Idea', icon: 'bulb-outline', color: Colors.accentAmber },
   { id: 'service', label: 'Service', icon: 'construct-outline', color: Colors.accentCyan },
   { id: 'story', label: 'Story', icon: 'book-outline', color: Colors.accentPurple },
@@ -59,9 +58,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [skillsInput, setSkillsInput] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedPdf, setSelectedPdf] = useState<PdfUpload | null>(null);
-  const [subject, setSubject] = useState('');
-  const [academicYear, setAcademicYear] = useState('');
+  const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
 
   // Idea fields
   const [problemStatement, setProblemStatement] = useState('');
@@ -96,9 +93,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setEventDate('');
     setDemoUrl('');
     setGithubUrl('');
-    setSelectedPdf(null);
-    setSubject('');
-    setAcademicYear('');
+    setImages([]);
   };
 
   const toggleRole = (r: StudentRole) => {
@@ -120,10 +115,6 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       Alert.alert('Missing Field', 'Please enter a description or details for your post.');
       return;
     }
-    if (postType === 'study_material' && !selectedPdf) {
-      Alert.alert('Select a PDF', 'Choose the original PDF before publishing this study resource.');
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -143,6 +134,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         content: content.trim(),
         skills: skills.length > 0 ? skills : undefined,
         tags: tags.length > 0 ? tags : undefined,
+        images: images.map((image) => image.uri),
         // Idea fields
         problemStatement: postType === 'idea' ? problemStatement.trim() || undefined : undefined,
         proposedSolution: postType === 'idea' ? proposedSolution.trim() || undefined : undefined,
@@ -159,13 +151,8 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         demoUrl: postType === 'project' ? demoUrl.trim() || undefined : undefined,
         githubUrl: postType === 'project' ? githubUrl.trim() || undefined : undefined,
         technologies: postType === 'project' && skills.length > 0 ? skills : undefined,
-        document: postType === 'study_material' ? {
-          id: 'uploading', type: 'notes', title: title.trim(), description: content.trim(), subject: subject.trim() || 'General',
-          academicYear: academicYear.trim(), pageCount: 0, fileName: selectedPdf!.name, fileType: 'application/pdf',
-          fileSize: selectedPdf!.size, thumbnailStatus: 'pending', summaryStatus: 'pending', topics: tags,
-          uploader: { id: '', name: '', avatar: '' }, uploadedAt: 'Just now',
-        } : undefined,
-      }, selectedPdf || undefined);
+        document: undefined,
+      });
 
       resetForm();
       onClose();
@@ -223,19 +210,6 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
           {/* Form Scroll View */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContainer}>
-            {postType === 'study_material' ? <View style={styles.pdfSection}>
-              <TouchableOpacity style={styles.pdfPicker} onPress={async () => {
-                const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true, multiple: false });
-                if (!result.canceled) {
-                  const asset = result.assets[0];
-                  setSelectedPdf({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/pdf', size: asset.size });
-                }
-              }}>
-                <Ionicons name={selectedPdf ? 'checkmark-circle' : 'cloud-upload-outline'} size={24} color={selectedPdf ? Colors.success : Colors.primary} />
-                <View style={{ flex: 1 }}><Text style={styles.pdfPickerTitle}>{selectedPdf ? selectedPdf.name : 'Choose original PDF'}</Text><Text style={styles.pdfPickerMeta}>{selectedPdf ? `${Math.max(1, Math.round((selectedPdf.size || 0) / 1024))} KB · Ready to upload` : 'PDF only · Maximum 40 MB'}</Text></View>
-              </TouchableOpacity>
-              <View style={styles.twoColRow}><View style={{ flex: 1, marginRight: 8 }}><Input label="Subject" value={subject} onChangeText={setSubject} placeholder="Computer Networks" /></View><View style={{ flex: 1 }}><Input label="Academic year" value={academicYear} onChangeText={setAcademicYear} placeholder="3rd Year" /></View></View>
-            </View> : null}
             {/* Title */}
             <Input
               label={
@@ -410,6 +384,18 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               placeholder="e.g. AI, OpenSource, Design, Hackathon"
             />
 
+            <View style={styles.fieldSection}>
+              <Text style={styles.sectionLabel}>POST IMAGES (UP TO 4)</Text>
+              <TouchableOpacity accessibilityRole="button" onPress={async () => {
+                const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: 4, quality: 0.8 });
+                if (!result.canceled) setImages(result.assets.slice(0, 4));
+              }} style={styles.imagePicker}>
+                <Ionicons name="image-outline" size={18} color={Colors.primary} />
+                <Text style={styles.imagePickerText}>{images.length ? 'Change selected images' : 'Choose images'}</Text>
+              </TouchableOpacity>
+              {images.length ? <ScrollView horizontal contentContainerStyle={{ gap: 8, paddingTop: 10 }}>{images.map((image) => <Image key={image.uri} source={{ uri: image.uri }} style={styles.imagePreview} />)}</ScrollView> : null}
+            </View>
+
             {/* Submit Action */}
             <View style={styles.submitSection}>
               <Button
@@ -525,4 +511,7 @@ const styles = StyleSheet.create({
   submitBtn: {
     width: '100%',
   },
+  imagePicker: { minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  imagePickerText: { color: Colors.textPrimary, fontSize: 13, fontWeight: '700' },
+  imagePreview: { width: 72, height: 72, borderRadius: 9 },
 });

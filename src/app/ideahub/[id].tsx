@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  TextInput,
   Share,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -18,41 +16,13 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { useApp } from '../../context/AppContext';
-import { IdeaComment } from '../../types';
 
 export default function IdeaDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { ideas, user, toggleUpvoteIdea, toggleBookmarkIdea } = useApp();
+  const { ideas } = useApp();
 
   const idea = ideas.find((i) => i.id === id);
 
-  const [comments, setComments] = useState<IdeaComment[]>([
-    {
-      id: 'c1',
-      userId: 'usr_1',
-      userName: 'Maya Chen',
-      userAvatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80',
-      userRole: 'UI/UX Designer',
-      content:
-        'Have you tested latency for on-device Whisper models on older Android chips? Happy to help design the audio waveform recorder interface.',
-      createdAt: '1 day ago',
-      likes: 6,
-    },
-    {
-      id: 'c2',
-      userId: 'usr_2',
-      userName: 'Marcus Vance',
-      userAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-      userRole: 'Developer',
-      content:
-        'I benchmarked 4-bit AWQ on Snapdragon 8 Gen 2—you can get ~18 tokens/sec which is more than enough for triage. Let’s connect on GitHub.',
-      createdAt: '18h ago',
-      likes: 4,
-    },
-  ]);
-
-  const [newComment, setNewComment] = useState('');
-  const [hasRequestedJoin, setHasRequestedJoin] = useState(false);
 
   if (!idea) {
     return (
@@ -67,46 +37,6 @@ export default function IdeaDetailScreen() {
   const similarIdeas = ideas
     .filter((i) => i.id !== idea.id && (i.category === idea.category || i.stage === idea.stage))
     .slice(0, 2);
-
-  const handleAddComment = () => {
-    if (!newComment.trim()) return;
-    const added: IdeaComment = {
-      id: `c_${Date.now()}`,
-      userId: user.id,
-      userName: user.name,
-      userAvatar: user.avatar,
-      userRole: user.primaryRole,
-      content: newComment.trim(),
-      createdAt: 'Just now',
-      likes: 0,
-    };
-    setComments([added, ...comments]);
-    setNewComment('');
-  };
-
-  const handleRequestToJoin = () => {
-    Alert.alert(
-      'Request to Join Idea',
-      `Send a collaboration request to ${idea.creator.name} as a ${user.primaryRole}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send Request',
-          onPress: () => {
-            setHasRequestedJoin(true);
-            Alert.alert(
-              'Request Sent!',
-              `We notified ${idea.creator.name}. A direct conversation will open when approved.`
-            );
-          },
-        },
-      ]
-    );
-  };
-
-  const handleContactCreator = () => {
-    router.push('/chat/conv_1' as any);
-  };
 
   const handleShare = async () => {
     try {
@@ -131,63 +61,18 @@ export default function IdeaDetailScreen() {
         <Text style={styles.title}>{idea.title}</Text>
         <Text style={styles.tagline}>{idea.tagline}</Text>
 
-        {/* Creator Info Card */}
         <Card variant="elevated" style={styles.creatorCard}>
           <Avatar uri={idea.creator.avatar} name={idea.creator.name} size={48} />
           <View style={styles.creatorInfo}>
             <Text style={styles.creatorName}>{idea.creator.name}</Text>
-            <Text style={styles.creatorDetails}>
-              {idea.creator.college} • {idea.creator.role}
-            </Text>
+            <Text style={styles.creatorDetails}>{idea.creator.college} • {idea.creator.role}</Text>
           </View>
-          <Button
-            title="Chat"
-            variant="outline"
-            size="sm"
-            icon={<Ionicons name="chatbubble-outline" size={14} color={Colors.primary} />}
-            onPress={handleContactCreator}
-          />
         </Card>
-
-        {/* Action Row: Upvote, Bookmark, Share */}
         <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.upvoteBtn, idea.isUpvoted ? styles.upvoteBtnActive : undefined]}
-            onPress={() => toggleUpvoteIdea(idea.id)}
-          >
-            <Ionicons
-              name={idea.isUpvoted ? 'rocket' : 'rocket-outline'}
-              size={18}
-              color={idea.isUpvoted ? '#FFF' : Colors.textPrimary}
-            />
-            <Text
-              style={[
-                styles.upvoteText,
-                idea.isUpvoted ? { color: '#FFF' } : undefined,
-              ]}
-            >
-              {idea.upvotes} {idea.upvotes === 1 ? 'Upvote' : 'Upvotes'}
-            </Text>
+          <TouchableOpacity style={styles.circleBtn} onPress={handleShare}>
+            <Ionicons name="share-social-outline" size={18} color={Colors.textSecondary} />
           </TouchableOpacity>
-
-          <View style={styles.iconActions}>
-            <TouchableOpacity
-              style={styles.circleBtn}
-              onPress={() => toggleBookmarkIdea(idea.id)}
-            >
-              <Ionicons
-                name={idea.isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                size={18}
-                color={idea.isBookmarked ? Colors.primary : Colors.textSecondary}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.circleBtn} onPress={handleShare}>
-              <Ionicons name="share-social-outline" size={18} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
         </View>
-
         {/* Section: Problem Statement */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -239,15 +124,6 @@ export default function IdeaDetailScreen() {
             ))}
           </View>
 
-          {/* Request to Join CTA */}
-          <Button
-            title={hasRequestedJoin ? '✓ Request Submitted' : 'Request to Join this Idea'}
-            variant={hasRequestedJoin ? 'secondary' : 'primary'}
-            size="lg"
-            disabled={hasRequestedJoin}
-            onPress={handleRequestToJoin}
-            style={{ marginTop: 12 }}
-          />
         </View>
 
         {/* Section: Project Roadmap */}
@@ -315,44 +191,6 @@ export default function IdeaDetailScreen() {
           </View>
         ) : null}
 
-        {/* Section: Comments & Community Discussions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>COMMUNITY DISCUSSION ({comments.length})</Text>
-
-          {/* Add Comment Input */}
-          <View style={styles.commentInputRow}>
-            <TextInput
-              placeholder="Add feedback, ask a question, or suggest tech..."
-              placeholderTextColor={Colors.textSubtle}
-              value={newComment}
-              onChangeText={setNewComment}
-              style={styles.commentInput}
-            />
-            <Button
-              title="Post"
-              variant="primary"
-              size="sm"
-              disabled={!newComment.trim()}
-              onPress={handleAddComment}
-            />
-          </View>
-
-          {/* Comments List */}
-          <View style={styles.commentsList}>
-            {comments.map((c) => (
-              <View key={c.id} style={styles.commentCard}>
-                <View style={styles.commentHeader}>
-                  <Avatar uri={c.userAvatar} name={c.userName} size={32} />
-                  <View style={styles.commentAuthor}>
-                    <Text style={styles.commentName}>{c.userName}</Text>
-                    <Text style={styles.commentRole}>{c.userRole} • {c.createdAt}</Text>
-                  </View>
-                </View>
-                <Text style={styles.commentBody}>{c.content}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

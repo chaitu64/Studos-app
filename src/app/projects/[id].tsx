@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,6 @@ export default function ProjectDetailScreen() {
   const { projects } = useApp();
 
   const project = projects.find((p) => p.id === id);
-  const [likesCount, setLikesCount] = useState(project?.likes || 0);
-  const [isLiked, setIsLiked] = useState(project?.isLiked || false);
 
   if (!project) {
     return (
@@ -35,11 +33,6 @@ export default function ProjectDetailScreen() {
       </View>
     );
   }
-
-  const handleToggleLike = () => {
-    setIsLiked(!isLiked);
-    setLikesCount(isLiked ? likesCount - 1 : likesCount + 1);
-  };
 
   const handleShare = async () => {
     try {
@@ -70,20 +63,6 @@ export default function ProjectDetailScreen() {
 
         {/* Action Row: Like, Share, External Links */}
         <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.likeBtn, isLiked ? styles.likeBtnActive : undefined]}
-            onPress={handleToggleLike}
-          >
-            <Ionicons
-              name={isLiked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={isLiked ? '#FFF' : Colors.primary}
-            />
-            <Text style={[styles.likeText, isLiked ? { color: '#FFF' } : undefined]}>
-              {likesCount} {likesCount === 1 ? 'Star' : 'Stars'}
-            </Text>
-          </TouchableOpacity>
-
           <View style={styles.linkGroup}>
             {project.githubUrl ? (
               <Button

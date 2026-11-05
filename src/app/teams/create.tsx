@@ -33,7 +33,7 @@ export default function CreateTeamScreen() {
   const [tagline, setTagline] = useState('');
   const [description, setDescription] = useState('');
   const [projectDomain, setProjectDomain] = useState('Robotics & Assistive Tech');
-  const [hackathonOrEvent, setHackathonOrEvent] = useState('TreeHacks 2026');
+  const [hackathonOrEvent, setHackathonOrEvent] = useState('');
   const [stage, setStage] = useState<ProjectStage>('Prototype');
   const [selectedRoles, setSelectedRoles] = useState<StudentRole[]>(['Developer', 'AI/ML Engineer']);
   const [isSubmitting, setIsSubmitting] = useState(false);

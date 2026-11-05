@@ -20,6 +20,16 @@ export interface ActionSheetProps {
 export const ActionSheet: React.FC<ActionSheetProps> = ({ visible, onClose }) => {
   const actions = [
     {
+      id: 'resource',
+      title: 'Share Study PDF',
+      subtitle: 'Add a course PDF by sharing its Google Drive link',
+      icon: 'document-text-outline' as const,
+      color: Colors.accentAmber,
+      bgColor: Colors.accentAmberSubtle,
+      route: '/share-resource',
+      badge: 'Study Hub',
+    },
+    {
       id: 'idea',
       title: 'Submit an Idea',
       subtitle: 'Post a concept, find co-builders & gather community feedback',

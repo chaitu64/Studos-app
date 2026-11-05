@@ -46,15 +46,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
 
       <View style={styles.content}>
         {/* Title & Likes */}
-        <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={1}>
-            {project.title}
-          </Text>
-          <View style={styles.statsRow}>
-            <Ionicons name="heart" size={14} color={Colors.primary} />
-            <Text style={styles.statsText}>{project.likes}</Text>
-          </View>
-        </View>
+        <Text style={styles.title} numberOfLines={1}>{project.title}</Text>
 
         {/* Tagline */}
         <Text style={styles.tagline} numberOfLines={2}>
@@ -86,15 +78,16 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         <View style={styles.footer}>
           <View style={styles.contributorsRow}>
             {project.contributors.map((c, i) => (
-              <View
+              <TouchableOpacity
                 key={c.id}
                 style={[
                   styles.contributorAvatar,
                   i > 0 ? { marginLeft: -10 } : undefined,
                 ]}
+                onPress={() => c.identity && router.push(`/student/${c.identity.type}/${c.identity.id}` as any)}
               >
                 <Avatar uri={c.avatar} name={c.name} size={26} />
-              </View>
+              </TouchableOpacity>
             ))}
             <Text style={styles.contributorsCount}>
               {project.contributors.length} {project.contributors.length === 1 ? 'builder' : 'builders'}

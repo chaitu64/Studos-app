@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Typography } from '../../constants/theme';
@@ -12,31 +12,23 @@ export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen,
     <View style={styles.card}>
       <TouchableOpacity accessibilityRole="button" onPress={onOpen} activeOpacity={0.88}>
         <View style={styles.preview}>
-          {resource.thumbnailStatus === 'completed' && (resource.thumbnailAsset || resource.thumbnailUrl) ? <Image source={resource.thumbnailAsset || { uri: resource.thumbnailUrl }} style={styles.thumbnail} resizeMode="contain" /> : <View style={styles.placeholder}><Ionicons name={resource.thumbnailStatus === 'failed' ? 'alert-circle-outline' : 'document-text-outline'} size={32} color={Colors.textMuted} /><Text style={styles.placeholderText}>{resource.thumbnailStatus === 'failed' ? 'Preview unavailable' : 'Generating preview...'}</Text></View>}
+          <View style={styles.placeholder}><Ionicons name="document-text-outline" size={38} color={Colors.primary} /><Text style={styles.placeholderText}>PDF document</Text></View>
           <View style={styles.pdfBadge}><Ionicons name="document-text" size={13} color="#FFF" /><Text style={styles.pdfText}>PDF</Text></View>
-          <View style={styles.pages}><Text style={styles.pagesText}>{resource.pageCount} pages</Text></View>
         </View>
         <View style={styles.body}>
-          <Text style={styles.title} numberOfLines={2}>{resource.title}</Text>
-          <Text style={styles.subject}>{resource.subject} · {resource.academicYear}</Text>
-          <Text style={styles.description} numberOfLines={2}>{resource.description}</Text>
-          {resource.aiSummary ? (
-            <View style={styles.summary}>
-              <View style={styles.summaryTitleRow}><Ionicons name="sparkles" size={12} color="#FF7A7A" /><Text style={styles.summaryTitle}>AI summary {resource.summaryIsPreview ? '· Preview' : ''}</Text></View>
-              <Text style={styles.summaryText} numberOfLines={3}>{resource.aiSummary}</Text>
-            </View>
-          ) : <View style={styles.summary}><View style={styles.summaryTitleRow}><Ionicons name="sparkles" size={12} color="#FF7A7A" /><Text style={styles.summaryTitle}>AI summary</Text></View><Text style={styles.summaryText}>{resource.summaryStatus === 'pending' || resource.summaryStatus === 'processing' ? 'Summary is being generated...' : 'Summary currently unavailable.'}</Text></View>}
-          <View style={styles.topics}>{resource.topics.slice(0, 3).map((topic) => <Text key={topic} style={styles.topic}>{topic}</Text>)}</View>
+          <Text accessibilityLabel="PDF filename" style={styles.title} numberOfLines={2}>{resource.pdfFileName || resource.fileName}</Text>
+          <Text style={styles.subject} numberOfLines={2}>{resource.subject}</Text>
+          <Text style={styles.description} numberOfLines={1}>{[resource.title && resource.title !== resource.pdfFileName ? resource.title : null, resource.studyYear ? `Year ${resource.studyYear}` : null, resource.semester ? `Semester ${resource.semester}` : null].filter(Boolean).join(' · ')}</Text>
+          <View style={styles.topics}><Text style={styles.topic}>{resource.type.replaceAll('_', ' ')}</Text>{resource.regulation ? <Text style={styles.topic}>{resource.regulation}</Text> : null}{resource.fileSizeMb != null ? <Text style={styles.topic}>{resource.fileSizeMb.toFixed(2)} MB</Text> : null}</View>
         </View>
       </TouchableOpacity>
       <View style={styles.footer}>
-        <View style={styles.uploader}><Avatar uri={resource.uploader.avatar} name={resource.uploader.name} size={26} /><View><Text style={styles.uploaderName}>{resource.uploader.name}</Text><Text style={styles.uploadedAt}>{resource.uploadedAt}</Text></View></View>
+        <View style={styles.uploader}><Avatar uri={resource.uploader.avatar} name={resource.uploader.name} size={26} /><View><Text style={styles.uploaderName}>{resource.uploader.name}</Text>{resource.createdAt ? <Text style={styles.uploadedAt}>{new Date(resource.createdAt).toLocaleDateString()}</Text> : null}</View></View>
         <View style={styles.footerActions}>
           <TouchableOpacity accessibilityLabel="Bookmark resource" onPress={onBookmark}><Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={19} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} /></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={styles.openButton} onPress={onOpen}><Text style={styles.openText}>View PDF</Text><Ionicons name="arrow-forward" size={14} color="#FFF" /></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" style={styles.openButton} onPress={onOpen}><Text style={styles.openText}>Details</Text><Ionicons name="arrow-forward" size={14} color="#FFF" /></TouchableOpacity>
         </View>
       </View>
-      {resource.demo ? <Text style={styles.demo}>ILLUSTRATIVE PREVIEW · DEVELOPMENT DATA</Text> : null}
     </View>
   );
 });

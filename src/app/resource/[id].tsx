@@ -1,64 +1,118 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Linking, ScrollView, Share, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DEMO_STUDY_RESOURCES, DEMO_HOME_POSTS } from '../../services/demoHomeData';
-import { fetchResource, pageImageUrl } from '../../services/resourceApi';
+import { fetchResource, isResourceSaved, listStudyResourcePage, openDriveResource, reportBrokenResource, removeStudyResource, saveResource } from '../../services/resourceApi';
 import { StudyResource } from '../../types';
-import { Colors, Typography } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
+import { DrivePdfPreview } from '../../components/home/DrivePdfPreview';
 
-export default function ResourceViewerScreen() {
+export default function ResourceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const demo = useMemo(() => DEMO_STUDY_RESOURCES.find((item) => item.id === id) || DEMO_HOME_POSTS.find((item) => item.document?.id === id)?.document, [id]);
-  const [resource, setResource] = useState<StudyResource | undefined>(demo);
-  const [loadingResource, setLoadingResource] = useState(!demo);
-  const [page, setPage] = useState(1); const [zoom, setZoom] = useState(1);
-  const [imageLoading, setImageLoading] = useState(true); const [imageError, setImageError] = useState(false);
-  const { width } = useWindowDimensions();
-
+  const { session } = useAuth(); const [saved, setSaved] = useState(false);
+  const [resource, setResource] = useState<StudyResource>(); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [children, setChildren] = useState<StudyResource[]>([]); const [childrenLoading, setChildrenLoading] = useState(false); const [childrenLoadingMore, setChildrenLoadingMore] = useState(false); const [childrenHasMore, setChildrenHasMore] = useState(false); const [childrenError, setChildrenError] = useState(''); const [childSearch, setChildSearch] = useState(''); const [debouncedChildSearch, setDebouncedChildSearch] = useState(''); const [childReload, setChildReload] = useState(0); const childRequest = React.useRef(false); const childVersion = React.useRef(0);
   useEffect(() => {
-    if (demo || !id) return;
-    void fetchResource(id, { id: 'unknown', name: 'Student', avatar: '' })
-      .then(setResource).catch(() => setResource(undefined)).finally(() => setLoadingResource(false));
-  }, [demo, id]);
-
-  if (loadingResource) return <StateView icon="document-text-outline" label="Loading document..." busy />;
-  if (!resource) return <StateView icon="alert-circle-outline" label="This document is unavailable or its URL is broken." />;
-
-  const pageWidth = Math.max(280, width - 28) * zoom;
-  const pageHeight = pageWidth * (842 / 595);
-  const pageUrl = pageImageUrl(resource.id, page);
-  const setCurrentPage = (next: number) => { setPage(Math.min(resource.pageCount, Math.max(1, next))); setImageLoading(true); setImageError(false); };
-
-  return <SafeAreaView style={styles.safe} edges={['top']}>
-    <View style={styles.header}><TouchableOpacity accessibilityLabel="Return to homepage" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity><View style={styles.headerCopy}><Text style={styles.headerTitle} numberOfLines={1}>{resource.title}</Text><Text style={styles.headerMeta}>Page {page} of {resource.pageCount}</Text></View><TouchableOpacity onPress={() => Share.share({ title: resource.title, message: resource.pdfUrl || resource.title })}><Ionicons name="share-social-outline" size={22} color="#FFF" /></TouchableOpacity></View>
-    <View style={styles.toolbar}>
-      <TouchableOpacity accessibilityLabel="Previous page" disabled={page === 1} onPress={() => setCurrentPage(page - 1)} style={[styles.tool, page === 1 && styles.disabled]}><Ionicons name="chevron-back" size={20} color="#FFF" /></TouchableOpacity>
-      <TouchableOpacity accessibilityLabel="Zoom out" disabled={zoom <= 0.75} onPress={() => setZoom((value) => Math.max(.75, value - .25))} style={styles.tool}><Ionicons name="remove" size={21} color="#FFF" /></TouchableOpacity>
-      <Text style={styles.zoom}>{Math.round(zoom * 100)}%</Text>
-      <TouchableOpacity accessibilityLabel="Zoom in" disabled={zoom >= 2.5} onPress={() => setZoom((value) => Math.min(2.5, value + .25))} style={styles.tool}><Ionicons name="add" size={21} color="#FFF" /></TouchableOpacity>
-      <TouchableOpacity accessibilityLabel="Next page" disabled={page === resource.pageCount} onPress={() => setCurrentPage(page + 1)} style={[styles.tool, page === resource.pageCount && styles.disabled]}><Ionicons name="chevron-forward" size={20} color="#FFF" /></TouchableOpacity>
-    </View>
-    <ScrollView horizontal={zoom > 1} maximumZoomScale={3} minimumZoomScale={.75} contentContainerStyle={styles.horizontalScroll}>
-      <ScrollView contentContainerStyle={styles.viewer} showsVerticalScrollIndicator={false}>
-        <View style={[styles.page, { width: pageWidth, height: pageHeight }]}>
-          {!imageError ? <Image key={pageUrl} source={{ uri: pageUrl }} style={StyleSheet.absoluteFill} resizeMode="contain" onLoadStart={() => setImageLoading(true)} onLoadEnd={() => setImageLoading(false)} onError={() => { setImageLoading(false); setImageError(true); }} /> : <View style={styles.pageState}><Ionicons name="alert-circle-outline" size={32} color={Colors.textMuted} /><Text style={styles.pageStateText}>Couldn’t render this page.</Text><TouchableOpacity onPress={() => { setImageError(false); setImageLoading(true); }}><Text style={styles.retry}>Try again</Text></TouchableOpacity></View>}
-          {imageLoading && !imageError ? <View style={styles.loadingOverlay}><ActivityIndicator color={Colors.primary} /><Text style={styles.pageStateText}>Rendering page {page}...</Text></View> : null}
-        </View>
-      </ScrollView>
-    </ScrollView>
-    <View style={styles.bottomBar}><Text style={styles.fileName} numberOfLines={1}>{resource.fileName}</Text><TouchableOpacity disabled={!resource.pdfUrl} style={styles.originalButton} onPress={() => resource.pdfUrl && Linking.openURL(resource.pdfUrl)}><Ionicons name="download-outline" size={17} color="#FFF" /><Text style={styles.originalText}>Original PDF</Text></TouchableOpacity></View>
+    let active = true;
+    if (!id) return;
+    void fetchResource(id).then((item) => {
+      if (active) setResource(item);
+      return isResourceSaved(id).then((savedItem) => { if (active) setSaved(savedItem); }).catch(() => { if (active) setSaved(false); });
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Resource unavailable.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id]);
+  useEffect(() => { const timer = setTimeout(() => setDebouncedChildSearch(childSearch.trim()), 300); return () => clearTimeout(timer); }, [childSearch]);
+  const parentResourceId = resource?.id;
+  const resourceKind = resource?.resourceKind;
+  useEffect(() => {
+    let active = true;
+    if (!parentResourceId || resourceKind !== 'folder') return () => { active = false; };
+    const version = ++childVersion.current;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      setChildren([]); setChildrenError(''); setChildrenLoading(true);
+      try {
+        const page = await listStudyResourcePage({ parentResourceId, search: debouncedChildSearch, offset: 0, limit: 10 });
+        if (active && version === childVersion.current) { setChildren(page.items); setChildrenHasMore(page.hasMore); }
+      } catch (cause) {
+        if (active && version === childVersion.current) { setChildrenError(cause instanceof Error ? cause.message : 'Could not load PDFs from this folder.'); setChildrenHasMore(false); }
+      } finally {
+        if (active && version === childVersion.current) setChildrenLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [parentResourceId, resourceKind, debouncedChildSearch, childReload]);
+  const loadMoreChildren = async () => {
+    if (!resource || childRequest.current || !childrenHasMore) return;
+    const version = childVersion.current;
+    childRequest.current = true; setChildrenLoadingMore(true);
+    try {
+      const page = await listStudyResourcePage({ parentResourceId: resource.id, search: debouncedChildSearch, offset: children.length, limit: 10 });
+      if (version === childVersion.current) { setChildren((current) => [...current, ...page.items.filter((item) => !current.some((existing) => existing.id === item.id))]); setChildrenHasMore(page.hasMore); }
+    } catch (cause) { if (version === childVersion.current) setChildrenError(cause instanceof Error ? cause.message : 'Could not load more PDFs.'); }
+    finally { childRequest.current = false; setChildrenLoadingMore(false); }
+  };
+  const report = () => Alert.alert('Report broken link?', 'This reports that the Google Drive link may no longer work.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Report', onPress: () => void reportBrokenResource(id).then(() => Alert.alert('Report sent', 'Thanks for helping keep Study Hub useful.')).catch(() => Alert.alert('Could not send report', 'Please sign in and try again.')) }]);
+  const own = Boolean(resource && resource.resourceKind !== 'pdf' && session?.user.id === resource.uploader.id);
+  const remove = () => Alert.alert('Delete resource?', 'The metadata will be removed from Study Hub. The file remains in your Drive.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void removeStudyResource(id).then(() => router.back()).catch((cause) => Alert.alert('Could not delete', cause.message)) }]);
+  return <SafeAreaView style={styles.safe}><View style={styles.header}><TouchableOpacity accessibilityLabel="Back" onPress={() => router.back()}><Ionicons name="arrow-back" size={23} color="#FFF"/></TouchableOpacity><Text style={styles.headerTitle}>Study resource</Text>{resource?.resourceKind === 'link' ? <TouchableOpacity accessibilityLabel="Share resource" onPress={() => resource.pdfUrl && Share.share({ title: resource.title, message: resource.pdfUrl })}><Ionicons name="share-social-outline" size={21} color="#FFF"/></TouchableOpacity> : null}</View>
+    {loading ? <View style={styles.state}><ActivityIndicator color="#FF3B30"/><Text style={styles.muted}>Loading resource…</Text></View> : error || !resource ? <View style={styles.state}><Text style={styles.muted}>{error || 'This resource is unavailable.'}</Text></View> : resource.resourceKind === 'pdf' ? <ScrollView contentContainerStyle={styles.content}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 10 }}><TouchableOpacity onPress={() => void saveResource(id, !saved).then(() => setSaved(!saved)).catch((cause) => Alert.alert('Could not save', cause.message))}><Text style={styles.reportText}>{saved ? 'Saved' : 'Save PDF'}</Text></TouchableOpacity></View>
+      <View style={styles.icon}><Ionicons name="document-text" size={32} color="#FF6B63"/></View>
+      <Text style={styles.title}>{resource.pdfFileName || resource.fileName}</Text>
+      {resource.title ? <Text style={styles.subtitle}>Resource title: {resource.title}</Text> : null}
+      <View style={styles.meta}><Text style={styles.metaLabel}>Subject</Text><Text style={styles.metaValue}>{resource.subject}</Text></View>
+      <View style={styles.meta}><Text style={styles.metaLabel}>Year and semester</Text><Text style={styles.metaValue}>{[resource.studyYear ? `Year ${resource.studyYear}` : null, resource.semester ? `Semester ${resource.semester}` : null].filter(Boolean).join(' · ') || 'Not provided'}</Text></View>
+      <View style={styles.meta}><Text style={styles.metaLabel}>Category</Text><Text style={styles.metaValue}>{resource.type.replaceAll('_', ' ')}</Text></View>
+      <View style={styles.meta}><Text style={styles.metaLabel}>College</Text><Text style={styles.metaValue}>{resource.college || 'Not provided'}</Text></View>
+      <View style={styles.meta}><Text style={styles.metaLabel}>Degree</Text><Text style={styles.metaValue}>{resource.degree || 'Not provided'}</Text></View>
+      <View style={styles.meta}><Text style={styles.metaLabel}>Regulation</Text><Text style={styles.metaValue}>{resource.regulation || 'Not provided'}</Text></View>
+      {resource.fileSizeMb != null ? <View style={styles.meta}><Text style={styles.metaLabel}>File size</Text><Text style={styles.metaValue}>{resource.fileSizeMb.toFixed(2)} MB</Text></View> : null}
+      <View style={styles.meta}><Text style={styles.metaLabel}>Uploaded by</Text><Text style={styles.metaValue}>{resource.uploader.name}</Text></View>
+      {resource.createdAt ? <View style={styles.meta}><Text style={styles.metaLabel}>Created</Text><Text style={styles.metaValue}>{new Date(resource.createdAt).toLocaleDateString()}</Text></View> : null}
+      <DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} height={520} />
+      <TouchableOpacity style={styles.open} onPress={() => resource.pdfUrl && openDriveResource(resource.pdfUrl)}><Ionicons name="open-outline" size={18} color="#FFF"/><Text style={styles.openText}>Open in Google Drive</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.report} onPress={report}><Text style={styles.reportText}>Report a broken PDF link</Text></TouchableOpacity>
+    </ScrollView> : <ScrollView contentContainerStyle={styles.content}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginBottom: 10 }}>{own ? <><TouchableOpacity onPress={() => router.push({ pathname: '/share-resource', params: { id } })}><Text style={styles.reportText}>Edit resource</Text></TouchableOpacity><TouchableOpacity onPress={remove}><Text style={[styles.reportText, { color: '#FF6B63' }]}>Delete</Text></TouchableOpacity></> : null}<TouchableOpacity onPress={() => void saveResource(id, !saved).then(() => setSaved(!saved)).catch((cause) => Alert.alert('Could not save', cause.message))}><Text style={styles.reportText}>{saved ? 'Saved' : 'Save'}</Text></TouchableOpacity></View>
+      <View style={styles.icon}><Ionicons name={resource.resourceKind === 'folder' ? 'folder-open' : 'document-text'} size={32} color="#FF6B63"/></View><Text style={styles.title}>{resource.title}</Text><Text style={styles.subtitle}>{resource.subject} - {resource.studyYear ? 'Year ' + resource.studyYear : 'Year not provided'} - {resource.semester ? 'Semester ' + resource.semester : 'Semester not provided'}</Text>
+      {resource.resourceKind === 'folder' ? <View style={styles.pdfListing}>
+        <Text style={styles.metaLabel}>PDF FILES IN THIS FOLDER</Text>
+        <TextInput accessibilityLabel="Search PDFs in folder" value={childSearch} onChangeText={setChildSearch} placeholder="Search filenames or subject" placeholderTextColor="#777F90" style={styles.childSearch} />
+        {childrenLoading && !children.length ? <View style={styles.childState}><ActivityIndicator color="#FF3B30"/><Text style={styles.muted}>Loading indexed PDFs&</Text></View> : null}
+        {childrenError ? <View style={styles.childState}><Text style={styles.muted}>{childrenError}</Text><TouchableOpacity onPress={() => setChildReload((value) => value + 1)}><Text style={styles.reportText}>Retry</Text></TouchableOpacity></View> : null}
+        {!childrenLoading && !childrenError && !children.length ? <Text style={styles.muted}>No indexed PDFs are available for this folder yet. The authorized Drive indexer must run and the files must be shared for access.</Text> : null}
+        {children.map((child) => <View key={child.id} style={styles.childRow}>
+          <TouchableOpacity style={styles.childInfo} accessibilityRole="button" onPress={() => router.push('/academic-library')}>
+            <Text style={styles.childTitle} numberOfLines={2}>{child.fileName}</Text>
+            <Text style={styles.childMeta}>{child.subject} - Year {child.studyYear || 'Not provided'} - Semester {child.semester || 'Not provided'}</Text>
+            <Text style={styles.childMeta}>{child.type.replaceAll('_', ' ')}{child.driveFileSize != null ? ' - ' + (child.driveFileSize / (1024 * 1024)).toFixed(1) + ' MB' : ''}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityLabel={child.isBookmarked ? 'Unsave PDF' : 'Save PDF'} onPress={() => void saveResource(child.id, !child.isBookmarked).then(() => setChildren((items) => items.map((item) => item.id === child.id ? { ...item, isBookmarked: !child.isBookmarked } : item))).catch((cause) => Alert.alert('Could not save', cause.message))}>
+            <Ionicons name={child.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={child.isBookmarked ? '#FF3B30' : '#A5ACBA'}/>
+          </TouchableOpacity>
+        </View>)}
+        {childrenHasMore ? <TouchableOpacity style={styles.loadMore} disabled={childrenLoadingMore} onPress={() => void loadMoreChildren()}>{childrenLoadingMore ? <ActivityIndicator color="#FF3B30"/> : <Text style={styles.reportText}>Load more PDFs</Text>}</TouchableOpacity> : null}
+      </View> : <DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} />}
+      <View style={styles.meta}><Text style={styles.metaLabel}>Category</Text><Text style={styles.metaValue}>{resource.type.replaceAll('_', ' ')}</Text></View>
+      {resource.college || resource.university ? <View style={styles.meta}><Text style={styles.metaLabel}>College / University</Text><Text style={styles.metaValue}>{[resource.college, resource.university].filter(Boolean).join(' · ')}</Text></View> : null}
+      {resource.degree || resource.branch ? <View style={styles.meta}><Text style={styles.metaLabel}>Program / Branch</Text><Text style={styles.metaValue}>{[resource.degree, resource.branch].filter(Boolean).join(' · ')}</Text></View> : null}
+      {resource.studyYear || resource.semester ? <View style={styles.meta}><Text style={styles.metaLabel}>Year / Semester</Text><Text style={styles.metaValue}>{[resource.studyYear && `Year ${resource.studyYear}`, resource.semester && `Semester ${resource.semester}`].filter(Boolean).join(' · ')}</Text></View> : null}
+      {resource.subjectCode || resource.regulation || resource.unitModule ? <View style={styles.meta}><Text style={styles.metaLabel}>Syllabus details</Text><Text style={styles.metaValue}>{[resource.subjectCode && `Code ${resource.subjectCode}`, resource.regulation, resource.unitModule && `Unit ${resource.unitModule}`].filter(Boolean).join(' · ')}</Text></View> : null}
+      {resource.language ? <View style={styles.meta}><Text style={styles.metaLabel}>Language</Text><Text style={styles.metaValue}>{resource.language}</Text></View> : null}
+      {resource.fileName ? <View style={styles.meta}><Text style={styles.metaLabel}>Drive filename</Text><Text style={styles.metaValue}>{resource.fileName}</Text></View> : null}
+      {resource.driveFileSize != null ? <View style={styles.meta}><Text style={styles.metaLabel}>File size</Text><Text style={styles.metaValue}>{(resource.driveFileSize / (1024 * 1024)).toFixed(2)} MB</Text></View> : null}
+      {resource.driveCreatedAt ? <View style={styles.meta}><Text style={styles.metaLabel}>Drive created</Text><Text style={styles.metaValue}>{new Date(resource.driveCreatedAt).toLocaleDateString()}</Text></View> : null}
+      {resource.driveMimeType ? <View style={styles.meta}><Text style={styles.metaLabel}>File type</Text><Text style={styles.metaValue}>{resource.driveMimeType}</Text></View> : null}
+      {resource.driveModifiedAt ? <View style={styles.meta}><Text style={styles.metaLabel}>Last modified</Text><Text style={styles.metaValue}>{new Date(resource.driveModifiedAt).toLocaleDateString()}</Text></View> : null}
+      <View style={styles.meta}><Text style={styles.metaLabel}>Shared by</Text><Text style={styles.metaValue}>{resource.uploader.name}{resource.uploader.college ? ` · ${resource.uploader.college}` : ''}</Text></View>
+      {resource.description ? <View style={styles.meta}><Text style={styles.metaLabel}>Description</Text><Text style={styles.metaValue}>{resource.description}</Text></View> : null}
+      {resource.resourceKind === 'folder' ? <TouchableOpacity style={styles.open} onPress={() => router.push('/academic-library')}><Ionicons name="library-outline" size={18} color="#FFF"/><Text style={styles.openText}>Browse PDFs in STUDOS</Text></TouchableOpacity> : <TouchableOpacity style={styles.open} onPress={() => resource.pdfUrl && openDriveResource(resource.pdfUrl)}><Ionicons name="open-outline" size={18} color="#FFF"/><Text style={styles.openText}>Open in Google Drive</Text></TouchableOpacity>}
+      <TouchableOpacity style={styles.report} onPress={report}><Text style={styles.reportText}>Report a broken link</Text></TouchableOpacity>
+      <Text style={styles.note}>The file is hosted in the contributor’s Google Drive. Access depends on their sharing settings.</Text>
+    </ScrollView>}
   </SafeAreaView>;
 }
-
-function StateView({ icon, label, busy = false }: { icon: keyof typeof Ionicons.glyphMap; label: string; busy?: boolean }) {
-  return <SafeAreaView style={styles.safe}><View style={styles.simpleHeader}><TouchableOpacity onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity></View><View style={styles.state}>{busy ? <ActivityIndicator color={Colors.primary} /> : <Ionicons name={icon} size={36} color={Colors.textMuted} />}<Text style={styles.pageStateText}>{label}</Text></View></SafeAreaView>;
-}
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#090A0F' }, header: { height: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#252C3D' }, headerCopy: { flex: 1, marginHorizontal: 12 }, headerTitle: { color: '#FFF', fontSize: 14, fontWeight: Typography.bold }, headerMeta: { color: Colors.textMuted, fontSize: 10, marginTop: 2 }, simpleHeader: { height: 58, paddingHorizontal: 15, justifyContent: 'center' },
-  toolbar: { height: 48, backgroundColor: '#121624', borderBottomWidth: 1, borderBottomColor: '#252C3D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 13 }, tool: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#171D2D' }, disabled: { opacity: .3 }, zoom: { color: Colors.textSecondary, fontSize: 11, minWidth: 38, textAlign: 'center' },
-  horizontalScroll: { flexGrow: 1 }, viewer: { padding: 14, alignItems: 'center' }, page: { backgroundColor: '#FFF', borderRadius: 3, overflow: 'hidden' }, loadingOverlay: { ...StyleSheet.absoluteFill, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center', gap: 10 }, pageState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }, pageStateText: { color: Colors.textMuted, fontSize: 12, textAlign: 'center' }, retry: { color: Colors.primary, fontSize: 12, fontWeight: Typography.bold }, state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 30 },
-  bottomBar: { minHeight: 58, backgroundColor: '#121624', borderTopWidth: 1, borderTopColor: '#252C3D', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, gap: 12 }, fileName: { flex: 1, color: Colors.textMuted, fontSize: 10 }, originalButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 8 }, originalText: { color: '#FFF', fontSize: 10, fontWeight: Typography.bold },
-});
+const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: '#090B0F' }, header: { height: 56, borderBottomWidth: 1, borderBottomColor: '#252C3D', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, gap: 16 }, headerTitle: { flex: 1, color: '#FFF', fontWeight: '700', fontSize: 16 }, content: { padding: 22 }, icon: { width: 64, height: 64, borderRadius: 18, backgroundColor: '#211717', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }, title: { color: '#FFF', fontSize: 26, lineHeight: 33, fontWeight: '800' }, subtitle: { color: '#A5ACBA', fontSize: 14, marginTop: 8, marginBottom: 20 }, meta: { paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#252C3D', gap: 6 }, metaLabel: { color: '#929AAA', fontWeight: '700', fontSize: 12, textTransform: 'uppercase' }, metaValue: { color: '#E9ECF3', fontSize: 15, lineHeight: 22 }, open: { height: 52, marginTop: 18, borderRadius: 12, backgroundColor: '#FF3B30', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, openText: { color: '#FFF', fontWeight: '800', fontSize: 15 }, report: { alignItems: 'center', padding: 15 }, reportText: { color: '#FF8C86', fontWeight: '600', fontSize: 13 }, pdfListing: { marginTop: 18, marginBottom: 16, padding: 14, borderWidth: 1, borderColor: '#252C3D', borderRadius: 12, backgroundColor: '#11141C', gap: 10 }, childSearch: { color: '#FFF', backgroundColor: '#090B0F', borderWidth: 1, borderColor: '#252C3D', borderRadius: 9, minHeight: 42, paddingHorizontal: 11, fontSize: 13 }, childState: { minHeight: 64, alignItems: 'center', justifyContent: 'center', gap: 8 }, childRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#252C3D' }, childInfo: { flex: 1, gap: 5 }, childTitle: { color: '#E9ECF3', fontSize: 14, fontWeight: '700' }, childMeta: { color: '#929AAA', fontSize: 11 }, loadMore: { padding: 12, alignItems: 'center', borderRadius: 8, backgroundColor: '#1B202B' }, note: { color: '#777F90', fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 }, state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 25 }, muted: { color: '#A5ACBA', textAlign: 'center' }, pdfUnavailable: { marginTop: 20, padding: 18, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#5A3B36', borderRadius: 14, backgroundColor: '#211717' }, pdfUnavailableTitle: { color: '#FFF', fontSize: 15, fontWeight: '800' } });

@@ -1,4 +1,5 @@
 import { Opportunity, OpportunityCategory, OpportunityType } from '../types';
+import { Platform } from 'react-native';
 
 const BASE_URL = 'https://unstop.com';
 const API_URL = `${BASE_URL}/api/public/opportunity/search-result`;
@@ -470,10 +471,11 @@ export async function fetchLiveOpportunities(options?: {
 
   const promise = (async () => {
     // Attempt to fetch from local/hosted StudOs backend first if available
-    const backendUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001';
-    try {
+    const configuredBackendUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+    const backendUrl = (configuredBackendUrl || (Platform.OS === 'web' ? 'http://localhost:5001' : '')).replace(/\/+$/, '');
+    if (backendUrl) try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2500);
+      const timeout = setTimeout(() => controller.abort(), 45000);
       const url = new URL(`${backendUrl}/api/opportunities`);
       if (options?.category && options.category !== 'All') {
         url.searchParams.set('category', options.category);
@@ -483,17 +485,36 @@ export async function fetchLiveOpportunities(options?: {
         url.searchParams.set('force_refresh', 'true');
       }
 
-      const backendRes = await fetch(url.toString(), { signal: controller.signal });
-      clearTimeout(timeout);
+      let backendRes: Response;
+      try {
+        backendRes = await fetch(url.toString(), { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (backendRes.ok) {
         const json = (await backendRes.json()) as { data?: Opportunity[] };
-        if (json?.data && Array.isArray(json.data) && json.data.length > 0) {
+        if (json?.data && Array.isArray(json.data)) {
           memoryCache.set(cacheKey, { data: json.data, timestamp: now });
           return json.data;
         }
       }
-    } catch {
-      // Backend offline or unreachable (e.g. mobile physical device); fallback to direct Unstop fetch
+      if (Platform.OS === 'web') {
+        throw new Error(`Opportunities backend returned HTTP ${backendRes.status}.`);
+      }
+    } catch (backendError) {
+      // Native fetch can fall back to Unstop; web requires the CORS-enabled proxy.
+      if (Platform.OS === 'web') {
+        if (backendError instanceof Error && backendError.message.startsWith('Opportunities backend returned HTTP')) {
+          throw backendError;
+        }
+        throw new Error(`Cannot reach the opportunities backend at ${backendUrl}. Start it with "python backend/server.py" and retry.`);
+      }
+    }
+
+    // Unstop blocks browser-origin requests. Web must use the CORS-enabled
+    // backend proxy instead of issuing eight failing requests from the client.
+    if (Platform.OS === 'web') {
+      throw new Error('Set EXPO_PUBLIC_API_URL to a reachable StudOs opportunities backend.');
     }
 
     const targetCategories: OpportunityCategory[] = [];

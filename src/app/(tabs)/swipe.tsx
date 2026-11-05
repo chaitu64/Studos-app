@@ -26,8 +26,8 @@ import {
   DiscoverySwipeCardHandle,
 } from '../../components/cards/DiscoverySwipeCard';
 import { useApp } from '../../context/AppContext';
-import { CommunityPost } from '../../types';
-import { SWIPE_DEMO_POSTS } from '../../services/swipeDemoData';
+import { CommunityPost, StudentDirectoryProfile } from '../../types';
+import { studentDirectoryService } from '../../services/studentDirectoryService';
 
 type DiscoveryMode = 'people' | 'ideas' | 'services';
 
@@ -41,7 +41,7 @@ function unique(values: (string | undefined)[]): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
-function getItemPost(item: DiscoveryItem): CommunityPost {
+function getItemPost(item: DiscoveryItem): CommunityPost | undefined {
   return item.kind === 'person' ? item.person.sourcePost : item.post;
 }
 
@@ -67,8 +67,26 @@ export default function SwipeScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [skippedIds, setSkippedIds] = useState<string[]>([]);
   const [actionedIds, setActionedIds] = useState<string[]>([]);
+  const [directoryProfiles, setDirectoryProfiles] = useState<StudentDirectoryProfile[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(true);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const swipeCardRef = useRef<DiscoverySwipeCardHandle>(null);
+
+  const loadPeople = useCallback(async () => {
+    setPeopleLoading(true);
+    setPeopleError(null);
+    try {
+      const page = await studentDirectoryService.list({ limit: 500 });
+      setDirectoryProfiles(page.students.filter((profile) => profile.id !== user.id));
+    } catch (error) {
+      console.error('Unable to load student profiles:', error);
+      setDirectoryProfiles([]);
+      setPeopleError('Student profiles could not be loaded. Check your connection and try again.');
+    } finally {
+      setPeopleLoading(false);
+    }
+  }, [user.id]);
 
   const loadDiscovery = useCallback(async (refresh = false) => {
     if (refresh) setIsRefreshing(true);
@@ -76,7 +94,7 @@ export default function SwipeScreen() {
 
     try {
       setErrorMessage(null);
-      await refreshCommunityPosts();
+      await Promise.all([refreshCommunityPosts(), loadPeople()]);
     } catch (error) {
       console.error('Unable to load discovery records:', error);
       setErrorMessage('Discovery could not be refreshed. Check your connection and try again.');
@@ -84,7 +102,7 @@ export default function SwipeScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [refreshCommunityPosts]);
+  }, [loadPeople, refreshCommunityPosts]);
 
   useEffect(() => {
     let active = true;
@@ -104,6 +122,8 @@ export default function SwipeScreen() {
       active = false;
     };
   }, [refreshCommunityPosts]);
+
+  useEffect(() => { void Promise.resolve().then(loadPeople); }, [loadPeople]);
 
   const discoverablePosts = useMemo(() => {
     const byIdeaId = new Map(ideas.map((idea) => [idea.id, idea]));
@@ -129,30 +149,15 @@ export default function SwipeScreen() {
   }, [communityPosts, ideas, mode, user.id]);
 
   const people = useMemo<DiscoveryPerson[]>(() => {
-    const grouped = new Map<string, CommunityPost[]>();
-    const peopleSource = [...discoverablePosts, ...(__DEV__ ? SWIPE_DEMO_POSTS : [])];
-    for (const post of peopleSource.filter((entry) =>
-      entry.type === 'idea' ||
-      entry.type === 'project' ||
-      entry.type === 'event_collab' ||
-      entry.type === 'service'
-    )) {
-      const posts = grouped.get(post.author.id) || [];
-      posts.push(post);
-      grouped.set(post.author.id, posts);
-    }
-
-    return [...grouped.entries()].map(([id, posts]) => {
-      const orderedPosts = [...posts].sort((a, b) => b.createdAtTimestamp - a.createdAtTimestamp);
-      return {
-        id,
-        author: orderedPosts[0].author,
-        posts: orderedPosts,
-        sourcePost: orderedPosts[0],
-        skills: unique(orderedPosts.flatMap((post) => [...(post.skills || []), ...(post.technologies || [])])),
-      };
-    });
-  }, [discoverablePosts]);
+    return directoryProfiles.map((profile) => ({
+      id: `${profile.identity.type}:${profile.id}`,
+      identity: profile.identity,
+      profile,
+      author: { id: profile.id, identity: profile.identity, name: profile.name, avatar: profile.avatar, college: profile.college, role: profile.branch || profile.degree || undefined },
+      posts: [],
+      skills: unique(profile.skills),
+    }));
+  }, [directoryProfiles]);
 
   const allItems = useMemo<DiscoveryItem[]>(() => {
     if (mode === 'people') {
@@ -177,6 +182,7 @@ export default function SwipeScreen() {
       return unique(people.flatMap((person) => [
         person.author.role,
         ...person.skills,
+        ...(person.profile?.interests || []),
       ]));
     }
     if (mode === 'services') {
@@ -199,7 +205,7 @@ export default function SwipeScreen() {
     const matchesFilter = (item: DiscoveryItem) => {
       if (filter === 'All') return true;
       if (item.kind === 'person') {
-        return item.person.author.role === filter || item.person.skills.includes(filter);
+        return item.person.author.role === filter || item.person.skills.includes(filter) || Boolean(item.person.profile?.interests.includes(filter));
       }
       const post = item.post;
       return post.category === filter ||
@@ -216,19 +222,17 @@ export default function SwipeScreen() {
     };
 
     return allItems
-      .filter((item) =>
-        !skippedIds.includes(item.id) &&
-        !actionedIds.includes(item.id) &&
-        !actionedIds.includes(getItemPost(item).id) &&
-        matchesFilter(item)
-      )
+      .filter((item) => {
+        const post = getItemPost(item);
+        return !skippedIds.includes(item.id) && !actionedIds.includes(item.id) && (!post || !actionedIds.includes(post.id)) && matchesFilter(item);
+      })
       .sort((a, b) => score(b) - score(a));
   }, [actionedIds, allItems, filter, skippedIds, user.skills]);
 
   const currentItem = visibleItems[0];
   const currentPost = currentItem ? getItemPost(currentItem) : null;
   const actionLabel = mode === 'people'
-    ? 'Invite to collaborate'
+    ? currentItem?.kind === 'person' && !currentItem.person.sourcePost ? 'View profile' : 'Invite to collaborate'
     : mode === 'services'
       ? 'Request service'
       : currentPost?.type === 'event_collab'
@@ -248,11 +252,7 @@ export default function SwipeScreen() {
 
   const submitInterest = useCallback(async (item: DiscoveryItem) => {
     const post = getItemPost(item);
-    if (post.id.startsWith('demo_')) {
-      setActionedIds((previous) => previous.includes(item.id) ? previous : [...previous, item.id]);
-      Alert.alert('Demo preview', 'This is sample content for checking the design. No request was sent.');
-      return;
-    }
+    if (!post) return;
     setPendingId(item.id);
 
     try {
@@ -263,7 +263,7 @@ export default function SwipeScreen() {
           throw new Error('This team listing is no longer available.');
         }
         const openRole = team.openRoles.find((role) => !role.filled)?.role || user.primaryRole;
-        const result = await applyToTeam(team.id, openRole);
+        const result = await applyToTeam(team.id, openRole || 'Developer');
         if (!result.success) throw new Error(result.message || 'The team request was not accepted.');
         confirmation = 'Your team application was recorded in this app.';
       } else {
@@ -272,7 +272,7 @@ export default function SwipeScreen() {
           : mode === 'people'
             ? `${user.name} would like to connect about "${post.title}".`
             : `${user.name} is interested in contributing to "${post.title}".`;
-        const result = await applyToCollaborate(post.id, note, user.primaryRole);
+        const result = await applyToCollaborate(post.id, note, user.primaryRole || user.branch || 'Student');
         if (!result.success) throw new Error(result.message || 'The collaboration request was not accepted.');
         confirmation = 'Your request was recorded in this app.';
       }
@@ -289,29 +289,30 @@ export default function SwipeScreen() {
     } finally {
       setPendingId(null);
     }
-  }, [applyToCollaborate, applyToTeam, mode, teams, user.name, user.primaryRole]);
+  }, [applyToCollaborate, applyToTeam, mode, teams, user.branch, user.name, user.primaryRole]);
 
   const confirmInterest = useCallback((item: DiscoveryItem) => {
     if (pendingId) return;
+    if (item.kind === 'person' && !item.person.sourcePost) {
+      const identity = item.person.identity;
+      if (identity) router.push(`/student/${identity.type}/${identity.id}` as never);
+      return;
+    }
     const post = getItemPost(item);
-    const isDemo = post.id.startsWith('demo_');
+    if (!post) return;
     const title = item.kind === 'person'
-      ? isDemo
-        ? `Preview invitation to ${item.person.author.name}?`
-        : `Invite ${item.person.author.name} to collaborate?`
+      ? `Invite ${item.person.author.name} to collaborate?`
       : mode === 'services'
-        ? `${isDemo ? 'Preview service request for' : 'Request'} "${post.title}"?`
+        ? `Request "${post.title}"?`
         : post.type === 'event_collab'
-          ? `${isDemo ? 'Preview team request for' : 'Request to join'} "${post.title}"?`
-          : `${isDemo ? 'Preview interest in' : 'Express interest in'} "${post.title}"?`;
+          ? `Request to join "${post.title}"?`
+          : `Express interest in "${post.title}"?`;
     Alert.alert(
       title,
-      isDemo
-        ? 'This is demo content used to preview the interface. No real request will be sent.'
-        : 'This records a request in the current app. It does not confirm acceptance, hiring, payment, or membership.',
+      'This records a request in the current app. It does not confirm acceptance, hiring, payment, or membership.',
       [
         { text: 'Not now', style: 'cancel' },
-        { text: isDemo ? 'Preview action' : item.kind === 'person' ? 'Send invitation' : mode === 'services' ? 'Request service' : 'Continue', onPress: () => { void submitInterest(item); } },
+        { text: item.kind === 'person' ? 'Send invitation' : mode === 'services' ? 'Request service' : 'Continue', onPress: () => { void submitInterest(item); } },
       ]
     );
   }, [mode, pendingId, submitInterest]);
@@ -364,6 +365,8 @@ export default function SwipeScreen() {
               <Text style={styles.detailMuted}>{[person.author.role, person.author.college].filter(Boolean).join(' · ')}</Text>
             </View>
           </View>
+          {person.profile?.shortBio ? <View style={styles.detailEntry}><Text style={styles.detailSectionTitle}>About</Text><Text style={styles.detailBody}>{person.profile.shortBio}</Text></View> : null}
+          {person.profile ? <View style={styles.detailEntry}><Text style={styles.detailSectionTitle}>Study</Text><Text style={styles.detailBody}>{[person.profile.degree, person.profile.branch, person.profile.studyYear && `Year ${person.profile.studyYear}`, person.profile.gradYear && `Class of ${person.profile.gradYear}`].filter(Boolean).join(' · ')}</Text></View> : null}
           {person.posts.map((post) => (
             <View key={post.id} style={styles.detailEntry}>
               <Text style={styles.detailSectionTitle}>{post.title}</Text>
@@ -377,6 +380,7 @@ export default function SwipeScreen() {
               <Text style={styles.detailBody}>{person.skills.join(' · ')}</Text>
             </View>
           ) : null}
+          {person.profile?.interests.length ? <View style={styles.detailEntry}><Text style={styles.detailSectionTitle}>Interests</Text><Text style={styles.detailBody}>{person.profile.interests.join(' · ')}</Text></View> : null}
         </>
       );
     }
@@ -437,7 +441,7 @@ export default function SwipeScreen() {
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.headerTitle}>Find Your People</Text>
-          <Text style={styles.headerSubtitle}>Discover students who share your ambition.</Text>
+          <Text style={styles.headerSubtitle}>Discover real and demo student profiles, ideas, and services.</Text>
         </View>
         <View style={styles.headerActions}>
           <Pressable
@@ -494,13 +498,13 @@ export default function SwipeScreen() {
       ) : null}
 
       <View style={styles.arena}>
-        {isLoading ? (
+        {(mode === 'people' ? peopleLoading : isLoading) ? (
           <CardSkeleton />
-        ) : errorMessage ? (
+        ) : (mode === 'people' ? peopleError : errorMessage) ? (
           <EmptyState
             icon="cloud-offline-outline"
             title="Couldn't load discovery"
-            description={errorMessage}
+            description={mode === 'people' ? peopleError || '' : errorMessage || ''}
             actionTitle="Retry"
             onAction={() => { void loadDiscovery(true); }}
             style={styles.emptyState}
@@ -563,7 +567,7 @@ export default function SwipeScreen() {
                   <ActivityIndicator size="small" color={Colors.textOnPrimary} />
                 ) : (
                   <Ionicons
-                    name={mode === 'services' ? 'hand-left-outline' : mode === 'people' ? 'chatbubble-ellipses-outline' : 'person-add-outline'}
+                    name={mode === 'services' ? 'hand-left-outline' : mode === 'people' ? (currentItem.kind === 'person' && !currentItem.person.sourcePost ? 'person-outline' : 'chatbubble-ellipses-outline') : 'person-add-outline'}
                     size={17}
                     color={Colors.textOnPrimary}
                   />
@@ -580,7 +584,7 @@ export default function SwipeScreen() {
             title={hasModeRecords ? 'No matching items' : emptyTitle}
             description={hasModeRecords
               ? 'Try another filter or clear the current filter to see more student-submitted records.'
-              : 'Discovery uses public student-submitted posts. There are no matching records to show right now.'}
+              : mode === 'people' ? 'No student profiles are visible right now. Try refreshing or open Students from search.' : 'There are no matching student-submitted records to show right now.'}
             actionTitle={filter !== 'All' ? 'Clear filters' : isRefreshing ? 'Refreshing…' : 'Refresh'}
             onAction={() => {
               if (filter !== 'All') setFilter('All');
@@ -650,8 +654,10 @@ export default function SwipeScreen() {
               <View style={styles.detailActions}>
                 <Button
                   title={
-                    detailsItem.kind === 'person'
-                      ? 'Invite to collaborate'
+                    detailsItem.kind === 'person' && !detailsItem.person.sourcePost
+                      ? 'View full profile'
+                      : detailsItem.kind === 'person'
+                        ? 'Invite to collaborate'
                       : detailsItem.post.type === 'service'
                         ? 'Request service'
                         : detailsItem.post.type === 'event_collab'

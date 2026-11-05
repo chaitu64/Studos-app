@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-11-05T07:37:47.699263+00:00",
+  "mode": "dry_run",
+  "status": "blocked_missing_credentials",
+  "study_resources_found": null,
+  "folder_count": null,
+  "accessible_folders": 0,
+  "inaccessible_folders": 0,
+  "pdfs_discovered": 0,
+  "duplicate_drive_files": 0,
+  "existing_academic_pdf_records": null,
+  "proposed_inserts": 0,
+  "proposed_updates": 0,
+  "proposed_rows": [],
+  "folder_results": [],
+  "errors": [
+    {
+      "error": "Missing server-only credentials: SUPABASE_SERVICE_ROLE_KEY. A public anon key cannot read all study_resources under current RLS."
+    }
+  ],
+  "finished_at": "2026-11-05T07:37:47.699263+00:00"
+}

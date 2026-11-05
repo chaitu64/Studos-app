@@ -34,26 +34,44 @@ export type OpportunityCategory =
 export interface UserProfile {
   id: string;
   name: string;
+  givenName?: string;
+  familyName?: string;
+  email?: string;
+  authProvider?: string;
+  emailVerified?: boolean;
+  collegeEmail?: string;
+  dateOfBirth?: string;
   avatar: string;
   college: string;
+  branch?: string;
   degree: string;
+  studyYear?: string;
   gradYear: string;
   shortBio: string;
-  primaryRole: StudentRole;
+  primaryRole?: StudentRole;
   skills: string[];
   interests: string[];
-  availability: '10-15 hrs/wk' | '15-20 hrs/wk' | 'Full-time' | 'Weekends only';
-  goals: string;
+  availability?: '10-15 hrs/wk' | '15-20 hrs/wk' | 'Full-time' | 'Weekends only';
+  goals?: string;
   githubUrl?: string;
   linkedinUrl?: string;
   portfolioUrl?: string;
-  projectsCount: number;
-  ideasCount: number;
-  hackathonsCount: number;
-  leaderboardRank: number;
-  points: number;
-  badges: string[];
+  projectsCount?: number;
+  ideasCount?: number;
+  hackathonsCount?: number;
+  leaderboardRank?: number;
+  points?: number;
+  badges?: string[];
   isVerified?: boolean;
+}
+
+export type StudentIdentity =
+  | { type: 'real'; id: string }
+  | { type: 'demo'; id: string };
+
+export interface StudentDirectoryProfile extends UserProfile {
+  identity: StudentIdentity;
+  isDemo: boolean;
 }
 
 export interface IdeaComment {
@@ -88,14 +106,15 @@ export interface Idea {
   rolesNeeded: StudentRole[];
   creator: {
     id: string;
+    identity?: StudentIdentity;
     name: string;
     avatar: string;
     college: string;
     role: string;
   };
   createdAt: string;
-  upvotes: number;
-  commentsCount: number;
+  upvotes?: number;
+  commentsCount?: number;
   visibility: 'Public' | 'Unlisted' | 'Private';
   roadmap: IdeaRoadmapItem[];
   tags: string[];
@@ -105,6 +124,7 @@ export interface Idea {
 
 export interface TeamMember {
   id: string;
+  identity?: StudentIdentity;
   name: string;
   avatar: string;
   role: string;
@@ -180,6 +200,7 @@ export interface Project {
   technologies: string[];
   contributors: {
     id: string;
+    identity?: StudentIdentity;
     name: string;
     avatar: string;
     role: string;
@@ -188,8 +209,8 @@ export interface Project {
   demoUrl?: string;
   githubUrl?: string;
   achievements?: string[];
-  likes: number;
-  views: number;
+  likes?: number;
+  views?: number;
   isLiked?: boolean;
   isBookmarked?: boolean;
 }
@@ -252,10 +273,10 @@ export interface LeaderboardUser {
   college: string;
   role: string;
   points: number;
-  categoryRank: string;
-  badges: string[];
-  weeklyGain: number;
-  verifiedContributions: number;
+  categoryRank?: string;
+  badges?: string[];
+  weeklyGain?: number;
+  verifiedContributions?: number;
 }
 
 export type CommunityPostType =
@@ -285,6 +306,7 @@ export interface CommunityPost {
   content: string;
   author: {
     id: string;
+    identity?: StudentIdentity;
     name: string;
     avatar: string;
     college?: string;
@@ -297,8 +319,6 @@ export interface CommunityPost {
   tags?: string[];
   skills?: string[];
   images?: string[];
-  demo?: boolean;
-  demoLabel?: string;
   document?: StudyResource;
 
   // For Ideas:
@@ -326,8 +346,8 @@ export interface CommunityPost {
   projectId?: string;
 
   // Real Engagement
-  likesCount: number;
-  commentsCount: number;
+  likesCount?: number;
+  commentsCount?: number;
   isLiked?: boolean;
   isSaved?: boolean;
   comments?: CommunityPostComment[];
@@ -340,11 +360,66 @@ export type StudyResourceType =
   | 'lab_manual'
   | 'study_guide';
 
+export type AcademicPdfCategory =
+  | 'important_questions'
+  | 'previous_question_paper'
+  | 'lecture_notes'
+  | 'unit_notes'
+  | 'study_materials'
+  | 'assignment'
+  | 'laboratory_manual'
+  | 'practical_record'
+  | 'syllabus'
+  | 'model_question_paper'
+  | 'reference_material'
+  | 'other';
+
+export interface AcademicPdf {
+  id: string;
+  title: string;
+  subject_name: string | null;
+  subject_code: string | null;
+  academic_year: number | null;
+  semester: number | null;
+  year_semester: string | null;
+  category: AcademicPdfCategory;
+  description: string;
+  college: string | null;
+  degree: string | null;
+  regulation: string | null;
+  source_created_at: string | null;
+  source_modified_at: string | null;
+  original_file_name: string | null;
+  pdf_url: string | null;
+  preview_url: string | null;
+  file_size: number | null;
+  page_count: number | null;
+  university: string;
+  is_verified: boolean;
+  is_published: boolean;
+  extraction_status: string;
+  created_at: string;
+}
+
+export interface AcademicPdfSubject {
+  subject_name: string;
+  subject_code: string | null;
+  document_count: number;
+}
+
 export interface StudyResource {
   id: string;
   type: StudyResourceType;
   title: string;
   subject: string;
+  college?: string;
+  university?: string;
+  degree?: string;
+  studyYear?: string;
+  regulation?: string;
+  unitModule?: string;
+  subjectCode?: string;
+  language?: string;
   academicYear: string;
   pageCount: number;
   description: string;
@@ -353,6 +428,18 @@ export interface StudyResource {
   topics: string[];
   fileName: string;
   pdfUrl?: string;
+  pdfFileName?: string;
+  driveFileId?: string;
+  fileSizeMb?: number;
+  sourceFolderUrl?: string;
+  createdAt?: string;
+  resourceKind?: 'folder' | 'pdf' | 'link';
+  parentResourceId?: string | null;
+  driveMimeType?: string | null;
+  driveThumbnailUrl?: string | null;
+  driveFileSize?: number | null;
+  driveCreatedAt?: string | null;
+  driveModifiedAt?: string | null;
   thumbnailUrl?: string;
   thumbnailAsset?: number;
   fileSize?: number;
@@ -364,6 +451,5 @@ export interface StudyResource {
   uploader: CommunityPost['author'];
   uploadedAt: string;
   isBookmarked?: boolean;
-  demo?: boolean;
 }
 

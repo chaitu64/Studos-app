@@ -157,12 +157,12 @@ export const SwipeProfileCard: React.FC<SwipeProfileCardProps> = ({
         <View style={styles.imageWrapper}>
           <Image source={{ uri: student.avatar }} style={styles.avatarImage} />
           <View style={styles.roleOverlay}>
-            <Badge label={student.primaryRole} variant="primary" size="md" />
+            <Badge label={student.primaryRole || student.branch || 'Student'} variant="primary" size="md" />
           </View>
-          <View style={styles.availabilityOverlay}>
+          {student.availability ? <View style={styles.availabilityOverlay}>
             <Ionicons name="time-outline" size={12} color="#FFF" />
             <Text style={styles.availabilityText}>{student.availability}</Text>
-          </View>
+          </View> : null}
 
           {/* Swipe helper pill */}
           <View style={styles.swipeHintPill}>
@@ -229,22 +229,22 @@ export const SwipeProfileCard: React.FC<SwipeProfileCardProps> = ({
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{student.hackathonsCount}</Text>
+              <Text style={styles.statNumber}>{student.hackathonsCount ?? '—'}</Text>
               <Text style={styles.statLabel}>Hackathons</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>#{student.leaderboardRank}</Text>
+              <Text style={styles.statNumber}>{student.leaderboardRank ? `#${student.leaderboardRank}` : '—'}</Text>
               <Text style={styles.statLabel}>Rank</Text>
             </View>
           </View>
 
           {/* Badges */}
-          {student.badges.length > 0 ? (
+          {(student.badges || []).length > 0 ? (
             <View style={styles.sectionBlock}>
               <Text style={styles.sectionTitle}>ACHIEVEMENTS</Text>
               <View style={styles.chipsWrap}>
-                {student.badges.map((b) => (
+                {(student.badges || []).map((b) => (
                   <Badge key={b} label={b} variant="amber" size="sm" />
                 ))}
               </View>

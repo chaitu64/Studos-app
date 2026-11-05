@@ -15,7 +15,6 @@ const mediaWidth = Dimensions.get('window').width - 34;
 const labels: Record<CommunityPost['type'], string> = { idea: 'Idea', service: 'Service', story: 'Campus life', event_collab: 'Team up', project: 'Project', question: 'Help', study_material: 'Study material', achievement: 'Achievement' };
 
 export const CommunityPostCard = React.memo(function CommunityPostCard({ post, onLike, onComment, onSave, onCollaborate, onAuthorPress, onCardPress }: CommunityPostCardProps) {
-  const isDemo = Boolean(post.demo || post.id.startsWith('preview_'));
   const share = () => Share.share({ title: post.title, message: `${post.title}\n\n${post.content}\n\nShared via StudOS` }).catch(() => undefined);
   return <View style={styles.card}>
     <View style={styles.header}>
@@ -32,11 +31,10 @@ export const CommunityPostCard = React.memo(function CommunityPostCard({ post, o
       {(post.rolesNeeded?.length || post.eventRoleNeeded) ? <View style={styles.callout}><Ionicons name="people-outline" size={16} color="#FF7777" /><Text style={styles.calloutText}>Looking for {post.rolesNeeded?.join(', ') || post.eventRoleNeeded}</Text></View> : null}
       {post.tags?.length ? <View style={styles.tags}>{post.tags.slice(0, 4).map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}</View> : null}
     </TouchableOpacity>
-    {isDemo ? <View style={styles.demo}><Ionicons name="flask-outline" size={13} color="#D4A35A" /><Text style={styles.demoText}>{post.demoLabel || 'Preview data · Development only'}</Text></View> : null}
     <View style={styles.actions}>
-      <TouchableOpacity style={styles.action} onPress={() => onLike?.(post)} disabled={!onLike}><Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={20} color={post.isLiked ? Colors.primary : Colors.textMuted} /><Text style={styles.actionText}>{post.likesCount || ''}</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.action} onPress={() => onComment?.(post)} disabled={!onComment}><Ionicons name="chatbubble-outline" size={19} color={Colors.textMuted} /><Text style={styles.actionText}>{post.commentsCount || ''}</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.action} onPress={() => onSave?.(post)} disabled={!onSave}><Ionicons name={post.isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={post.isSaved ? Colors.primary : Colors.textMuted} /></TouchableOpacity>
+      {onLike ? <TouchableOpacity style={styles.action} onPress={() => onLike(post)}><Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={20} color={post.isLiked ? Colors.primary : Colors.textMuted} /></TouchableOpacity> : null}
+      {onComment ? <TouchableOpacity style={styles.action} onPress={() => onComment(post)}><Ionicons name="chatbubble-outline" size={19} color={Colors.textMuted} /></TouchableOpacity> : null}
+      {onSave ? <TouchableOpacity style={styles.action} onPress={() => onSave(post)}><Ionicons name={post.isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={post.isSaved ? Colors.primary : Colors.textMuted} /></TouchableOpacity> : null}
       <TouchableOpacity style={styles.action} onPress={share}><Ionicons name="share-social-outline" size={19} color={Colors.textMuted} /></TouchableOpacity>
       {onCollaborate && (post.type === 'idea' || post.type === 'event_collab') ? <TouchableOpacity style={styles.teamButton} onPress={() => onCollaborate(post)}><Text style={styles.teamText}>{post.type === 'idea' ? 'Collaborate' : 'Join team'}</Text></TouchableOpacity> : null}
     </View>
@@ -49,6 +47,6 @@ const styles = StyleSheet.create({
   title: { color: '#FFF', fontSize: 17, lineHeight: 23, fontWeight: Typography.bold, marginTop: 14 }, content: { color: Colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 6 },
   document: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#171D2D', borderWidth: 1, borderColor: '#252C3D', borderRadius: 12, padding: 10, marginTop: 12 }, docIcon: { width: 38, height: 42, borderRadius: 8, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }, docCopy: { flex: 1, marginLeft: 10 }, docName: { color: '#FFF', fontSize: 12, fontWeight: Typography.semiBold }, docMeta: { color: Colors.textMuted, fontSize: 10, marginTop: 3 },
   mediaList: { marginHorizontal: -15, marginTop: 12 }, image: { height: 245, resizeMode: 'cover' }, counter: { position: 'absolute', right: 10, top: 10, backgroundColor: 'rgba(9,10,15,.72)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4 }, counterText: { color: '#FFF', fontSize: 9, fontWeight: Typography.bold },
-  callout: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#171D2D', padding: 10, borderRadius: 10, marginTop: 10 }, calloutText: { color: Colors.textSecondary, fontSize: 11, flex: 1 }, tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 11 }, tag: { color: Colors.textMuted, fontSize: 11 }, demo: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 11 }, demoText: { color: '#D4A35A', fontSize: 9, fontWeight: Typography.semiBold },
+  callout: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#171D2D', padding: 10, borderRadius: 10, marginTop: 10 }, calloutText: { color: Colors.textSecondary, fontSize: 11, flex: 1 }, tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 11 }, tag: { color: Colors.textMuted, fontSize: 11 },
   actions: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#252C3D', marginTop: 13, paddingTop: 12, gap: 18 }, action: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 19 }, actionText: { color: Colors.textMuted, fontSize: 11 }, teamButton: { marginLeft: 'auto', borderWidth: 1, borderColor: '#5B3037', backgroundColor: '#2A1B22', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }, teamText: { color: '#FF7777', fontSize: 10, fontWeight: '800' },
 });

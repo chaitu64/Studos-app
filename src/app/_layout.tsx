@@ -4,13 +4,14 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppProvider } from '../context/AppContext';
+import { AuthProvider } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppProvider>
+        <AuthProvider><AppProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -29,6 +30,9 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="academic-library/index" options={{ headerShown: false }} />
+          <Stack.Screen name="academic-library/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="academic-library/viewer/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="ideahub/index" options={{ title: 'IdeaHub' }} />
           <Stack.Screen name="ideahub/[id]" options={{ title: 'Idea Details' }} />
           <Stack.Screen
@@ -53,10 +57,19 @@ export default function RootLayout() {
           <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
           <Stack.Screen name="chat-rooms/index" options={{ title: 'Topic Chat Rooms' }} />
           <Stack.Screen name="chat/[id]" options={{ title: 'Conversation' }} />
+          <Stack.Screen name="chat/room/[id]" options={{ title: 'Chat Room' }} />
           <Stack.Screen name="search/index" options={{ headerShown: false }} />
           <Stack.Screen name="settings/index" options={{ title: 'Settings & Privacy' }} />
+          <Stack.Screen name="saved" options={{ title: 'Saved Content' }} />
+          <Stack.Screen name="post/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="signup" options={{ headerShown: false }} />
+          <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+          <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+          <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
+          <Stack.Screen name="share-resource" options={{ title: 'Share Study PDF', presentation: 'modal' }} />
         </Stack>
-        </AppProvider>
+        </AppProvider></AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
