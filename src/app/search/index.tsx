@@ -4,39 +4,72 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
+import { safeBack } from '@/navigation/safeBack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, BorderRadius } from '../../constants/theme';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
-import { Chip } from '../../components/ui/Chip';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { SearchField } from '../../components/ui/SearchField';
 import { useApp } from '../../context/AppContext';
 import { studentDirectoryService } from '../../services/studentDirectoryService';
 import { sharedContentService } from '../../services/sharedContentService';
 import { supabaseConfigured } from '../../services/supabase';
-import { ChatRoom, StudentDirectoryProfile } from '../../types';
+import { ChatRoom, StudentDirectoryProfile, StudyResource } from '../../types';
+import { studentCommunityService, StudentHelpRequest, StudentProblem, StudentTeamOpening } from '../../services/studentCommunityService';
+import { studentServicesService } from '../../services/studentServicesService';
+import type { StudentService } from '../../services/homeDiscoveryData';
+import { listStudyResources } from '../../services/resourceApi';
 
-const SEARCH_TABS = ['All', 'Students', 'Ideas', 'Teams', 'Opportunities', 'Rooms'];
-const TRENDING_KEYWORDS: string[] = [];
+const SEARCH_TABS = ['All', 'Students', 'Ideas', 'Problems', 'Help requests', 'Openings', 'Services', 'Study resources', 'Posts', 'Teams', 'Opportunities', 'Rooms'];
 
 export default function GlobalSearchScreen() {
-  const { ideas, teams, opportunities } = useApp();
+  const { ideas, communityPosts, teams, opportunities, dataErrors, isLoading: appLoading } = useApp();
   const [students, setStudents] = useState<StudentDirectoryProfile[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
-  useEffect(() => { let active = true; void studentDirectoryService.list({ limit: 500 }).then((page) => { if (active) setStudents(page.students); }).catch(() => { if (active) setStudents([]); }); if (supabaseConfigured) void sharedContentService.chatRooms().then((rows) => { if (active) setRooms(rows); }).catch(() => { if (active) setRooms([]); }); return () => { active = false; }; }, []);
+  const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
+  useEffect(() => { let active = true; void Promise.allSettled([studentDirectoryService.list({ limit: 500 }), supabaseConfigured ? sharedContentService.chatRooms() : Promise.resolve([])]).then((results) => { if (!active) return; if (results[0].status === 'fulfilled') setStudents(results[0].value.students); else setStudents([]); if (results[1].status === 'fulfilled') setRooms(results[1].value); else setRooms([]); setLoadError(results.flatMap((result, index) => result.status === 'rejected' ? [index === 0 ? 'Students' : 'Rooms'] : []).join(', ')); }); return () => { active = false; }; }, [reload]);
   const [query, setQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState('All');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const messageStudent = async (studentId: string) => { try { const conversationId = await sharedContentService.startDirectConversation(studentId); router.push(`/chat/${conversationId}` as never); } catch (cause) { Alert.alert('Could not start a conversation', cause instanceof Error ? cause.message : 'Try again.'); } };
+  const [problems, setProblems] = useState<StudentProblem[]>([]);
+  const [helpRequests, setHelpRequests] = useState<StudentHelpRequest[]>([]);
+  const [openings, setOpenings] = useState<StudentTeamOpening[]>([]);
+  const [serviceRows, setServiceRows] = useState<StudentService[]>([]);
+  const [resources, setResources] = useState<StudyResource[]>([]);
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
+  const [searchingSources, setSearchingSources] = useState(false);
 
   const q = query.trim().toLowerCase();
+
+  useEffect(() => {
+    let active = true;
+    let requestTimer: ReturnType<typeof setTimeout> | undefined;
+    const startTimer = setTimeout(() => {
+      if (!q) { setProblems([]); setHelpRequests([]); setOpenings([]); setServiceRows([]); setResources([]); setSourceErrors([]); setSearchingSources(false); return; }
+      setSearchingSources(true);
+      requestTimer = setTimeout(() => {
+      void Promise.allSettled([
+        studentCommunityService.problems(), studentCommunityService.helpRequests(), studentCommunityService.teamOpenings(),
+        studentServicesService.listDiscoverable(), listStudyResources({ search: q, limit: 30 }),
+      ]).then((results) => {
+        if (!active) return;
+        const names = ['Problems', 'Help requests', 'Team openings', 'Services', 'Study resources'];
+        const errors: string[] = [];
+        const value = <T,>(index: number): T[] => { const result = results[index]; if (result.status === 'rejected') { errors.push(names[index]); return []; } return result.value as T[]; };
+        setProblems(value<StudentProblem>(0)); setHelpRequests(value<StudentHelpRequest>(1)); setOpenings(value<StudentTeamOpening>(2)); setServiceRows(value<StudentService>(3)); setResources(value<StudyResource>(4));
+        setSourceErrors(errors); setSearchingSources(false);
+      });
+      }, 280);
+    }, 0);
+    return () => { active = false; clearTimeout(startTimer); if (requestTimer) clearTimeout(requestTimer); };
+  }, [q, reload]);
 
   // Search Results
   const matchedStudents = students.filter(
@@ -52,6 +85,8 @@ export default function GlobalSearchScreen() {
       i.tagline.toLowerCase().includes(q) ||
       i.category.toLowerCase().includes(q)
   );
+
+  const matchedPosts = communityPosts.filter((post) => `${post.title} ${post.content} ${post.author.name} ${post.category || ''} ${(post.tags || []).join(' ')}`.toLowerCase().includes(q));
 
   const matchedTeams = teams.filter(
     (t) =>
@@ -72,13 +107,33 @@ export default function GlobalSearchScreen() {
       r.title.toLowerCase().includes(q) ||
       r.topic.toLowerCase().includes(q)
   );
+  const matchedProblems = q ? problems.filter((item) => `${item.title} ${item.description} ${item.category} ${item.tags.join(' ')} ${item.author.name}`.toLowerCase().includes(q)) : [];
+  const matchedHelp = q ? helpRequests.filter((item) => `${item.title} ${item.description} ${item.category} ${item.helpType} ${item.skillsNeeded.join(' ')} ${item.author.name}`.toLowerCase().includes(q)) : [];
+  const matchedOpenings = q ? openings.filter((item) => `${item.eventName} ${item.roleTitle} ${item.description} ${item.skillsNeeded.join(' ')} ${item.author.name}`.toLowerCase().includes(q)) : [];
+  const matchedServices = q ? serviceRows.filter((item) => `${item.title} ${item.description} ${item.category} ${item.provider.name}`.toLowerCase().includes(q)) : [];
+  const matchedResources = q ? resources.filter((item) => `${item.title} ${item.subject} ${item.description} ${item.type}`.toLowerCase().includes(q)) : [];
 
   const totalResults =
     (q ? matchedStudents.length : 0) +
+    (q ? matchedPosts.length : 0) +
     (q ? matchedIdeas.length : 0) +
     (q ? matchedTeams.length : 0) +
     (q ? matchedOpps.length : 0) +
-    (q ? matchedRooms.length : 0);
+    (q ? matchedRooms.length : 0) + matchedProblems.length + matchedHelp.length + matchedOpenings.length + matchedServices.length + matchedResources.length;
+  const appSourceErrors = ['students', 'ideas', 'teams', 'posts', 'opportunities'].filter((key) => dataErrors[key]);
+  const unavailableSources = [...new Set([...sourceErrors, ...loadError.split(', ').filter(Boolean), ...appSourceErrors.map((key) => `${key} data`)])];
+  const visibleResultCount = selectedTab === 'Students' ? matchedStudents.length
+    : selectedTab === 'Posts' ? matchedPosts.length
+      : selectedTab === 'Ideas' ? matchedIdeas.length
+        : selectedTab === 'Teams' ? matchedTeams.length
+          : selectedTab === 'Opportunities' ? matchedOpps.length
+            : selectedTab === 'Problems' ? matchedProblems.length
+              : selectedTab === 'Help requests' ? matchedHelp.length
+                : selectedTab === 'Openings' ? matchedOpenings.length
+                  : selectedTab === 'Services' ? matchedServices.length
+                    : selectedTab === 'Study resources' ? matchedResources.length
+                      : selectedTab === 'Rooms' ? matchedRooms.length
+              : totalResults;
 
   const handleSelectKeyword = (kw: string) => {
     setQuery(kw);
@@ -91,26 +146,18 @@ export default function GlobalSearchScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top Search Bar */}
       <View style={styles.searchBarRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => safeBack()}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
 
-        <View style={styles.searchInputWrap}>
-          <Ionicons name="search" size={18} color={Colors.textMuted} />
-          <TextInput
-            autoFocus
-            placeholder="Search students, skills, hackathons, ideas..."
-            placeholderTextColor={Colors.textSubtle}
-            value={query}
-            onChangeText={setQuery}
-            style={styles.input}
-          />
-          {query ? (
-            <TouchableOpacity onPress={() => setQuery('')}>
-              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        <SearchField
+          accessibilityLabel="Search STUDOS"
+          autoFocus
+          placeholder="Search people, ideas, teams..."
+          value={query}
+          onChangeText={setQuery}
+          style={styles.searchField}
+        />
       </View>
 
       {/* Tabs */}
@@ -127,6 +174,7 @@ export default function GlobalSearchScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {q && totalResults > 0 && unavailableSources.length > 0 ? <View style={styles.partialNotice}><Text style={styles.partialText}>Some sources are unavailable: {unavailableSources.join(', ')}. Other results are shown.</Text><TouchableOpacity accessibilityRole="button" onPress={() => setReload((value) => value + 1)}><Text style={styles.loadErrorAction}>Retry</Text></TouchableOpacity></View> : null}
         {!q ? (
           <View style={styles.emptyStateContainer}>
             {/* Recent Searches */}
@@ -153,26 +201,21 @@ export default function GlobalSearchScreen() {
               </View>
             ) : null}
 
-            {/* Trending searches */}
-            <View style={styles.sectionBlock}>
-              <Text style={styles.sectionHeaderTitle}>TRENDING IN THE STUDENT NETWORK</Text>
-              <View style={styles.keywordsWrap}>
-                {TRENDING_KEYWORDS.map((kw) => (
-                  <Chip
-                    key={kw}
-                    label={`🔥 ${kw}`}
-                    onPress={() => handleSelectKeyword(kw)}
-                    style={{ marginBottom: 8 }}
-                  />
-                ))}
+            {!recentSearches.length ? (
+              <View style={styles.searchHint}>
+                <View style={styles.searchHintIcon}><Ionicons name="search-outline" size={22} color={Colors.primary} /></View>
+                <Text style={styles.searchHintTitle}>Search the student network</Text>
+                <Text style={styles.searchHintText}>Find students, ideas, teams, opportunities, and study rooms.</Text>
               </View>
-            </View>
+            ) : null}
           </View>
-        ) : totalResults === 0 ? (
+        ) : searchingSources || (appLoading && totalResults === 0) ? (
+          <View style={styles.searching}><Text style={styles.searchingText}>Searching STUDOS…</Text></View>
+        ) : visibleResultCount === 0 ? (
           <EmptyState
             icon="search-outline"
-            title="No Results Found"
-            description={`We couldn't find anything matching "${query}". Try searching by technical skill or domain.`}
+            title={`No ${selectedTab === 'All' ? 'results' : selectedTab.toLowerCase()} found`}
+            description={unavailableSources.length ? `No results from the sources that loaded. ${unavailableSources.join(', ')} could not be searched. Retry or try another term.` : `Nothing matches "${query}" here. Try another term or select a different category.`}
           />
         ) : (
           <View style={styles.resultsContainer}>
@@ -193,9 +236,15 @@ export default function GlobalSearchScreen() {
                       <Text style={styles.resultSub} numberOfLines={2}>{[s.college, s.branch || 'Student'].filter(Boolean).join(' · ')}</Text>
                     </View>
                     <Badge label={s.branch || 'Student'} variant="primary" size="sm" />
-                    {!s.isDemo ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Message ${s.name}`} onPress={() => { void messageStudent(s.id); }} style={{ padding: 10 }}><Ionicons name="chatbubble-ellipses-outline" size={19} color={Colors.primary}/></TouchableOpacity> : null}
                   </Card>
                 ))}
+              </View>
+            ) : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Posts') && matchedPosts.length > 0 ? (
+              <View style={styles.resultGroup}>
+                <Text style={styles.groupHeader}>POSTS ({matchedPosts.length})</Text>
+                {matchedPosts.map((post) => <Card key={post.id} variant="default" style={styles.resultCard} onPress={() => router.push(`/post/${post.id}` as never)}><Avatar uri={post.author.avatar} name={post.author.name} size={38} /><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{post.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{post.author.name} · {post.content}</Text></View></Card>)}
               </View>
             ) : null}
 
@@ -219,6 +268,16 @@ export default function GlobalSearchScreen() {
                 ))}
               </View>
             ) : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Problems') && matchedProblems.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>PROBLEMS ({matchedProblems.length})</Text>{matchedProblems.map((problem) => <Card key={problem.id} variant="default" style={styles.resultCard} onPress={() => router.push({ pathname: '/community/[kind]/[id]', params: { kind: 'problem', id: problem.id } } as never)}><Avatar uri={problem.author.avatar} name={problem.author.name} size={38}/><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{problem.title}{problem.isDemo ? ' · Demo' : ''}</Text><Text style={styles.resultSub} numberOfLines={2}>{problem.category} · {problem.description}</Text></View></Card>)}</View> : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Help requests') && matchedHelp.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>HELP REQUESTS ({matchedHelp.length})</Text>{matchedHelp.map((help) => <Card key={help.id} variant="default" style={styles.resultCard} onPress={() => router.push({ pathname: '/community/[kind]/[id]', params: { kind: 'help', id: help.id } } as never)}><Avatar uri={help.author.avatar} name={help.author.name} size={38}/><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{help.title}{help.isDemo ? ' · Demo' : ''}</Text><Text style={styles.resultSub} numberOfLines={2}>{help.helpType} · {help.skillsNeeded.join(', ')}</Text></View></Card>)}</View> : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Openings') && matchedOpenings.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>TEAM OPENINGS ({matchedOpenings.length})</Text>{matchedOpenings.map((opening) => <Card key={opening.id} variant="default" style={styles.resultCard} onPress={() => router.push({ pathname: '/(tabs)/swipe', params: { section: 'teammates', search: opening.roleTitle } } as never)}><Avatar uri={opening.author.avatar} name={opening.author.name} size={38}/><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{opening.roleTitle}{opening.isDemo ? ' · Demo' : ''}</Text><Text style={styles.resultSub} numberOfLines={2}>{opening.eventName} · {opening.skillsNeeded.join(', ')}</Text></View></Card>)}</View> : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Services') && matchedServices.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>STUDENT SERVICES ({matchedServices.length})</Text>{matchedServices.map((service) => <Card key={service.id} variant="default" style={styles.resultCard} onPress={() => router.push({ pathname: '/(tabs)/swipe', params: { section: 'services', search: service.title } } as never)}><Avatar uri={service.provider.avatar} name={service.provider.name} size={38}/><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{service.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{service.category} · {service.provider.name}</Text></View>{service.startingPrice != null ? <Badge label={`From ${service.startingPrice}`} variant="outline" size="sm"/> : null}</Card>)}</View> : null}
+
+            {(selectedTab === 'All' || selectedTab === 'Study resources') && matchedResources.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>STUDY RESOURCES ({matchedResources.length})</Text>{matchedResources.map((resource) => <Card key={resource.id} variant="default" style={styles.resultCard} onPress={() => router.push(`/resource/${resource.id}` as never)}><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{resource.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{resource.subject} · {resource.studyYear || resource.academicYear} · {resource.semester || ''}</Text></View><Badge label="PDF" variant="outline" size="sm"/></Card>)}</View> : null}
 
             {/* Teams results */}
             {(selectedTab === 'All' || selectedTab === 'Teams') && matchedTeams.length > 0 ? (
@@ -306,24 +365,14 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
-  },
-  searchInputWrap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
+    marginRight: 8,
     borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    paddingHorizontal: 12,
-    height: 42,
   },
-  input: {
+  searchField: {
     flex: 1,
-    color: Colors.textPrimary,
-    fontSize: Typography.body,
-    marginLeft: 8,
   },
   tabsRow: {
     marginBottom: 8,
@@ -340,10 +389,26 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
   },
+  loadError: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, marginBottom: 12, borderRadius: BorderRadius.md, backgroundColor: Colors.errorSubtle },
+  loadErrorText: { flex: 1, color: Colors.error, fontSize: Typography.caption, lineHeight: 17 },
+  loadErrorAction: { color: Colors.error, fontSize: Typography.caption, fontWeight: Typography.bold, padding: 8 },
+  partialNotice: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 9, marginBottom: 12, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated },
+  partialText: { flex: 1, color: Colors.textMuted, fontSize: 11, lineHeight: 16 },
+  searching: { alignItems: 'center', padding: 26 },
+  searchingText: { color: Colors.textMuted, fontSize: Typography.footnote },
   emptyStateContainer: {
+    flex: 1,
     gap: 24,
+    paddingTop: 16,
   },
+  searchHint: { alignItems: 'center', paddingHorizontal: 24, paddingVertical: 36, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  searchHintIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: Colors.primarySubtle, marginBottom: 14 },
+  searchHintTitle: { color: Colors.textPrimary, fontSize: Typography.headline, fontWeight: Typography.bold },
+  searchHintText: { maxWidth: 260, color: Colors.textMuted, fontSize: Typography.footnote, lineHeight: 20, textAlign: 'center', marginTop: 6 },
   sectionBlock: {
     marginBottom: 10,
   },
@@ -372,7 +437,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surfaceElevated,
-    paddingVertical: 6,
+    minHeight: 44,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: BorderRadius.full,
     borderWidth: 1,

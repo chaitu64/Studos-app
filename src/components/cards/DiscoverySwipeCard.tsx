@@ -2,7 +2,6 @@
 /* eslint-disable react-hooks/immutability */
 import React, { forwardRef, useImperativeHandle } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -39,11 +38,9 @@ export type DiscoveryItem =
 
 interface DiscoverySwipeCardProps {
   item: DiscoveryItem;
-  actionLabel: string;
   disabled?: boolean;
   onSkip: () => void;
   onInterest: () => void;
-  onDetails: () => void;
 }
 
 export interface DiscoverySwipeCardHandle {
@@ -80,11 +77,9 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, DiscoverySwipeCardProps>(function DiscoverySwipeCard({
   item,
-  actionLabel,
   disabled = false,
   onSkip,
   onInterest,
-  onDetails,
 }: DiscoverySwipeCardProps, ref) {
   const { width: screenWidth } = useWindowDimensions();
   const swipeThreshold = Math.min(120, Math.max(84, screenWidth * SWIPE_DISTANCE_RATIO));
@@ -143,8 +138,10 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
       </Animated.View>
 
       <ScrollView
+        style={styles.cardScroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.cardContent}
+        keyboardShouldPersistTaps="handled"
       >
         {item.kind === 'person' ? (
           <PersonCard person={item.person} />
@@ -155,22 +152,10 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
         )}
       </ScrollView>
 
-      <View style={styles.cardFooter}>
-        <Text style={styles.gestureHint}>Swipe left to skip · right to {actionLabel.toLowerCase()}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="View full details"
-          onPress={onDetails}
-          style={styles.detailsLink}
-        >
-          <Text style={styles.detailsLinkText}>View details</Text>
-        </Pressable>
-      </View>
     </Animated.View>
     </GestureDetector>
   );
 });
-
 function PersonCard({ person }: { person: DiscoveryPerson }) {
   const primaryPost = person.sourcePost;
   const role = person.author.role;
@@ -248,17 +233,20 @@ function OpportunityCard({ post }: { post: CommunityPost }) {
           <Ionicons name={post.type === 'event_collab' ? 'people-outline' : 'bulb-outline'} size={18} color={Colors.primary} />
         </View>
         <View style={styles.kindText}>
-          <Text style={styles.eyebrow}>{post.type === 'event_collab' ? 'TEAM OPPORTUNITY' : 'IDEA & PROJECT'}</Text>
+          <Text style={styles.eyebrow}>{post.type === 'event_collab' && post.teamId ? 'OPEN TEAM ROLE' : post.type === 'event_collab' ? 'TEAM OPPORTUNITY' : 'IDEA & PROJECT'}</Text>
           {post.stage ? <Text style={styles.subtleText}>{post.stage}</Text> : null}
         </View>
       </View>
+      {post.author.identity?.type === 'demo' && post.type === 'event_collab' ? <Text style={styles.demoNoticeText}>DEMO OPENING - VIEW ONLY</Text> : null}
+      {post.eventName ? <Text style={styles.subtleText}>Event · {post.eventName}</Text> : null}
       <Text style={styles.cardTitle}>{post.title}</Text>
 
-      <Section label={post.problemStatement ? 'THE PROBLEM' : 'PROJECT OVERVIEW'}>
+      <Section label={post.type === 'event_collab' ? 'TEAM OVERVIEW' : post.problemStatement ? 'THE PROBLEM' : 'PROJECT OVERVIEW'}>
         <Text style={styles.bodyText} numberOfLines={4}>
           {(post.problemStatement || post.content).trim()}
         </Text>
       </Section>
+      {post.openPositions != null ? <Text style={styles.subtleText}>Open positions · {post.openPositions}</Text> : null}
 
       {post.proposedSolution ? (
         <Section label="PROPOSED SOLUTION">
@@ -305,6 +293,7 @@ function ServiceCard({ post }: { post: CommunityPost }) {
       <Text style={styles.cardTitle}>{post.title}</Text>
       <Section label="WHAT'S OFFERED">
         <Text style={styles.bodyText} numberOfLines={5}>{post.content.trim()}</Text>
+        {post.content.trim().length > 240 ? <Text style={styles.continuationHint}>Full description available in Details</Text> : null}
       </Section>
 
       {post.skills?.length ? (
@@ -357,9 +346,10 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   cardContent: {
-    padding: 16,
-    paddingBottom: 12,
+    padding: 18,
+    paddingBottom: 20,
   },
+  cardScroll: { flex: 1, minHeight: 0 },
   demoNotice: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -470,6 +460,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.body,
     lineHeight: 20,
   },
+  continuationHint: { color: Colors.primary, fontSize: Typography.caption, lineHeight: 17, marginTop: 6 },
   tags: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,24 +557,10 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Typography.caption,
   },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    backgroundColor: Colors.surfaceSubtle,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  gestureHint: {
-    flex: 1,
-    color: Colors.textMuted,
-    fontSize: 10,
-  },
   detailsLink: {
-    padding: 4,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   detailsLinkText: {
     color: Colors.primary,

@@ -36,7 +36,9 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
   const safeBase = fallback.id === id ? { ...authBase, ...fallback, id, email: authBase.email, emailVerified: authBase.emailVerified, givenName: authBase.givenName, familyName: authBase.familyName } : authBase;
 
   let data: Record<string, any> | null = null;
+  let profileLinksAvailable = false;
   const selects = [
+    'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url,github_url,linkedin_url,portfolio_url',
     'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url',
     'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests',
     'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio',
@@ -44,7 +46,7 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
   ];
   for (const columns of selects) {
     const result = await db.from('profiles').select(columns).eq('id', id).maybeSingle();
-    if (!result.error) { data = result.data as Record<string, any> | null; break; }
+    if (!result.error) { data = result.data as Record<string, any> | null; profileLinksAvailable = columns.includes('github_url'); break; }
     if (result.error.code !== '42703' && result.error.code !== 'PGRST204') throw result.error;
   }
 
@@ -53,7 +55,7 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
   if (!privateResult.error) privateData = privateResult.data as Record<string, any> | null;
   else if (privateResult.error.code !== '42P01' && privateResult.error.code !== 'PGRST205' && privateResult.error.code !== '42703') throw privateResult.error;
 
-  if (!data) return { ...safeBase, collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '' };
+  if (!data) return { ...safeBase, collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '', profileLinksAvailable };
   const profileName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ').trim();
   const metadata = user.user_metadata || {};
   const metadataName = String(metadata.full_name || metadata.name || '').trim();
@@ -68,6 +70,8 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
     studyYear: data.study_year ? String(data.study_year) : '',
     gradYear: data.graduation_year ? String(data.graduation_year) : '',
     shortBio: data.bio || '', skills: data.skills || [], interests: data.interests || [],
+    githubUrl: data.github_url || undefined, linkedinUrl: data.linkedin_url || undefined,
+    portfolioUrl: data.portfolio_url || undefined, profileLinksAvailable,
     avatar: (user.app_metadata?.provider === 'google' ? String(metadata.avatar_url || metadata.picture || '') : '') || data.avatar_url || String(metadata.avatar_url || metadata.picture || ''),
     collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '',
   };
@@ -98,6 +102,23 @@ export async function updateStudentProfile(id: string, updated: Partial<UserProf
     const { error } = await db.from('profiles').update(fields).eq('id', id);
     if (error) throw error;
   }
+  const linkUpdates = {
+    ...(updated.githubUrl !== undefined ? { github_url: updated.githubUrl || null } : {}),
+    ...(updated.linkedinUrl !== undefined ? { linkedin_url: updated.linkedinUrl || null } : {}),
+    ...(updated.portfolioUrl !== undefined ? { portfolio_url: updated.portfolioUrl || null } : {}),
+  };
+  let profileLinksAvailable = current.profileLinksAvailable ?? false;
+  if (Object.keys(linkUpdates).length) {
+    const probe = await db.from('profiles').select('github_url,linkedin_url,portfolio_url').eq('id', id).maybeSingle();
+    if (probe.error && (probe.error.code === '42703' || probe.error.code === 'PGRST204')) {
+      profileLinksAvailable = false;
+    } else if (probe.error) throw probe.error;
+    else {
+      profileLinksAvailable = true;
+      const { error } = await db.from('profiles').update(linkUpdates).eq('id', id);
+      if (error) throw error;
+    }
+  }
   if (updated.collegeEmail !== undefined || updated.dateOfBirth !== undefined) {
     const privateFields: Record<string, unknown> = {};
     if (updated.collegeEmail !== undefined) privateFields.college_email = updated.collegeEmail || null;
@@ -106,5 +127,6 @@ export async function updateStudentProfile(id: string, updated: Partial<UserProf
     const { error } = await db.from('profile_private').upsert({ id, ...privateFields }, { onConflict: 'id' });
     if (error) throw error;
   }
-  return getStudentProfile(id, current, user);
+  const refreshed = await getStudentProfile(id, current, user);
+  return { ...refreshed, profileLinksAvailable };
 }

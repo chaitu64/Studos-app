@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -31,6 +31,7 @@ export const PostCommentsModal: React.FC<PostCommentsModalProps> = ({
 }) => {
   const [commentText, setCommentText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState('');
 
   if (!post) return null;
 
@@ -41,9 +42,9 @@ export const PostCommentsModal: React.FC<PostCommentsModalProps> = ({
     setIsSubmitting(true);
     try {
       await onAddComment(post.id, commentText.trim());
-      setCommentText('');
-    } catch {
-      Alert.alert('Error', 'Unable to post comment. Please try again.');
+      setCommentText(''); setCommentError('');
+    } catch (cause) {
+      setCommentError(cause instanceof Error ? cause.message : 'Unable to post comment. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -52,7 +53,7 @@ export const PostCommentsModal: React.FC<PostCommentsModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
       >
         <View style={styles.modalContent}>
@@ -66,7 +67,7 @@ export const PostCommentsModal: React.FC<PostCommentsModalProps> = ({
                 {post.title}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close comments" onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           </View>
@@ -99,26 +100,28 @@ export const PostCommentsModal: React.FC<PostCommentsModalProps> = ({
           {/* Input Box */}
           <View style={styles.inputContainer}>
             <TextInput
+              accessibilityLabel="Write a comment"
+              accessibilityHint="Your comment will be visible to people viewing this post"
               style={styles.textInput}
               placeholder="Add to the conversation..."
               placeholderTextColor={Colors.textMuted}
               value={commentText}
-              onChangeText={setCommentText}
+              onChangeText={(value) => { setCommentText(value); setCommentError(''); }}
               multiline
-              maxLength={500}
+              maxLength={3000}
             />
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Post comment"
+              accessibilityState={{ disabled: !commentText.trim() || isSubmitting, busy: isSubmitting }}
               style={[styles.sendBtn, !commentText.trim() && styles.sendBtnDisabled]}
               onPress={handleSend}
               disabled={!commentText.trim() || isSubmitting}
             >
-              <Ionicons
-                name="send"
-                size={16}
-                color={commentText.trim() ? '#FFF' : Colors.textMuted}
-              />
+              {isSubmitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send" size={16} color={commentText.trim() ? '#FFF' : Colors.textMuted} />}
             </TouchableOpacity>
           </View>
+          {commentError ? <Text accessibilityRole="alert" style={styles.commentError}>{commentError}</Text> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -259,4 +262,5 @@ const styles = StyleSheet.create({
   sendBtnDisabled: {
     backgroundColor: Colors.border,
   },
+  commentError: { color: Colors.error, fontSize: 12, lineHeight: 17, marginHorizontal: Spacing.screenPadding, marginBottom: 12 },
 });

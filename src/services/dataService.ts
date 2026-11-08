@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatConversation, ChatMessage, LeaderboardUser, Opportunity, UserProfile } from '../types';
 import { fetchLiveOpportunities } from './unstopService';
 import { sharedContentService } from './sharedContentService';
+import { chatService } from './chatService';
 import { supabaseConfigured } from './supabase';
 
 const OPPORTUNITIES_KEY = '@studos_opportunities';
@@ -42,15 +43,9 @@ class DataService {
     return items.find((item) => item.id === id) ? { ...items.find((item) => item.id === id)!, isSaved: saved } : undefined;
   }
 
-  async getConversations(): Promise<ChatConversation[]> { return sharedContentService.conversations(); }
-  async getMessages(conversationId: string): Promise<ChatMessage[]> { return sharedContentService.messages(conversationId); }
-  async sendMessage(conversationId: string, content: string): Promise<ChatMessage> {
-    await sharedContentService.sendMessage(conversationId, content);
-    throw new Error('Messaging is unavailable in the current database schema.');
-  }
-  async getNotifications() { return sharedContentService.notifications(); }
-  async markNotificationRead(id: string) { return sharedContentService.markNotificationRead(id); }
-  async markAllNotificationsRead() { return sharedContentService.markAllNotificationsRead(); }
+  async getConversations(): Promise<ChatConversation[]> { return chatService.conversations(); }
+  async getMessages(conversationId: string): Promise<ChatMessage[]> { return chatService.messages(conversationId); }
+  async sendMessage(conversationId: string, content: string): Promise<void> { await chatService.sendMessage(conversationId, content); }
   async getLeaderboard(): Promise<LeaderboardUser[]> { return sharedContentService.leaderboard(); }
   async getChatRooms() { return sharedContentService.chatRooms(); }
 }

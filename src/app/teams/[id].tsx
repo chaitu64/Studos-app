@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { safeBack } from '@/navigation/safeBack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -18,11 +19,12 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { useApp } from '../../context/AppContext';
+import { sharedContentService } from '../../services/sharedContentService';
 import { StudentRole } from '../../types';
 
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { teams, user, applyToTeam } = useApp();
+  const { teams, user, applyToTeam, respondToTeamApplication } = useApp();
 
   const team = teams.find((t) => t.id === id);
 
@@ -30,12 +32,14 @@ export default function TeamDetailScreen() {
   const [pitchNote, setPitchNote] = useState('');
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [messagingLead, setMessagingLead] = useState(false);
+  const [managingApplicant, setManagingApplicant] = useState('');
 
   if (!team) {
     return (
       <View style={styles.notFoundContainer}>
         <Text style={styles.notFoundText}>Team not found</Text>
-        <Button title="Back to Teams" variant="primary" onPress={() => router.back()} />
+        <Button title="Back to Teams" variant="primary" onPress={() => safeBack()} />
       </View>
     );
   }
@@ -50,16 +54,40 @@ export default function TeamDetailScreen() {
     if (!selectedRoleToApply) return;
     setIsSubmitting(true);
     try {
-      const res = await applyToTeam(team.id, selectedRoleToApply);
+      const res = await applyToTeam(team.id, selectedRoleToApply, pitchNote);
       setShowApplyModal(false);
       Alert.alert('Application Sent!', res.message, [
-        { text: 'Great!', onPress: () => router.back() },
+        { text: 'Great!', onPress: () => safeBack() },
       ]);
     } catch {
       Alert.alert('Error', 'Failed to submit application. Try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleMessageLead = async () => {
+    if (!team.lead.id || team.lead.id === user.id || messagingLead) return;
+    setMessagingLead(true);
+    try {
+      const conversationId = await sharedContentService.startDirectConversation(team.lead.id);
+      router.push(`/chat/${conversationId}` as never);
+    } catch (cause) {
+      Alert.alert('Could not start a conversation', cause instanceof Error ? cause.message : 'Please try again.');
+    } finally {
+      setMessagingLead(false);
+    }
+  };
+  const handleApplicationResponse = async (applicantId: string, status: 'accepted' | 'declined') => {
+    if (managingApplicant) return; setManagingApplicant(applicantId);
+    try {
+      await respondToTeamApplication(team.id, applicantId, status);
+      if (status === 'accepted') {
+        Alert.alert('Application accepted', 'The membership is saved. Team chat is not available in the current messaging schema.');
+      }
+    }
+    catch (cause) { Alert.alert('Could not update application', cause instanceof Error ? cause.message : 'Please try again.'); }
+    finally { setManagingApplicant(''); }
   };
 
   return (
@@ -87,13 +115,7 @@ export default function TeamDetailScreen() {
             <Text style={styles.leadName}>{team.lead.name}</Text>
             <Text style={styles.leadRole}>{team.lead.role}</Text>
           </View>
-          <Button
-            title="Message"
-            variant="outline"
-            size="sm"
-            icon={<Ionicons name="chatbubble-outline" size={14} color={Colors.primary} />}
-            onPress={() => router.push('/chat/conv_1' as any)}
-          />
+          {team.lead.id !== user.id && team.lead.identity?.type !== 'demo' ? <Button title={messagingLead ? 'Opening…' : 'Message'} variant="outline" size="sm" loading={messagingLead} onPress={() => { void handleMessageLead(); }} icon={<Ionicons name="chatbubble-outline" size={14} color={Colors.primary} />} /> : null}
         </Card>
 
         {/* Description */}
@@ -119,6 +141,15 @@ export default function TeamDetailScreen() {
           </View>
         </View>
 
+        {team.lead.id === user.id && team.applications?.length ? <View style={styles.section}>
+          <Text style={styles.sectionTitle}>TEAM APPLICATIONS ({team.applications.length})</Text>
+          <View style={styles.membersList}>{team.applications.map((application) => <View key={application.id} style={styles.applicationCard}>
+            <View style={styles.memberRow}><Avatar uri={application.applicantAvatar} name={application.applicantName} size={36} /><View style={styles.memberInfo}><Text style={styles.memberName}>{application.applicantName}</Text><Text style={styles.memberRole}>{application.requestedRole || 'Student'} · {application.status}</Text></View></View>
+            {application.message ? <Text style={styles.bodyText}>{application.message}</Text> : null}
+            {application.status === 'pending' ? <View style={styles.applicationActions}><Button title="Decline" variant="outline" size="sm" disabled={Boolean(managingApplicant)} loading={managingApplicant === application.applicantId} onPress={() => { void handleApplicationResponse(application.applicantId, 'declined'); }} /><Button title="Accept" variant="primary" size="sm" disabled={Boolean(managingApplicant)} loading={managingApplicant === application.applicantId} onPress={() => { void handleApplicationResponse(application.applicantId, 'accepted'); }} /></View> : null}
+          </View>)}</View>
+        </View> : null}
+
         {/* Open Roles Needed */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>RECRUITING FOR THESE ROLES</Text>
@@ -142,13 +173,13 @@ export default function TeamDetailScreen() {
                   ))}
                 </View>
 
-                <Button
+                {team.myApplicationStatus ? <Text style={styles.applicationStatus}>Application {team.myApplicationStatus} · {team.myApplicationRole || 'team role'}</Text> : team.lead.id !== user.id ? <Button
                   title={`Apply for ${r.role}`}
                   variant="primary"
                   size="sm"
                   onPress={() => handleOpenApplyModal(r.role)}
                   style={{ marginTop: 12 }}
-                />
+                /> : null}
               </Card>
             ))}
           </View>
@@ -175,7 +206,7 @@ export default function TeamDetailScreen() {
             </View>
 
             <Text style={styles.profileAttachedText}>
-              ✓ Your student profile ({user.college}, {user.degree}) and GitHub link will be automatically attached.
+              ✓ Your STUDOS profile is associated with the application.
             </Text>
 
             <Input
@@ -388,4 +419,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     marginBottom: 14,
   },
+  applicationStatus: { color: Colors.accentCyan, fontSize: Typography.caption, lineHeight: 18, marginTop: 12, fontWeight: Typography.semiBold },
+  applicationCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: 12, marginBottom: 10 },
+  applicationActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 },
 });

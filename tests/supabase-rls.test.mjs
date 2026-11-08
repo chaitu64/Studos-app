@@ -10,7 +10,7 @@ const emailB = process.env.STUDOS_TEST_USER_B_EMAIL;
 const passwordB = process.env.STUDOS_TEST_USER_B_PASSWORD;
 const configured = Boolean(url && key && emailA && passwordA && emailB && passwordB);
 
-test('two authenticated identities cannot read private data or mutate another owner’s rows', { skip: !configured }, async () => {
+test('two authenticated identities keep private data scoped and student idea interactions self-owned', { skip: !configured }, async () => {
   const a = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const b = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const loginA = await a.auth.signInWithPassword({ email: emailA, password: passwordA });
@@ -37,31 +37,53 @@ test('two authenticated identities cannot read private data or mutate another ow
   const created = await a.from('posts').insert({ author_id: idA, user_id: idA, title, content: 'Disposable authorization test', category: 'story', tags: [], image_urls: [] }).select('id').single();
   assert.ifError(created.error);
   const postId = created.data.id;
-  let ideaId;
-  let projectId;
   try {
     const visible = await b.from('posts').select('id').eq('id', postId).single();
     assert.ifError(visible.error);
-    const idea = await a.from('ideas').insert({ user_id: idA, title: `RLS idea ${Date.now()}`, payload: { description: 'Temporary RLS verification' } }).select('id').single();
-    assert.ifError(idea.error); ideaId = idea.data.id;
-    const visibleIdea = await b.from('ideas').select('id').eq('id', ideaId).single();
-    assert.ifError(visibleIdea.error); assert.equal(visibleIdea.data.id, ideaId);
-    const ideaMutation = await b.from('ideas').update({ title: 'forbidden' }).eq('id', ideaId).select('id');
-    assert.ifError(ideaMutation.error); assert.equal(ideaMutation.data.length, 0, 'ideas remain owner-editable');
-    const project = await a.from('projects').insert({ owner_id: idA, title: `RLS project ${Date.now()}`, payload: { description: 'Temporary RLS verification' } }).select('id').single();
-    assert.ifError(project.error); projectId = project.data.id;
-    const visibleProject = await b.from('projects').select('id').eq('id', projectId).single();
-    assert.ifError(visibleProject.error); assert.equal(visibleProject.data.id, projectId);
-    const projectMutation = await b.from('projects').update({ title: 'forbidden' }).eq('id', projectId).select('id');
-    assert.ifError(projectMutation.error); assert.equal(projectMutation.data.length, 0, 'projects remain owner-editable');
+    const sampleIdea = await b.from('student_ideas').select('id,demo_author_id,title').limit(1).maybeSingle();
+    assert.ifError(sampleIdea.error);
+    if (sampleIdea.data) {
+      const studentAuthor = await b.from('student_profiles').select('id').eq('id', sampleIdea.data.demo_author_id).single();
+      assert.ifError(studentAuthor.error);
+      assert.equal(studentAuthor.data.id, sampleIdea.data.demo_author_id, 'sample authors remain separate from Auth identities');
+      const existingSpark = await b.from('student_idea_live_sparks').select('idea_id').eq('idea_id', sampleIdea.data.id).eq('user_id', idB).maybeSingle();
+      assert.ifError(existingSpark.error);
+      let insertedSpark = false;
+      let commentId;
+      try {
+        if (!existingSpark.data) {
+          const spark = await b.from('student_idea_live_sparks').insert({ idea_id: sampleIdea.data.id, user_id: idB }).select('idea_id').single();
+          assert.ifError(spark.error);
+          insertedSpark = true;
+          const crossDeleteSpark = await a.from('student_idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB).select('idea_id');
+          assert.ifError(crossDeleteSpark.error); assert.equal(crossDeleteSpark.data.length, 0, 'users cannot remove another account’s Spark');
+        }
+        const comment = await b.from('student_idea_live_comments').insert({ idea_id: sampleIdea.data.id, user_id: idB, body: `RLS comment test ${Date.now()}` }).select('id').single();
+        assert.ifError(comment.error); commentId = comment.data.id;
+        const crossDeleteComment = await a.from('student_idea_live_comments').delete().eq('id', commentId).select('id');
+        assert.ifError(crossDeleteComment.error); assert.equal(crossDeleteComment.data.length, 0, 'users cannot remove another account’s comment');
+      } finally {
+        if (commentId) await b.from('student_idea_live_comments').delete().eq('id', commentId).eq('user_id', idB);
+        if (insertedSpark) await b.from('student_idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB);
+      }
+    }
     const like = await b.from('post_likes').insert({ post_id: postId, user_id: idB });
     assert.ifError(like.error);
-    const comment = await b.from('post_comments').insert({ post_id: postId, user_id: idB, content: 'RLS comment test' }).select('id').single();
+    const crossDeleteLike = await a.from('post_likes').delete().eq('post_id', postId).eq('user_id', idB).select('post_id');
+    assert.ifError(crossDeleteLike.error); assert.equal(crossDeleteLike.data.length, 0, 'users cannot remove another account\'s post like');
+    const saved = await b.from('saved_posts').insert({ post_id: postId, user_id: idB });
+    assert.ifError(saved.error);
+    const crossDeleteSaved = await a.from('saved_posts').delete().eq('post_id', postId).eq('user_id', idB).select('post_id');
+    assert.ifError(crossDeleteSaved.error); assert.equal(crossDeleteSaved.data.length, 0, 'users cannot remove another account\'s saved post');
+    const comment = await b.from('post_comments').insert({ post_id: postId, user_id: idB, body: 'RLS comment test' }).select('id').single();
     assert.ifError(comment.error);
+    const crossUpdateComment = await a.from('post_comments').update({ body: 'cross-owner edit' }).eq('id', comment.data.id).select('id');
+    assert.ifError(crossUpdateComment.error); assert.equal(crossUpdateComment.data.length, 0, 'users cannot edit another account\'s comment');
     const crossDeleteComment = await a.from('post_comments').delete().eq('id', comment.data.id).select('id');
     assert.ifError(crossDeleteComment.error); assert.equal(crossDeleteComment.data.length, 0);
     await b.from('post_comments').delete().eq('id', comment.data.id);
     await b.from('post_likes').delete().eq('post_id', postId).eq('user_id', idB);
+    await b.from('saved_posts').delete().eq('post_id', postId).eq('user_id', idB);
     const changed = await b.from('posts').update({ content: 'cross-owner write' }).eq('id', postId).select('id');
     assert.ifError(changed.error); assert.equal(changed.data.length, 0);
     const deleted = await b.from('posts').delete().eq('id', postId).select('id');
@@ -94,8 +116,6 @@ test('two authenticated identities cannot read private data or mutate another ow
       await a.storage.from('studos-media').remove([mediaPath]);
     }
   } finally {
-    if (ideaId) await a.from('ideas').delete().eq('id', ideaId);
-    if (projectId) await a.from('projects').delete().eq('id', projectId);
     await a.from('posts').delete().eq('id', postId);
     await a.auth.signOut(); await b.auth.signOut();
   }

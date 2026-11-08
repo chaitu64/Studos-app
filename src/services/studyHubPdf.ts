@@ -5,6 +5,7 @@ export type StudyHubPdfFilters = {
   studyYear?: number;
   semester?: string;
   subject?: string;
+  regulation?: string;
   category?: string;
   offset?: number;
   limit?: number;
@@ -21,8 +22,10 @@ export type StudyHubPdfRow = {
   college: string | null;
   degree: string | null;
   regulation: string | null;
+  language?: string | null;
   pdf_file_name: string | null;
   pdf_link: string | null;
+  youtube_link?: string | null;
   file_size_mb: number | string | null;
   source_folder_url: string | null;
   drive_file_id: string | null;
@@ -85,11 +88,13 @@ export function toStudyHubPdfResource(row: StudyHubPdfRow): StudyResource {
     academicYear: studyYear || '',
     semester,
     regulation: row.regulation || undefined,
+    language: row.language || undefined,
     pageCount: 0,
     description: '',
     topics: row.regulation ? [row.regulation] : [],
     fileName: row.pdf_file_name || row.title || 'PDF',
     pdfUrl: row.pdf_link || undefined,
+    youtubeLink: row.youtube_link || undefined,
     pdfFileName: row.pdf_file_name || undefined,
     driveFileId: row.drive_file_id || undefined,
     fileSizeMb,
@@ -114,7 +119,7 @@ export function toStudyHubPdfResource(row: StudyHubPdfRow): StudyResource {
 export function buildStudyHubPdfQuery(db: any, filters: StudyHubPdfFilters = {}, includeOptionalRelations = true) {
   const offset = Math.max(0, filters.offset || 0);
   const limit = Math.min(Math.max(filters.limit || 24, 1), 50);
-  const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,pdf_file_name,pdf_link,file_size_mb,source_folder_url,drive_file_id,created_at';
+  const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,language,pdf_file_name,pdf_link,youtube_link,file_size_mb,source_folder_url,drive_file_id,created_at';
   const relationships = includeOptionalRelations ? ',profiles(first_name,last_name,college),saved_resources(user_id)' : '';
   let query = db.from('study_resources')
     .select(`${columns}${relationships}`, { count: 'exact' })
@@ -130,6 +135,7 @@ export function buildStudyHubPdfQuery(db: any, filters: StudyHubPdfFilters = {},
   if (filters.studyYear) query = query.eq('study_year', filters.studyYear);
   if (filters.semester?.trim()) query = query.ilike('semester', `%${filters.semester.trim()}%`);
   if (filters.subject?.trim()) query = query.ilike('subject', `%${filters.subject.trim()}%`);
+  if (filters.regulation?.trim()) query = query.ilike('regulation', `%${filters.regulation.trim()}%`);
   if (filters.category && filters.category !== 'all') query = query.eq('category', filters.category);
   const search = filters.search?.trim().replace(/[^\p{L}\p{N} _-]/gu, ' ').replace(/\s+/g, ' ').trim();
   if (search) query = query.or(`pdf_file_name.ilike.%${search}%,subject.ilike.%${search}%,title.ilike.%${search}%`);

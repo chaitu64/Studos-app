@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { usePathname } from 'expo-router';
 import {
   UserProfile,
   Idea,
   TeamListing,
   Opportunity,
-  Project,
   ChatConversation,
   NotificationItem,
   LeaderboardUser,
@@ -18,6 +18,8 @@ import { uploadPostImages } from '../services/postMediaService';
 import { sharedContentService } from '../services/sharedContentService';
 import { authIdentityProfile, getStudentProfile, updateStudentProfile } from '../services/profileService';
 import { studentServicesService } from '../services/studentServicesService';
+import { notificationService } from '../services/notificationService';
+import { addDemoIdeaComment, getDemoIdeas, toggleDemoIdeaSave, toggleDemoIdeaSpark, toAppIdea } from '../services/demoIdeasService';
 import type { StudentService } from '../services/homeDiscoveryData';
 import { useAuth } from './AuthContext';
 
@@ -28,14 +30,16 @@ interface AppContextType {
   ideas: Idea[];
   teams: TeamListing[];
   opportunities: Opportunity[];
-  projects: Project[];
   conversations: ChatConversation[];
   notifications: NotificationItem[];
+  notificationsLoading: boolean;
+  notificationsError: string;
+  refreshNotifications: () => Promise<void>;
   leaderboard: LeaderboardUser[];
   savedOpportunityIds: string[];
   unreadNotifsCount: number;
   isLoading: boolean;
-  dataError: string | null;
+  dataErrors: Record<string, string>;
   communityPosts: CommunityPost[];
   refreshCommunityPosts: () => Promise<void>;
   addCommunityPost: (newPost: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => Promise<CommunityPost>;
@@ -46,15 +50,15 @@ interface AppContextType {
   deleteCommunityPost: (id: string) => Promise<void>;
   applyToCollaborate: (postId: string, note: string, role?: string) => Promise<{ success: boolean; message: string }>;
   refreshAll: () => Promise<void>;
-  updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
+  updateProfile: (updated: Partial<UserProfile>) => Promise<UserProfile>;
   toggleUpvoteIdea: (id: string) => Promise<void>;
   toggleBookmarkIdea: (id: string) => Promise<void>;
+  addIdeaComment: (id: string, content: string) => Promise<import('../types').IdeaComment>;
   submitIdea: (newIdea: Omit<Idea, 'id' | 'createdAt' | 'upvotes' | 'commentsCount' | 'creator'>) => Promise<Idea>;
   createTeam: (newTeam: Omit<TeamListing, 'id' | 'createdAt' | 'applicantCount' | 'lead' | 'members'>) => Promise<TeamListing>;
-  applyToTeam: (teamId: string, roleName: string) => Promise<{ success: boolean; message: string }>;
+  applyToTeam: (teamId: string, roleName: string, message?: string) => Promise<{ success: boolean; message: string }>;
+  respondToTeamApplication: (teamId: string, applicantId: string, status: 'accepted' | 'declined') => Promise<void>;
   toggleSaveOpportunity: (id: string) => Promise<void>;
-  submitProject: (newProject: Omit<Project, 'id' | 'likes' | 'views' | 'contributors'>) => Promise<Project>;
-  toggleLikeProject: (id: string) => Promise<void>;
   sendMessage: (convId: string, text: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
@@ -64,64 +68,147 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { session } = useAuth();
+  const pathname = usePathname();
+  const loadVersion = useRef(0);
   const [user, setUser] = useState<UserProfile>(() => session ? authIdentityProfile(session.user) : { id: '', name: 'Not signed in', avatar: '', college: '', degree: '', gradYear: '', shortBio: '', skills: [], interests: [] });
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [studentServices, setStudentServices] = useState<StudentService[]>([]);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [teams, setTeams] = useState<TeamListing[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
+  const notificationsRequest = useRef(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [communityPosts, setCommunityPosts] = useState<CommunityPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dataError, setDataError] = useState<string | null>(null);
+  const [dataErrors, setDataErrors] = useState<Record<string, string>>({});
 
   const loadData = useCallback(async () => {
-    setIsLoading(true); setDataError(null);
+    const version = ++loadVersion.current;
+    setIsLoading(true); setDataErrors({});
     if (!session || !supabaseConfigured) {
-      setStudents([]); setStudentServices([]); setIdeas([]); setTeams([]); setProjects([]); setLeaderboard([]); setCommunityPosts([]); setConversations([]); setNotifications([]); setOpportunities([]);
+      setStudents([]); setStudentServices([]); setIdeas([]); setTeams([]); setLeaderboard([]); setCommunityPosts([]); setConversations([]); setOpportunities([]);
       setUser({ id: '', name: 'Not signed in', avatar: '', college: '', degree: '', gradYear: '', shortBio: '', skills: [], interests: [] });
-      setDataError(supabaseConfigured ? 'Sign in to load STUDOS data.' : 'Configure Supabase to load STUDOS data.'); setIsLoading(false); return;
+      setIsLoading(false); return;
     }
-    const results = await Promise.allSettled([
-      getStudentProfile(session.user.id, authIdentityProfile(session.user), session.user), sharedContentService.students(), studentServicesService.list(), sharedContentService.list<Idea>('ideas'), sharedContentService.list<TeamListing>('teams'), sharedContentService.list<Project>('projects'), sharedContentService.leaderboard(), postService.feed(1, 100).then((result) => result.posts),
-    ]);
-    const [profile, studentRows, services, ideaRows, teamRows, projectRows, leaderboardRows, postRows] = results;
-    const currentProfile = profile.status === 'fulfilled' ? profile.value : authIdentityProfile(session.user);
-    setStudents(studentRows.status === 'fulfilled' ? studentRows.value : []);
-    setStudentServices(services.status === 'fulfilled' ? services.value : []);
-    setIdeas(ideaRows.status === 'fulfilled' ? ideaRows.value : []);
-    setTeams(teamRows.status === 'fulfilled' ? teamRows.value : []);
-    setProjects(projectRows.status === 'fulfilled' ? projectRows.value : []);
-    setLeaderboard(leaderboardRows.status === 'fulfilled' ? leaderboardRows.value : []);
-    setCommunityPosts(postRows.status === 'fulfilled' ? postRows.value : []);
-    const ownIdeas = ideaRows.status === 'fulfilled' ? ideaRows.value.filter((item) => item.creator.id === session.user.id).length : 0;
-    const ownProjects = projectRows.status === 'fulfilled' ? projectRows.value.filter((item) => item.contributors.some((owner) => owner.id === session.user.id)).length : 0;
-    const ownLeaderboard = leaderboardRows.status === 'fulfilled' ? leaderboardRows.value.find((item) => item.id === session.user.id) : undefined;
-    setUser({ ...currentProfile, ideasCount: ownIdeas, projectsCount: ownProjects, points: ownLeaderboard?.points, leaderboardRank: ownLeaderboard?.rank });
-    setConversations([]); setNotifications([]);
-    try { setOpportunities(await dataService.getOpportunities()); } catch { setOpportunities([]); }
-    if (results.some((result) => result.status === 'rejected')) setDataError('Some Supabase data could not be loaded. Check your connection and try again.');
+    const p = pathname.replace(/\/+$/, '') || '/';
+    const at = (prefix: string) => p === prefix || p.startsWith(`${prefix}/`);
+    const needs = new Set<string>();
+    if (at('/(tabs)/index') || p === '/' || p === '/(tabs)') needs.add('posts');
+    if (at('/(tabs)/profile')) ['services', 'ideas', 'conversations'].forEach((key) => needs.add(key));
+    if (at('/(tabs)/explore')) needs.add('opportunities');
+    if (at('/search')) ['students', 'ideas', 'teams', 'posts', 'opportunities'].forEach((key) => needs.add(key));
+    if (at('/students')) needs.add('students');
+    if (at('/ideahub')) needs.add('ideas');
+    if (at('/teams')) needs.add('teams');
+    if (at('/leaderboard')) needs.add('leaderboard');
+    if (at('/opportunities')) needs.add('opportunities');
+    if (at('/chat') || at('/messages') || at('/(tabs)/chat')) needs.add('conversations');
+
+    const requests: { key: string; table: string; run: () => Promise<unknown> }[] = [
+      { key: 'profile', table: 'profiles', run: () => getStudentProfile(session.user.id, authIdentityProfile(session.user), session.user) },
+      ...(needs.has('students') ? [{ key: 'students', table: 'profiles', run: () => sharedContentService.students() }] : []),
+      ...(needs.has('services') ? [{ key: 'services', table: 'student_services', run: () => studentServicesService.list() }] : []),
+      ...(needs.has('ideas') ? [{ key: 'ideas', table: 'student_ideas', run: () => getDemoIdeas({ limit: 30 }).then((result) => result.items.map(toAppIdea)) }] : []),
+      ...(needs.has('teams') ? [{ key: 'teams', table: 'teams,team_members,team_applications', run: () => sharedContentService.list<TeamListing>('teams') }] : []),
+      ...(needs.has('leaderboard') ? [{ key: 'leaderboard', table: 'leaderboard,profiles', run: () => sharedContentService.leaderboard() }] : []),
+      ...(needs.has('posts') ? [{ key: 'posts', table: 'posts,post_likes,post_comments,saved_posts', run: () => postService.feed(1, 20).then((result) => result.posts) }] : []),
+      ...(needs.has('conversations') ? [{ key: 'conversations', table: 'conversation_members,conversations,messages', run: () => dataService.getConversations() }] : []),
+      ...(needs.has('opportunities') ? [{ key: 'opportunities', table: 'external opportunities', run: () => dataService.getOpportunities() }] : []),
+    ];
+    const results = await Promise.allSettled(requests.map((request) => request.run()));
+    if (version !== loadVersion.current) return;
+    const errors: Record<string, string> = {};
+    const loaded = new Map<string, unknown>();
+    results.forEach((result, index) => {
+      const request = requests[index];
+      if (result.status === 'rejected') {
+        const cause = result.reason as { code?: string; message?: string; details?: string | null; hint?: string | null };
+        const code = cause?.code || 'unknown';
+        errors[request.key] = `${request.key} data is unavailable (Supabase ${code}).`;
+        if (__DEV__) console.warn('[Supabase query failed]', { feature: request.key, relation: request.table, code, message: cause?.message, details: cause?.details, hint: cause?.hint });
+        return;
+      }
+      loaded.set(request.key, result.value);
+      switch (request.key) {
+        case 'profile': setUser(result.value as UserProfile); break;
+        case 'students': setStudents(result.value as UserProfile[]); break;
+        case 'services': setStudentServices(result.value as StudentService[]); break;
+        case 'ideas': setIdeas(result.value as Idea[]); break;
+        case 'teams': setTeams(result.value as TeamListing[]); break;
+        case 'leaderboard': setLeaderboard(result.value as LeaderboardUser[]); break;
+        case 'posts': setCommunityPosts(result.value as CommunityPost[]); break;
+        case 'conversations': setConversations(result.value as ChatConversation[]); break;
+        case 'opportunities': setOpportunities(result.value as Opportunity[]); break;
+      }
+    });
+    setDataErrors(errors);
+    const ownLeaderboard = (loaded.get('leaderboard') as LeaderboardUser[] | undefined)?.find((item) => item.id === session.user.id);
+    if (requests.some((request) => request.key === 'profile')) {
+      const profileResult = results[0];
+      const currentProfile = profileResult.status === 'fulfilled' ? profileResult.value as UserProfile : authIdentityProfile(session.user);
+      const ownIdeas = (loaded.get('ideas') as Idea[] | undefined)?.filter((item) => item.creator.id === session.user.id).length ?? currentProfile.ideasCount;
+      setUser({ ...currentProfile, ideasCount: ownIdeas, points: ownLeaderboard?.points ?? currentProfile.points, leaderboardRank: ownLeaderboard?.rank ?? currentProfile.leaderboardRank });
+    }
     setIsLoading(false);
-  }, [session]);
+  }, [session, pathname]);
 
   useEffect(() => { const timer = setTimeout(() => { void loadData(); }, 0); return () => clearTimeout(timer); }, [loadData]);
+  const refreshNotifications = useCallback(async () => {
+    const requestId = ++notificationsRequest.current;
+    setNotificationsLoading(true); setNotificationsError('');
+    try {
+      const items = await notificationService.list();
+      if (requestId === notificationsRequest.current) setNotifications(items);
+    } catch (error) {
+      const cause = error as { code?: string; message?: string; details?: string | null; hint?: string | null };
+      const message = cause?.message || 'Notifications could not be loaded.';
+      if (__DEV__) console.warn('[Supabase query failed]', { feature: 'notification list', relation: 'notifications', code: cause?.code || 'unknown', message: cause?.message, details: cause?.details, hint: cause?.hint });
+      if (requestId === notificationsRequest.current) { setNotifications([]); setNotificationsError(message); }
+    } finally { if (requestId === notificationsRequest.current) setNotificationsLoading(false); }
+  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      notificationsRequest.current += 1;
+      if (!session?.user.id) { setNotifications([]); setNotificationsError(''); setNotificationsLoading(false); return; }
+      void refreshNotifications();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [session?.user.id, refreshNotifications]);
 
   const updateProfile = async (updated: Partial<UserProfile>) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to edit your profile.');
-    setUser(await updateStudentProfile(session.user.id, updated, user));
+    const refreshed = await updateStudentProfile(session.user.id, updated, user);
+    setUser(refreshed);
+    return refreshed;
   };
 
-  const toggleUpvoteIdea = async (_id: string) => { throw new Error('Idea voting is unavailable because the database has no supported votes table.'); };
+  const toggleUpvoteIdea = async (id: string) => {
+    if (!session || !supabaseConfigured) throw new Error('Sign in to vote on an idea.');
+    const active = await toggleDemoIdeaSpark(id, session.user.id);
+    setIdeas((rows) => rows.map((idea) => idea.id === id ? { ...idea, isUpvoted: active, upvotes: Math.max(0, (idea.upvotes || 0) + (active ? 1 : -1)) } : idea));
+  };
 
-  const toggleBookmarkIdea = async (_id: string) => { throw new Error('Idea bookmarks are unavailable because the database has no supported saved ideas table.'); };
+  const toggleBookmarkIdea = async (id: string) => {
+    if (!session || !supabaseConfigured) throw new Error('Sign in to save ideas.');
+    const active = await toggleDemoIdeaSave(id, session.user.id);
+    setIdeas((rows) => rows.map((idea) => idea.id === id ? { ...idea, isBookmarked: active } : idea));
+  };
+  const addIdeaComment = async (id: string, content: string) => {
+    if (!session || !supabaseConfigured) throw new Error('Sign in to comment on ideas.');
+    const saved = await addDemoIdeaComment(id, content);
+    const comment = { id: saved.id, userId: saved.authorId, userName: saved.authorName, userAvatar: saved.avatarUrl || '', userRole: saved.branch || '', content: saved.body, createdAt: saved.createdAt, likes: 0 };
+    setIdeas((rows) => rows.map((idea) => idea.id === id ? { ...idea, commentsCount: (idea.commentsCount || 0) + 1 } : idea));
+    return comment;
+  };
 
   const submitIdea = async (newIdea: Omit<Idea, 'id' | 'createdAt' | 'upvotes' | 'commentsCount' | 'creator'>) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to submit an idea.');
-    const created = await sharedContentService.create<Idea>('ideas', { ...newIdea, creator: { id: session.user.id, name: user.name, avatar: user.avatar, college: user.college, role: user.branch || '' }, createdAt: new Date().toISOString() } as Idea);
-    setIdeas((rows) => [created, ...rows]); return created;
+    void newIdea;
+    throw new Error('Idea publishing is temporarily unavailable until the live student_ideas write schema is verified.');
   };
 
   const createTeam = async (newTeam: Omit<TeamListing, 'id' | 'createdAt' | 'applicantCount' | 'lead' | 'members'>) => {
@@ -130,7 +217,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTeams((rows) => [created, ...rows]); return created;
   };
 
-  const applyToTeam = async (_teamId: string, _roleName: string) => { throw new Error('Team applications are unavailable because the application table is not configured.'); };
+  const applyToTeam = async (teamId: string, roleName: string, message = '') => {
+    if (!session || !supabaseConfigured) throw new Error('Sign in to apply to a team.');
+    return sharedContentService.applyToTeam(teamId, roleName, message);
+  };
+
+  const respondToTeamApplication = async (teamId: string, applicantId: string, status: 'accepted' | 'declined') => {
+    if (!session || !supabaseConfigured) throw new Error('Sign in to manage team applications.');
+    const team = teams.find((item) => item.id === teamId);
+    const application = team?.applications?.find((item) => item.applicantId === applicantId);
+    if (!team || team.lead.id !== session.user.id || !application) throw new Error('You cannot manage this team application.');
+    await sharedContentService.respondToTeamApplication(teamId, applicantId, status, application.requestedRole || 'Member');
+    setTeams((rows) => rows.map((item) => {
+      if (item.id !== teamId) return item;
+      const applications = (item.applications || []).map((entry) => entry.applicantId === applicantId ? { ...entry, status } : entry);
+      const members = status === 'accepted' && !item.members.some((member) => member.id === applicantId)
+        ? [...item.members, { id: applicantId, name: application.applicantName, avatar: application.applicantAvatar, role: application.requestedRole || 'Member' }]
+        : item.members;
+      return { ...item, applications, members };
+    }));
+  };
 
   const toggleSaveOpportunity = async (id: string) => {
     if (session && supabaseConfigured) { const saved = await sharedContentService.toggleSavedOpportunity(id); setOpportunities((prev) => prev.map((item) => item.id === id ? { ...item, isSaved: saved } : item)); return; }
@@ -140,13 +246,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const submitProject = async (newProject: Omit<Project, 'id' | 'likes' | 'views' | 'contributors'>) => {
-    if (!session || !supabaseConfigured) throw new Error('Sign in to publish a project.');
-    const created = await sharedContentService.create<Project>('projects', { ...newProject, id: '', contributors: [{ id: session.user.id, name: user.name, avatar: user.avatar, role: user.branch || 'Student' }] });
-    setProjects((rows) => [created, ...rows]); return created;
-  };
-  const toggleLikeProject = async (_id: string) => { throw new Error('Project likes are unavailable because the database has no supported likes table.'); };
-
   const sendMessage = async (convId: string, text: string) => {
     await dataService.sendMessage(convId, text);
     const updatedConvs = await dataService.getConversations();
@@ -154,18 +253,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const markNotificationRead = async (id: string) => {
-    await dataService.markNotificationRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    await notificationService.markRead(id);
+    setNotifications((rows) => rows.map((item) => item.id === id ? { ...item, read: true } : item));
   };
 
   const markAllNotificationsRead = async () => {
-    await dataService.markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    await notificationService.markAllRead();
+    setNotifications((rows) => rows.map((item) => ({ ...item, read: true })));
   };
 
   const refreshCommunityPosts = async () => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to load community posts.');
-    setCommunityPosts((await postService.feed(1, 100)).posts);
+    try {
+      setCommunityPosts((await postService.feed(1, 20)).posts);
+      setDataErrors((current) => { const next = { ...current }; delete next.posts; return next; });
+    } catch (error) {
+      const cause = error as { code?: string; message?: string };
+      setDataErrors((current) => ({ ...current, posts: cause.message || `Community posts are unavailable (${cause.code || 'query error'}).` }));
+      throw error;
+    }
   };
 
   const addCommunityPost = async (newPost: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => {
@@ -188,8 +294,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleLikePost = async (id: string) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to like posts.');
-    const isLiked = await postService.toggleLike(id); const feed = await postService.feed(1, 100);
-    const updated = feed.posts.find((post) => post.id === id); if (updated) setCommunityPosts((rows) => rows.map((post) => post.id === id ? { ...updated, isLiked } : post));
+    const isLiked = await postService.toggleLike(id);
+    setCommunityPosts((rows) => rows.map((post) => post.id === id ? { ...post, isLiked, likesCount: Math.max(0, (post.likesCount || 0) + (isLiked ? 1 : -1)) } : post));
   };
   const toggleSavePost = async (id: string) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to save posts.');
@@ -218,14 +324,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ideas,
         teams,
         opportunities,
-        projects,
         conversations,
         notifications,
+        notificationsLoading,
+        notificationsError,
+        refreshNotifications,
         leaderboard,
         savedOpportunityIds,
         unreadNotifsCount,
         isLoading,
-        dataError,
+        dataErrors,
         communityPosts,
         refreshCommunityPosts,
         addCommunityPost,
@@ -239,12 +347,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProfile,
         toggleUpvoteIdea,
         toggleBookmarkIdea,
+        addIdeaComment,
         submitIdea,
         createTeam,
         applyToTeam,
+        respondToTeamApplication,
         toggleSaveOpportunity,
-        submitProject,
-        toggleLikeProject,
         sendMessage,
         markNotificationRead,
         markAllNotificationsRead,

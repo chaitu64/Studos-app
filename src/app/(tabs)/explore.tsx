@@ -15,13 +15,14 @@ import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
-import { OpportunityCard } from '../../components/cards/OpportunityCard';
+import { OpportunityCard } from '../../components/cards/ExploreOpportunityCard';
 import { Chip } from '../../components/ui/Chip';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { CardSkeleton } from '../../components/ui/Skeleton';
 import { Opportunity, OpportunityCategory } from '../../types';
 import { dataService } from '../../services/dataService';
+import { Header } from '../../components/navigation/Header';
 
 // The 8 Retained Categories (Cultural Events removed as required)
 const ALL_CATEGORIES: (OpportunityCategory | 'All')[] = [
@@ -35,7 +36,6 @@ const ALL_CATEGORIES: (OpportunityCategory | 'All')[] = [
   'Workshops',
   'Conferences / Meets',
 ];
-const QUICK_CATEGORIES: (OpportunityCategory | 'All')[] = ['All', 'Hackathons', 'Internships', 'Jobs'];
 
 const SUGGESTED_SEARCHES = [
   'Remote',
@@ -352,11 +352,14 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <Header hideGreeting showSearch={false} />
       {/* Header bar */}
       <View style={styles.header}>
         <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Explore</Text>
-          <Text style={styles.headerSubtitle}>Opportunities and ways to grow</Text>
+          <Text style={styles.headerTitle}>Explore Opportunities</Text>
+          <Text style={styles.headerSubtitle}>
+            Live verified hackathons, internships, jobs & scholarships
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -410,23 +413,44 @@ export default function ExploreScreen() {
       {/* Suggested Search Shortcuts (when search input is empty) */}
       {!searchQuery.trim() ? (
         <View style={styles.suggestedBar}>
-          <Text style={styles.suggestedLabel}>Popular searches</Text>
-          <View style={styles.suggestedWrap}>
-            {SUGGESTED_SEARCHES.slice(0, 4).map((term) => (
-              <TouchableOpacity key={term} style={styles.suggestedPill} onPress={() => setSearchQuery(term)} activeOpacity={0.7}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestedScroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.suggestedLabel}>Trending:</Text>
+            {SUGGESTED_SEARCHES.map((term) => (
+              <TouchableOpacity
+                key={term}
+                style={styles.suggestedPill}
+                onPress={() => setSearchQuery(term)}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.suggestedPillText}>{term}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
       ) : null}
 
-      <View style={styles.categoryBar} accessibilityRole="tablist">
-        {QUICK_CATEGORIES.map((cat) => (
-          <TouchableOpacity key={cat} accessibilityRole="tab" accessibilityState={{ selected: selectedCategory === cat }} style={[styles.quickCategory, selectedCategory === cat && styles.quickCategoryActive]} onPress={() => handleSelectQuickCategory(cat)}>
-            <Text numberOfLines={1} style={[styles.quickCategoryText, selectedCategory === cat && styles.quickCategoryTextActive]}>{cat}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* Horizontal Category Filter Chips */}
+      <View style={styles.categoryBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {ALL_CATEGORIES.map((cat) => (
+            <Chip
+              key={cat}
+              label={cat}
+              selected={selectedCategory === cat}
+              onPress={() => handleSelectQuickCategory(cat)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       {/* Active Dismissible Filters Strip */}
@@ -867,13 +891,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerTitle: {
-    fontSize: Typography.title2,
+    fontSize: Typography.title1,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
     lineHeight: 32,
   },
   headerSubtitle: {
-    fontSize: Typography.body,
+    fontSize: Typography.footnote,
     color: Colors.textMuted,
     marginTop: 2,
   },
@@ -938,10 +962,8 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   suggestedBar: {
-    paddingHorizontal: Spacing.screenPadding,
     marginBottom: 10,
   },
-  suggestedWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 6 },
   suggestedScroll: {
     paddingHorizontal: Spacing.screenPadding,
     alignItems: 'center',
@@ -955,9 +977,7 @@ const styles = StyleSheet.create({
   },
   suggestedPill: {
     backgroundColor: Colors.surfaceHighlight,
-    minHeight: 36,
-    justifyContent: 'center',
-    paddingVertical: 7,
+    paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
@@ -969,19 +989,8 @@ const styles = StyleSheet.create({
     fontWeight: Typography.medium,
   },
   categoryBar: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing.screenPadding,
-    marginBottom: 8,
-    padding: 4,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    marginBottom: 10,
   },
-  quickCategory: { minWidth: 0, minHeight: 42, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderRadius: BorderRadius.sm },
-  quickCategoryActive: { backgroundColor: Colors.surfaceHighlight },
-  quickCategoryText: { color: Colors.textMuted, fontSize: Typography.caption, fontWeight: Typography.medium },
-  quickCategoryTextActive: { color: Colors.textPrimary, fontWeight: Typography.semiBold },
   categoryScroll: {
     paddingHorizontal: Spacing.screenPadding,
     gap: 8,

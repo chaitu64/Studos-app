@@ -36,7 +36,7 @@ export const AuthorProfileModal: React.FC<AuthorProfileModalProps> = ({
 
   const handleMessage = () => {
     onClose();
-    router.push('/(tabs)/chat' as any);
+    router.push('/messages' as never);
   };
 
   return (

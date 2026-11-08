@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -8,17 +8,21 @@ import { useApp } from '../../context/AppContext';
 
 export interface HeaderProps {
   showSearch?: boolean;
+  showChats?: boolean;
   title?: string;
   subtitle?: string;
   hideGreeting?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  showSearch = true,
+  showChats = true,
   title,
   subtitle,
   hideGreeting,
 }) => {
   const { user, unreadNotifsCount } = useApp();
+  const { width } = useWindowDimensions();
 
   return (
     <View style={[styles.container, hideGreeting && styles.containerCompact]}>
@@ -32,19 +36,27 @@ export const Header: React.FC<HeaderProps> = ({
           <Text style={styles.wordmark}>
             STU<Text style={styles.wordmarkHighlight}>DOS</Text>
           </Text>
-          <View style={styles.badgePill}>
+          {width >= 430 ? <View style={styles.badgePill}>
             <Text style={styles.badgeText}>STUDENT NETWORK</Text>
-          </View>
+          </View> : null}
         </TouchableOpacity>
 
         <View style={styles.actionsRight}>
-          <TouchableOpacity
+          {showSearch ? <TouchableOpacity
             accessibilityLabel="Search"
             style={styles.iconBtn}
             onPress={() => router.push('/search' as any)}
           >
             <Ionicons name="search-outline" size={22} color={Colors.textSecondary} />
-          </TouchableOpacity>
+          </TouchableOpacity> : null}
+
+          {showChats ? <TouchableOpacity
+            accessibilityLabel="Chats"
+            style={styles.iconBtn}
+            onPress={() => router.push('/messages' as never)}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={21} color={Colors.textSecondary} />
+          </TouchableOpacity> : null}
 
           <TouchableOpacity
             accessibilityLabel="Notifications"
@@ -105,7 +117,7 @@ const styles = StyleSheet.create({
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   wordmark: {
     fontSize: 22,
@@ -136,9 +148,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',

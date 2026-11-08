@@ -18,11 +18,13 @@ import { supabaseConfigured } from '../../services/supabase';
 import { ChatRoom } from '../../types';
 
 export default function ChatRoomsScreen() {
-  const [rooms, setRooms] = useState<ChatRoom[]>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState(supabaseConfigured ? '' : 'Configure Supabase to load chat rooms.');
-  useEffect(() => { if (!supabaseConfigured) return; let active = true; void sharedContentService.chatRooms().then((rows) => { if (active) setRooms(rows); }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load chat rooms.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]); const [loading, setLoading] = useState(supabaseConfigured); const [error, setError] = useState(supabaseConfigured ? '' : 'Configure Supabase to load chat rooms.'); const [reload, setReload] = useState(0); const [joiningRoomId, setJoiningRoomId] = useState('');
+  useEffect(() => { if (!supabaseConfigured) return; let active = true; void sharedContentService.chatRooms().then((rows) => { if (active) { setRooms(rows); setError(''); } }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load chat rooms.'); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [reload]);
   const handleJoinRoom = async (roomId: string) => {
-    try { if (supabaseConfigured) await sharedContentService.joinChatRoom(roomId); router.push({ pathname: '/chat/room/[id]', params: { id: roomId } } as never); }
+    if (joiningRoomId) return; setJoiningRoomId(roomId); setError('');
+    try { await sharedContentService.joinChatRoom(roomId); router.push({ pathname: '/chat/room/[id]', params: { id: roomId } } as never); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not join this room.'); }
+    finally { setJoiningRoomId(''); }
   };
 
   return (
@@ -36,7 +38,7 @@ export default function ChatRoomsScreen() {
         </View>
 
         {loading ? <ActivityIndicator color={Colors.primary} style={{ margin: 30 }} /> : null}
-        {error ? <Text style={styles.subtitle}>{error}</Text> : null}
+        {error ? <View style={styles.errorBox}><Text style={styles.subtitle}>{error}</Text><Button title="Try again" variant="outline" size="sm" onPress={() => { setLoading(true); setReload((value) => value + 1); }} /></View> : null}
         <View style={styles.roomsList}>
           {rooms.map((room) => (
             <Card key={room.id} variant="default" style={styles.roomCard}>
@@ -53,7 +55,7 @@ export default function ChatRoomsScreen() {
                 ) : (
                   <View style={styles.activePill}>
                     <View style={styles.greenDot} />
-                    <Text style={styles.activeText}>{room.activeNow} online</Text>
+                    <Text style={styles.activeText}>Public room</Text>
                   </View>
                 )}
               </View>
@@ -63,13 +65,15 @@ export default function ChatRoomsScreen() {
               <View style={styles.roomFooter}>
                 <View style={styles.memberStats}>
                   <Ionicons name="people-outline" size={14} color={Colors.textMuted} />
-                  <Text style={styles.memberText}>{room.membersCount} students</Text>
+                  <Text style={styles.memberText}>{room.membersCount ? `${room.membersCount} students` : 'Open to students'}</Text>
                 </View>
 
                 <Button
                   title="Enter Room"
                   variant="primary"
                   size="sm"
+                  loading={joiningRoomId === room.id}
+                  disabled={Boolean(joiningRoomId)}
                   onPress={() => { void handleJoinRoom(room.id); }}
                 />
               </View>
@@ -108,6 +112,7 @@ const styles = StyleSheet.create({
   roomsList: {
     gap: 12,
   },
+  errorBox: { gap: 10, padding: 14, marginBottom: 14, borderRadius: BorderRadius.md, backgroundColor: Colors.errorSubtle },
   roomCard: {
     padding: 16,
   },

@@ -29,12 +29,13 @@ export default function RootLayout() {
             },
           }}
         >
+          <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="academic-library/index" options={{ headerShown: false }} />
           <Stack.Screen name="academic-library/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="academic-library/viewer/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="ideahub/index" options={{ title: 'IdeaHub' }} />
-          <Stack.Screen name="ideahub/[id]" options={{ title: 'Idea Details' }} />
+          <Stack.Screen name="ideahub/[id]" options={{ headerShown: false }} />
           <Stack.Screen
             name="ideahub/submit"
             options={{ title: 'Submit an Idea', presentation: 'modal' }}
@@ -46,22 +47,22 @@ export default function RootLayout() {
             options={{ title: 'Recruit Teammates', presentation: 'modal' }}
           />
           <Stack.Screen name="opportunities/index" options={{ title: 'Opportunities' }} />
-          <Stack.Screen name="opportunities/[id]" options={{ title: 'Opportunity' }} />
-          <Stack.Screen name="projects/index" options={{ title: 'Project Showcase' }} />
-          <Stack.Screen name="projects/[id]" options={{ title: 'Project Details' }} />
-          <Stack.Screen
-            name="projects/create"
-            options={{ title: 'Publish Project', presentation: 'modal' }}
-          />
+          <Stack.Screen name="opportunities/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="leaderboard/index" options={{ title: 'Impact Leaderboard' }} />
-          <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
+          <Stack.Screen name="notifications/index" options={{ headerShown: false }} />
+          <Stack.Screen name="community/[kind]/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="chat-rooms/index" options={{ title: 'Topic Chat Rooms' }} />
-          <Stack.Screen name="chat/[id]" options={{ title: 'Conversation' }} />
-          <Stack.Screen name="chat/room/[id]" options={{ title: 'Chat Room' }} />
+          <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="chat/room/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="messages" options={{ headerShown: false }} />
           <Stack.Screen name="search/index" options={{ headerShown: false }} />
           <Stack.Screen name="settings/index" options={{ title: 'Settings & Privacy' }} />
           <Stack.Screen name="saved" options={{ title: 'Saved Content' }} />
+          <Stack.Screen name="profile/add-work" options={{ headerShown: false, presentation: 'modal' }} />
           <Stack.Screen name="post/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="student/[type]/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="students/index" options={{ title: 'Students' }} />
+          <Stack.Screen name="resource/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="signup" options={{ headerShown: false }} />
           <Stack.Screen name="forgot-password" options={{ headerShown: false }} />

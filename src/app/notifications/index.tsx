@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,28 +18,29 @@ import { useApp } from '../../context/AppContext';
 import { NotificationItem } from '../../types';
 
 export default function NotificationsScreen() {
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useApp();
+  const { notifications, notificationsLoading, notificationsError, refreshNotifications, markNotificationRead, markAllNotificationsRead } = useApp();
+
+  const openAllowedTarget = (target?: string) => {
+    if (!target || !target.startsWith('/') || target.startsWith('//') || target.includes('..')) return;
+    const allowed = target === '/messages' || target === '/notifications' || target === '/search'
+      || /^\/\(tabs\)\/(index|study|explore|swipe|profile)$/.test(target)
+      || /^\/(chat|ideahub|problem|help|teams|post|opportunities)\/[0-9a-f-]{8,}$/i.test(target)
+      || /^\/community\/(problem|help)\/[0-9a-f-]{8,}$/i.test(target);
+    if (allowed) router.push(target as never);
+  };
 
   const handleNotificationPress = async (item: NotificationItem) => {
-    await markNotificationRead(item.id);
-    switch (item.type) {
-      case 'match':
-      case 'message':
-        router.push('/chat/conv_1' as any);
-        break;
-      case 'team_application':
-      case 'team_invite':
-        router.push('/teams/team_1' as any);
-        break;
-      case 'deadline':
-        router.push('/opportunities/opp_1' as any);
-        break;
-      case 'achievement':
-        router.push('/leaderboard' as any);
-        break;
-      default:
-        break;
+    try {
+      await markNotificationRead(item.id);
+      openAllowedTarget(item.actionUrl);
+    } catch (cause) {
+      Alert.alert('Could not update notification', cause instanceof Error ? cause.message : 'Please try again.');
     }
+  };
+
+  const handleMarkAll = async () => {
+    try { await markAllNotificationsRead(); }
+    catch (cause) { Alert.alert('Could not update notifications', cause instanceof Error ? cause.message : 'Please try again.'); }
   };
 
   const getIconForType = (type: NotificationItem['type']) => {
@@ -63,15 +65,18 @@ export default function NotificationsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Activity Center</Text>
         <Button
-          title="Mark All as Read"
+          title="Mark all as read"
           variant="ghost"
           size="sm"
-          onPress={markAllNotificationsRead}
+          disabled={!notifications.some((item) => !item.read)}
+          onPress={() => { void handleMarkAll(); }}
         />
       </View>
 
       <ScrollView contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false}>
-        {notifications.length > 0 ? (
+        {notificationsError ? <View style={styles.errorState}><Text style={styles.errorText}>Notifications could not be loaded: {notificationsError}</Text><Button title="Retry" variant="outline" size="sm" onPress={() => { void refreshNotifications(); }} /></View> : notificationsLoading ? (
+          <View style={styles.loading}><Text style={styles.loadingText}>Loading notifications…</Text></View>
+        ) : notifications.length > 0 ? (
           notifications.map((item) => (
             <TouchableOpacity
               key={item.id}
@@ -93,7 +98,7 @@ export default function NotificationsScreen() {
               <View style={styles.notifInfo}>
                 <View style={styles.notifHeaderRow}>
                   <Text style={styles.notifTitle} numberOfLines={1}>
-                    {item.title}
+                    {item.title}{item.isDemo ? ' · Demo' : ''}
                   </Text>
                   <Text style={styles.notifTime}>{item.timestamp}</Text>
                 </View>
@@ -107,7 +112,7 @@ export default function NotificationsScreen() {
           <EmptyState
             icon="notifications-off-outline"
             title="All quiet here"
-            description="You will receive alerts here when peers swipe on your profile, apply to your teams, or message you."
+            description="You’re all caught up. New notifications will appear here when they’re sent to your account."
           />
         )}
       </ScrollView>
@@ -139,6 +144,10 @@ const styles = StyleSheet.create({
     padding: Spacing.screenPadding,
     gap: 10,
   },
+  errorState: { alignItems: 'center', gap: 12, padding: 20, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  errorText: { color: Colors.error, fontSize: Typography.footnote, lineHeight: 19, textAlign: 'center' },
+  loading: { padding: 28, alignItems: 'center' },
+  loadingText: { color: Colors.textMuted, fontSize: Typography.footnote },
   notifCard: {
     flexDirection: 'row',
     alignItems: 'center',

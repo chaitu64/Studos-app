@@ -40,16 +40,6 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ visible, onClose }) =>
       badge: 'Core Innovation',
     },
     {
-      id: 'project',
-      title: 'Showcase a Project',
-      subtitle: 'Demonstrate live prototypes, GitHub repos & achievements',
-      icon: 'rocket-outline' as const,
-      color: Colors.accentGreen,
-      bgColor: Colors.accentGreenSubtle,
-      route: '/projects/create',
-      badge: 'Portfolio',
-    },
-    {
       id: 'team',
       title: 'Recruit Teammates',
       subtitle: 'Form a squad for hackathons, research or student startups',

@@ -1,267 +1,118 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Switch,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing } from '../../constants/theme';
-import { Card } from '../../components/ui/Card';
-import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { authService } from '../../services/authService';
-import { router } from 'expo-router';
+import { Avatar } from '../../components/ui/Avatar';
+import { Button } from '../../components/ui/Button';
+import { Colors, Spacing, Typography, BorderRadius } from '../../constants/theme';
 
 export default function SettingsScreen() {
   const { user } = useApp();
   const { session } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
 
-  const [publicProfile, setPublicProfile] = useState(true);
-  const [allowMatching, setAllowMatching] = useState(true);
-  const [notifyDeadlines, setNotifyDeadlines] = useState(true);
-  const [notifyMatches, setNotifyMatches] = useState(true);
-  const [notifyTeamApps, setNotifyTeamApps] = useState(true);
-
-  const handleClearCache = () => {
-    Alert.alert(
-      'Reset Local Cache',
-      'This will refresh your local device cache while keeping your profile safe.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset Cache', style: 'destructive', onPress: () => Alert.alert('Cache Cleared', 'Local data reloaded.') },
-      ]
-    );
+  const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      const { error } = await authService.signOut();
+      if (error) throw error;
+      router.replace('/login');
+    } catch (cause) {
+      Alert.alert('Sign out failed', cause instanceof Error ? cause.message : 'Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        {/* Account Info Card */}
-        <Card variant="elevated" style={styles.accountCard}>
-          <Text style={styles.sectionHeader}>STUDENT ACCOUNT</Text>
-          <Text style={styles.accountName}>{user.name}</Text>
-          <Text style={styles.accountEmail}>{user.college} • {user.degree}</Text>
-          <Text style={styles.rankBadge}>StuDos ID: STU-849204 • Verified Student</Text>
-        </Card>
-
-        {/* Privacy & Discovery Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PRIVACY & COLLABORATOR DISCOVERY</Text>
-          <Card variant="default" style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextWrap}>
-                <Text style={styles.settingLabel}>Public Innovation Profile</Text>
-                <Text style={styles.settingDesc}>Allow other students to view your portfolio and skills</Text>
-              </View>
-              <Switch
-                value={publicProfile}
-                onValueChange={setPublicProfile}
-                trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextWrap}>
-                <Text style={styles.settingLabel}>Discover & Matching Arena</Text>
-                <Text style={styles.settingDesc}>Appear in Swipe & Connect recommendations</Text>
-              </View>
-              <Switch
-                value={allowMatching}
-                onValueChange={setAllowMatching}
-                trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }}
-              />
-            </View>
-          </Card>
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.account}>
+          <Avatar uri={user.avatar || session?.user.user_metadata?.avatar_url} name={user.name || session?.user.email || 'Student'} size={56} />
+          <View style={styles.accountCopy}>
+            <Text style={styles.name} numberOfLines={2}>{user.name || session?.user.user_metadata?.full_name || 'Student'}</Text>
+            <Text style={styles.email} numberOfLines={2}>{session?.user.email || 'Signed in account'}</Text>
+            <Text style={styles.school} numberOfLines={2}>{[user.college, user.degree, user.branch].filter(Boolean).join(' · ') || 'Student profile'}</Text>
+          </View>
         </View>
 
-        {/* Notifications Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NOTIFICATIONS & DEADLINES</Text>
-          <Card variant="default" style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextWrap}>
-                <Text style={styles.settingLabel}>Hackathon & Opportunity Reminders</Text>
-                <Text style={styles.settingDesc}>Alerts 48h and 24h before application deadlines</Text>
-              </View>
-              <Switch
-                value={notifyDeadlines}
-                onValueChange={setNotifyDeadlines}
-                trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextWrap}>
-                <Text style={styles.settingLabel}>New Match Alerts</Text>
-                <Text style={styles.settingDesc}>When another student swiped right on your profile</Text>
-              </View>
-              <Switch
-                value={notifyMatches}
-                onValueChange={setNotifyMatches}
-                trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextWrap}>
-                <Text style={styles.settingLabel}>Team Application Updates</Text>
-                <Text style={styles.settingDesc}>When leads accept or respond to squad requests</Text>
-              </View>
-              <Switch
-                value={notifyTeamApps}
-                onValueChange={setNotifyTeamApps}
-                trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }}
-              />
-            </View>
-          </Card>
+        <Text style={styles.sectionTitle}>ACCOUNT</Text>
+        <View style={styles.group}>
+          <SettingsRow icon="person-outline" label="Edit profile" detail="Update your student portfolio" onPress={() => router.push('/(tabs)/profile')} />
+          <View style={styles.divider} />
+          <SettingsRow icon="key-outline" label="Change password" detail="Send a password reset email" onPress={() => router.push('/forgot-password')} />
         </View>
 
-        {/* Data & Storage */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>DATA & SYSTEM</Text>
-          <Card variant="default" style={styles.settingsGroup}>
-            <TouchableOpacity style={styles.actionRow} onPress={handleClearCache}>
-              <Ionicons name="trash-bin-outline" size={18} color={Colors.error} />
-              <Text style={styles.actionRowTextDanger}>Reset Local Session & Cache</Text>
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.actionRow} onPress={async () => { const { error } = await authService.signOut(); if (error) Alert.alert('Sign out failed', error.message); else router.replace('/login'); }}>
-              <Ionicons name="log-out-outline" size={18} color={Colors.error} />
-              <Text style={styles.actionRowTextDanger}>Sign out{session?.user.email ? ` · ${session.user.email}` : ''}</Text>
-            </TouchableOpacity>
-          </Card>
+        <Text style={styles.sectionTitle}>PRIVACY & PREFERENCES</Text>
+        <View style={styles.group}>
+          <View style={styles.infoRow}>
+            <View style={styles.infoIcon}><Ionicons name="shield-checkmark-outline" size={19} color={Colors.accentCyan} /></View>
+            <View style={styles.rowCopy}>
+              <Text style={styles.rowLabel}>Privacy controls</Text>
+              <Text style={styles.rowDetail}>Profile visibility and notification preferences are not available yet.</Text>
+            </View>
+            <Text style={styles.comingSoon}>Soon</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.infoRow}>
+            <View style={styles.infoIcon}><Ionicons name="color-palette-outline" size={19} color={Colors.accentPurple} /></View>
+            <View style={styles.rowCopy}>
+              <Text style={styles.rowLabel}>Appearance</Text>
+              <Text style={styles.rowDetail}>STUDOS currently follows its dark appearance.</Text>
+            </View>
+          </View>
         </View>
 
-        {/* About StuDos */}
-        <View style={styles.aboutFooter}>
-          <Text style={styles.wordmark}>
-            STU<Text style={{ color: Colors.primary }}>DOS</Text>
-          </Text>
-          <Text style={styles.versionText}>v1.0.0 • Student Innovation & Opportunity Network</Text>
-          <Text style={styles.taglineText}>Built for student builders, innovators, and hackathon contenders.</Text>
+        <Text style={styles.sectionTitle}>ABOUT</Text>
+        <View style={styles.group}>
+          <View style={styles.infoRow}>
+            <View style={styles.wordmark}><Text style={styles.wordmarkText}>S</Text></View>
+            <View style={styles.rowCopy}>
+              <Text style={styles.rowLabel}>STUDOS</Text>
+              <Text style={styles.rowDetail}>A place to learn, share, and build with students.</Text>
+            </View>
+          </View>
         </View>
+
+        <Button title={signingOut ? 'Signing out…' : 'Sign out'} variant="outline" onPress={signOut} disabled={signingOut} loading={signingOut} icon={signingOut ? undefined : <Ionicons name="log-out-outline" size={18} color={Colors.error} />} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function SettingsRow({ icon, label, detail, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; detail: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity accessibilityRole="button" style={styles.row} onPress={onPress} activeOpacity={0.75}>
+      <View style={styles.infoIcon}><Ionicons name={icon} size={19} color={Colors.textMuted} /></View>
+      <View style={styles.rowCopy}><Text style={styles.rowLabel}>{label}</Text><Text style={styles.rowDetail}>{detail}</Text></View>
+      <Ionicons name="chevron-forward" size={18} color={Colors.textSubtle} />
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  scrollContainer: {
-    padding: Spacing.screenPadding,
-    paddingBottom: 40,
-  },
-  accountCard: {
-    marginBottom: 20,
-    padding: 16,
-  },
-  sectionHeader: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  accountName: {
-    fontSize: Typography.title3,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-  },
-  accountEmail: {
-    fontSize: Typography.subhead,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  rankBadge: {
-    fontSize: Typography.caption,
-    color: Colors.accentCyan,
-    marginTop: 8,
-    fontWeight: Typography.medium,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  settingsGroup: {
-    padding: 14,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  settingTextWrap: {
-    flex: 1,
-    marginRight: 12,
-  },
-  settingLabel: {
-    fontSize: Typography.body,
-    fontWeight: Typography.semiBold,
-    color: Colors.textPrimary,
-  },
-  settingDesc: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginVertical: 6,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  actionRowTextDanger: {
-    fontSize: Typography.body,
-    color: Colors.error,
-    fontWeight: Typography.semiBold,
-    marginLeft: 10,
-  },
-  aboutFooter: {
-    alignItems: 'center',
-    marginTop: 20,
-    paddingBottom: 20,
-  },
-  wordmark: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  versionText: {
-    fontSize: Typography.caption,
-    color: Colors.textMuted,
-    marginTop: 4,
-  },
-  taglineText: {
-    fontSize: 10,
-    color: Colors.textSubtle,
-    marginTop: 2,
-    textAlign: 'center',
-  },
+  safe: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.screenPadding, paddingBottom: 36, gap: 12 },
+  account: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: BorderRadius.xl, backgroundColor: Colors.surface, borderColor: Colors.border, borderWidth: 1, marginBottom: 8 },
+  accountCopy: { flex: 1, minWidth: 0, gap: 3 },
+  name: { color: Colors.textPrimary, fontSize: Typography.title3, lineHeight: 24, fontWeight: Typography.bold },
+  email: { color: Colors.textSecondary, fontSize: Typography.footnote, lineHeight: 18 },
+  school: { color: Colors.textMuted, fontSize: Typography.caption, lineHeight: 17 },
+  sectionTitle: { color: Colors.textMuted, fontSize: Typography.caption, lineHeight: 17, fontWeight: Typography.bold, letterSpacing: 0.8, marginTop: 5 },
+  group: { backgroundColor: Colors.surface, borderColor: Colors.border, borderWidth: 1, borderRadius: BorderRadius.lg, paddingHorizontal: 12 },
+  row: { minHeight: 68, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  infoRow: { minHeight: 68, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  infoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: Colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' },
+  rowCopy: { flex: 1, minWidth: 0, gap: 2 },
+  rowLabel: { color: Colors.textPrimary, fontSize: Typography.subhead, lineHeight: 20, fontWeight: Typography.semiBold },
+  rowDetail: { color: Colors.textMuted, fontSize: Typography.caption, lineHeight: 17 },
+  divider: { height: 1, marginLeft: 46, backgroundColor: Colors.divider },
+  comingSoon: { color: Colors.textSubtle, fontSize: 11, fontWeight: Typography.semiBold, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 99, backgroundColor: Colors.surfaceHighlight },
+  wordmark: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primarySubtle },
+  wordmarkText: { color: Colors.primary, fontSize: 21, lineHeight: 25, fontWeight: Typography.bold },
 });

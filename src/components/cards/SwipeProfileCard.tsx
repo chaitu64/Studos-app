@@ -224,8 +224,8 @@ export const SwipeProfileCard: React.FC<SwipeProfileCardProps> = ({
           {/* Stats Bar */}
           <View style={styles.statsBar}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{student.projectsCount}</Text>
-              <Text style={styles.statLabel}>Projects</Text>
+              <Text style={styles.statNumber}>{student.ideasCount ?? '—'}</Text>
+              <Text style={styles.statLabel}>Ideas</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>

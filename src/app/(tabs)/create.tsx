@@ -38,16 +38,6 @@ export default function CreateScreen() {
       route: '/teams/create',
       badge: 'Team Finder',
     },
-    {
-      id: 'project',
-      title: 'Showcase a Project',
-      subtitle: 'Demonstrate live prototypes, GitHub repositories, and earned achievements.',
-      icon: 'rocket-outline' as const,
-      color: Colors.accentGreen,
-      bgColor: Colors.accentGreenSubtle,
-      route: '/projects/create',
-      badge: 'Portfolio',
-    },
   ];
 
   return (

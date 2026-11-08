@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { safeBack } from '@/navigation/safeBack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -59,6 +60,7 @@ export default function OpportunityDetailScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <View style={styles.navBar}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack()} style={styles.navBackBtn}><Ionicons name="arrow-back" size={22} color={Colors.textPrimary} /></TouchableOpacity><Text style={styles.navTitle} numberOfLines={1}>Opportunity Details</Text><View style={styles.navShareBtn} /></View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading opportunity details...</Text>
@@ -70,6 +72,7 @@ export default function OpportunityDetailScreen() {
   if (!opp) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <View style={styles.navBar}><TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack()} style={styles.navBackBtn}><Ionicons name="arrow-back" size={22} color={Colors.textPrimary} /></TouchableOpacity><Text style={styles.navTitle} numberOfLines={1}>Opportunity Details</Text><View style={styles.navShareBtn} /></View>
         <View style={styles.notFoundContainer}>
           <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
           <Text style={styles.notFoundTitle}>Opportunity Not Found</Text>
@@ -79,7 +82,7 @@ export default function OpportunityDetailScreen() {
           <Button
             title="Back to Opportunities"
             variant="primary"
-            onPress={() => router.back()}
+            onPress={() => safeBack()}
           />
         </View>
       </SafeAreaView>
@@ -159,7 +162,7 @@ export default function OpportunityDetailScreen() {
       {/* Navigation Bar */}
       <View style={styles.navBar}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => safeBack()}
           style={styles.navBackBtn}
           accessibilityLabel="Go back"
         >

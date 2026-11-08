@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 export interface PostComposerModalProps {
   visible: boolean;
   initialType?: CommunityPostType;
+  allowedTypes?: CommunityPostType[];
   onClose: () => void;
   onSubmit: (post: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => Promise<any>;
 }
@@ -49,6 +50,7 @@ const AVAILABLE_ROLES: StudentRole[] = [
 export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   visible,
   initialType = 'idea',
+  allowedTypes,
   onClose,
   onSubmit,
 }) => {
@@ -182,12 +184,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
           </View>
 
           {/* Type Selector Horizontal Tabs */}
-          <ScrollView
+          {(allowedTypes?.length ?? POST_TYPES.length) > 1 ? <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.typeSelectorRow}
           >
-            {POST_TYPES.map((t) => {
+            {POST_TYPES.filter((t) => !allowedTypes || allowedTypes.includes(t.id)).map((t) => {
               const selected = postType === t.id;
               return (
                 <TouchableOpacity
@@ -206,7 +208,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </ScrollView> : null}
 
           {/* Form Scroll View */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContainer}>

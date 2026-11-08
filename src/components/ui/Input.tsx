@@ -42,6 +42,8 @@ export const Input: React.FC<InputProps> = ({
       >
         {leftIcon ? <View style={styles.iconLeft}>{leftIcon}</View> : null}
         <TextInput
+          accessibilityLabel={rest.accessibilityLabel || label}
+          accessibilityHint={rest.accessibilityHint || helperText}
           placeholderTextColor={Colors.textSubtle}
           style={[styles.input, inputStyle]}
           {...rest}
@@ -49,7 +51,7 @@ export const Input: React.FC<InputProps> = ({
         {rightIcon ? <View style={styles.iconRight}>{rightIcon}</View> : null}
       </View>
       {error ? (
-        <Text style={styles.errorText}>{error}</Text>
+        <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>
       ) : helperText ? (
         <Text style={styles.helperText}>{helperText}</Text>
       ) : null}

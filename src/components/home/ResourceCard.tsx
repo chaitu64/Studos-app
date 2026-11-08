@@ -5,74 +5,69 @@ import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Typography } from '../../constants/theme';
 import { StudyResource } from '../../types';
 
-type Props = { resource: StudyResource; onOpen: () => void; onBookmark: () => void; compact?: boolean };
+type Props = { resource: StudyResource; onOpen: () => void; onBookmark?: () => void; compact?: boolean };
+
+const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen, onBookmark, compact = false }: Props) {
-  if (compact) return (
-    <View style={styles.listCard}>
-      <TouchableOpacity accessibilityRole="button" onPress={onOpen} style={styles.listMain} activeOpacity={0.84}>
-        <View style={styles.listIcon}><Ionicons name="document-text" size={22} color={Colors.primary} /></View>
-        <View style={styles.listCopy}>
-          <Text style={styles.listTitle} numberOfLines={2}>{resource.pdfFileName || resource.fileName}</Text>
-          <Text style={styles.listSubject} numberOfLines={1}>{resource.subject}</Text>
-          <Text style={styles.listMeta} numberOfLines={2}>{[resource.studyYear ? `Year ${resource.studyYear}` : null, resource.semester ? `Semester ${resource.semester}` : null, resource.type.replaceAll('_', ' '), resource.fileSizeMb != null ? `${resource.fileSizeMb.toFixed(1)} MB` : null].filter(Boolean).join(' · ')}</Text>
-        </View>
-      </TouchableOpacity>
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={resource.isBookmarked ? 'Remove bookmark' : 'Bookmark resource'} onPress={onBookmark} style={styles.listBookmark}>
-        <Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} />
-      </TouchableOpacity>
-    </View>
-  );
+  const fileName = resource.pdfFileName || resource.fileName;
+  const academicMeta = [
+    resource.studyYear ? `Year ${resource.studyYear}` : null,
+    resource.semester ? `Semester ${resource.semester}` : null,
+    resource.regulation || null,
+  ].filter(Boolean);
+  const size = resource.fileSizeMb != null ? `${resource.fileSizeMb.toFixed(1)} MB` : null;
+
   return (
-    <View style={styles.card}>
-      <TouchableOpacity accessibilityRole="button" onPress={onOpen} activeOpacity={0.88}>
-        <View style={styles.preview}>
-          <View style={styles.placeholder}><Ionicons name="document-text-outline" size={38} color={Colors.primary} /><Text style={styles.placeholderText}>PDF document</Text></View>
-          <View style={styles.pdfBadge}><Ionicons name="document-text" size={13} color="#FFF" /><Text style={styles.pdfText}>PDF</Text></View>
+    <View style={[styles.card, compact && styles.compactCard]}>
+      <View style={styles.topRow}>
+        <View style={styles.fileIcon}><Ionicons name="document-text" size={21} color={Colors.primary} /></View>
+        <View style={styles.copy}>
+          <Text style={styles.title} numberOfLines={2}>{fileName}</Text>
+          <Text style={styles.subject} numberOfLines={1}>{resource.subject}</Text>
         </View>
-        <View style={styles.body}>
-          <Text accessibilityLabel="PDF filename" style={styles.title} numberOfLines={2}>{resource.pdfFileName || resource.fileName}</Text>
-          <Text style={styles.subject} numberOfLines={2}>{resource.subject}</Text>
-          <Text style={styles.description} numberOfLines={1}>{[resource.title && resource.title !== resource.pdfFileName ? resource.title : null, resource.studyYear ? `Year ${resource.studyYear}` : null, resource.semester ? `Semester ${resource.semester}` : null].filter(Boolean).join(' · ')}</Text>
-          <View style={styles.topics}><Text style={styles.topic}>{resource.type.replaceAll('_', ' ')}</Text>{resource.regulation ? <Text style={styles.topic}>{resource.regulation}</Text> : null}{resource.fileSizeMb != null ? <Text style={styles.topic}>{resource.fileSizeMb.toFixed(2)} MB</Text> : null}</View>
-        </View>
-      </TouchableOpacity>
+        {onBookmark ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={resource.isBookmarked ? 'Remove saved PDF' : 'Save PDF'} accessibilityState={{ selected: Boolean(resource.isBookmarked) }} onPress={onBookmark} style={styles.saveButton}>
+          <Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} />
+        </TouchableOpacity> : null}
+      </View>
+
+      <View style={styles.metadata}>
+        {academicMeta.map((item) => <View key={item} style={styles.metaPill}><Text style={styles.metaText} numberOfLines={1}>{item}</Text></View>)}
+        <View style={[styles.metaPill, styles.categoryPill]}><Text style={[styles.metaText, styles.categoryText]} numberOfLines={1}>{label(resource.type)}</Text></View>
+        {size ? <Text style={styles.fileSize}>{size}</Text> : null}
+      </View>
+
       <View style={styles.footer}>
-        <View style={styles.uploader}><Avatar uri={resource.uploader.avatar} name={resource.uploader.name} size={26} /><View><Text style={styles.uploaderName}>{resource.uploader.name}</Text>{resource.createdAt ? <Text style={styles.uploadedAt}>{new Date(resource.createdAt).toLocaleDateString()}</Text> : null}</View></View>
-        <View style={styles.footerActions}>
-          <TouchableOpacity accessibilityLabel="Bookmark resource" onPress={onBookmark}><Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={19} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} /></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={styles.openButton} onPress={onOpen}><Text style={styles.openText}>Details</Text><Ionicons name="arrow-forward" size={14} color="#FFF" /></TouchableOpacity>
+        <View style={styles.uploader}>
+          <Avatar uri={resource.uploader.avatar} name={resource.uploader.name} size={28} />
+          <Text style={styles.uploaderName} numberOfLines={1}>{resource.uploader.name}</Text>
         </View>
+        <TouchableOpacity accessibilityRole="button" onPress={onOpen} activeOpacity={0.8} style={styles.previewButton}>
+          <Ionicons name="eye-outline" size={17} color={Colors.textOnPrimary} />
+          <Text style={styles.previewText}>Preview</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 });
 
 const styles = StyleSheet.create({
-  listCard: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: 14, borderWidth: 1, borderColor: Colors.cardBorder, padding: 12, marginBottom: 10, gap: 8 },
-  listMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  listIcon: { width: 44, height: 48, borderRadius: 11, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center' },
-  listCopy: { flex: 1, minWidth: 0, gap: 3 },
-  listTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 19, fontWeight: Typography.semiBold },
-  listSubject: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  listMeta: { color: Colors.textMuted, fontSize: 11, lineHeight: 16, textTransform: 'capitalize' },
-  listBookmark: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  card: { width: 272, backgroundColor: '#121624', borderRadius: 16, borderWidth: 1, borderColor: '#252C3D', overflow: 'hidden', marginRight: 12 },
-  preview: { height: 132, backgroundColor: '#0D1018', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  thumbnail: { width: '100%', height: '100%', backgroundColor: '#E8E9EC' },
-  placeholder: { alignItems: 'center', gap: 8 }, placeholderText: { color: Colors.textMuted, fontSize: 10 },
-  pdfBadge: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primary, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 7 },
-  pdfText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
-  pages: { position: 'absolute', right: 10, bottom: 10, backgroundColor: 'rgba(9,10,15,0.8)', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 6 },
-  pagesText: { color: '#FFF', fontSize: 10, fontWeight: Typography.semiBold },
-  body: { padding: 13 }, title: { color: '#FFF', fontSize: 16, lineHeight: 21, fontWeight: Typography.bold },
-  subject: { color: Colors.textMuted, fontSize: 11, marginTop: 4 }, description: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 9 },
-  summary: { backgroundColor: '#171D2D', borderRadius: 10, padding: 10, marginTop: 10, borderLeftWidth: 2, borderLeftColor: Colors.primary },
-  summaryTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 }, summaryTitle: { color: '#FF9B9B', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  summaryText: { color: Colors.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 5 }, topics: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 10 },
-  topic: { color: Colors.textMuted, fontSize: 10, backgroundColor: '#171D2D', paddingHorizontal: 7, paddingVertical: 4, borderRadius: BorderRadius.full },
-  footer: { borderTopWidth: 1, borderTopColor: '#252C3D', padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  uploader: { flexDirection: 'row', alignItems: 'center', gap: 7 }, uploaderName: { color: Colors.textPrimary, fontSize: 11, fontWeight: Typography.semiBold }, uploadedAt: { color: Colors.textSubtle, fontSize: 9, marginTop: 1 },
-  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 }, openButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 }, openText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
-  demo: { color: '#C58F44', fontSize: 8, fontWeight: '800', letterSpacing: 0.45, paddingHorizontal: 12, paddingBottom: 10 },
+  card: { width: 292, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.cardBorder, padding: 16, marginRight: 12 },
+  compactCard: { width: '100%', marginRight: 0, marginBottom: 12, borderRadius: BorderRadius.lg },
+  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  fileIcon: { width: 46, height: 50, borderRadius: 14, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center' },
+  copy: { flex: 1, minWidth: 0, paddingTop: 1, gap: 5 },
+  title: { color: Colors.textPrimary, fontSize: 15, lineHeight: 21, fontWeight: Typography.semiBold },
+  subject: { color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+  saveButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: -7, marginRight: -8, borderRadius: 12 },
+  metadata: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 15, minHeight: 26 },
+  metaPill: { maxWidth: '100%', backgroundColor: Colors.surfaceHighlight, borderRadius: BorderRadius.full, paddingHorizontal: 10, paddingVertical: 6 },
+  metaText: { color: Colors.textSecondary, fontSize: 11, lineHeight: 15, fontWeight: Typography.medium },
+  categoryPill: { backgroundColor: Colors.primarySubtle }, categoryText: { color: Colors.primary },
+  fileSize: { color: Colors.textMuted, fontSize: 11, lineHeight: 16, marginLeft: 2 },
+  footer: { borderTopWidth: 1, borderTopColor: Colors.divider, paddingTop: 12, marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  uploader: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  uploaderName: { flex: 1, color: Colors.textMuted, fontSize: 12, lineHeight: 17, fontWeight: Typography.medium },
+  previewButton: { minHeight: 44, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 13, backgroundColor: Colors.primary },
+  previewText: { color: Colors.textOnPrimary, fontSize: 13, fontWeight: Typography.semiBold },
 });

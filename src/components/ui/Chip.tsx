@@ -11,6 +11,7 @@ export interface ChipProps {
   style?: ViewStyle;
   textStyle?: TextStyle;
   count?: number;
+  accessibilityLabel?: string;
 }
 
 export const Chip: React.FC<ChipProps> = ({
@@ -21,6 +22,7 @@ export const Chip: React.FC<ChipProps> = ({
   style,
   textStyle,
   count,
+  accessibilityLabel,
 }) => {
   const handlePress = () => {
     try {
@@ -33,6 +35,10 @@ export const Chip: React.FC<ChipProps> = ({
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || `${label}${typeof count === 'number' ? `, ${count}` : ''}`}
+      accessibilityState={{ selected, disabled: !onPress }}
+      disabled={!onPress}
       activeOpacity={0.8}
       onPress={handlePress}
       style={[

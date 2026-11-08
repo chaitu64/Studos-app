@@ -33,7 +33,7 @@ export const CommunityPostCard = React.memo(function CommunityPostCard({ post, o
         <Avatar uri={post.author.avatar} name={post.author.name} size={40} />
         <View style={styles.authorCopy}><Text style={styles.name} numberOfLines={1}>{post.author.name}</Text><Text style={styles.meta} numberOfLines={1}>{[post.author.college || post.author.role, formatPostDate(post.createdAt)].filter(Boolean).join(' · ')}</Text></View>
       </TouchableOpacity>
-      <View style={styles.headerRight}><Text style={styles.category}>{labels[post.type]}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="More options" style={styles.moreButton}><Ionicons name="ellipsis-horizontal" size={19} color={Colors.textMuted} /></TouchableOpacity></View>
+      <View style={styles.headerRight}><Text style={styles.category}>{labels[post.type]}</Text></View>
     </View>
     <TouchableOpacity activeOpacity={0.9} onPress={() => onCardPress?.(post)} disabled={!onCardPress}>
       <Text style={styles.title}>{post.title}</Text><Text style={styles.content}>{post.content}</Text>
@@ -43,10 +43,10 @@ export const CommunityPostCard = React.memo(function CommunityPostCard({ post, o
       {post.tags?.length ? <View style={styles.tags}>{post.tags.slice(0, 4).map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}</View> : null}
     </TouchableOpacity>
     <View style={styles.actions}>
-      {onLike ? <TouchableOpacity style={styles.action} onPress={() => onLike(post)}><Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={20} color={post.isLiked ? Colors.primary : Colors.textMuted} /></TouchableOpacity> : null}
-      {onComment ? <TouchableOpacity style={styles.action} onPress={() => onComment(post)}><Ionicons name="chatbubble-outline" size={19} color={Colors.textMuted} /></TouchableOpacity> : null}
-      {onSave ? <TouchableOpacity style={styles.action} onPress={() => onSave(post)}><Ionicons name={post.isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={post.isSaved ? Colors.primary : Colors.textMuted} /></TouchableOpacity> : null}
-      <TouchableOpacity style={styles.action} onPress={share}><Ionicons name="share-social-outline" size={19} color={Colors.textMuted} /></TouchableOpacity>
+      {onLike && post.likesAvailable !== false ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${post.isLiked ? 'Unlike' : 'Like'} post${post.likesCount === undefined ? '' : `, ${post.likesCount} likes`}`} accessibilityState={{ selected: Boolean(post.isLiked) }} style={styles.action} onPress={() => onLike(post)}><Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={20} color={post.isLiked ? Colors.primary : Colors.textMuted} />{post.likesCount !== undefined ? <Text style={styles.actionText}>{post.likesCount}</Text> : null}</TouchableOpacity> : null}
+      {onComment && post.commentsAvailable !== false ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`View comments${post.commentsCount === undefined ? '' : `, ${post.commentsCount}`}`} style={styles.action} onPress={() => onComment(post)}><Ionicons name="chatbubble-outline" size={19} color={Colors.textMuted} />{post.commentsCount !== undefined ? <Text style={styles.actionText}>{post.commentsCount}</Text> : null}</TouchableOpacity> : null}
+      {onSave && post.savesAvailable !== false ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={post.isSaved ? 'Remove saved post' : 'Save post'} accessibilityState={{ selected: Boolean(post.isSaved) }} style={styles.action} onPress={() => onSave(post)}><Ionicons name={post.isSaved ? 'bookmark' : 'bookmark-outline'} size={19} color={post.isSaved ? Colors.primary : Colors.textMuted} /></TouchableOpacity> : null}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share post" style={styles.action} onPress={share}><Ionicons name="share-social-outline" size={19} color={Colors.textMuted} /></TouchableOpacity>
       {onCollaborate && (post.type === 'idea' || post.type === 'event_collab') ? <TouchableOpacity style={styles.teamButton} onPress={() => onCollaborate(post)}><Text style={styles.teamText}>{post.type === 'idea' ? 'Collaborate' : 'Join team'}</Text></TouchableOpacity> : null}
     </View>
   </View>;

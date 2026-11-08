@@ -56,7 +56,8 @@ export interface UserProfile {
   githubUrl?: string;
   linkedinUrl?: string;
   portfolioUrl?: string;
-  projectsCount?: number;
+  /** False when the optional public-link columns have not been deployed yet. */
+  profileLinksAvailable?: boolean;
   ideasCount?: number;
   hackathonsCount?: number;
   leaderboardRank?: number;
@@ -111,6 +112,7 @@ export interface Idea {
     avatar: string;
     college: string;
     role: string;
+    studyYear?: string;
   };
   createdAt: string;
   upvotes?: number;
@@ -120,6 +122,13 @@ export interface Idea {
   tags: string[];
   isUpvoted?: boolean;
   isBookmarked?: boolean;
+  bookmarkAvailable?: boolean;
+  /** Optional values are only rendered when stored in the idea payload. */
+  ideaType?: string;
+  collaborationOpen?: boolean;
+  resources?: { label: string; url: string }[];
+  collaboratorCount?: number;
+  collaboratorNames?: string[];
 }
 
 export interface TeamMember {
@@ -148,8 +157,11 @@ export interface TeamListing {
   hackathonOrEvent?: string;
   stage: ProjectStage;
   createdAt: string;
-  applicantCount: number;
+  applicantCount?: number;
   isSaved?: boolean;
+  myApplicationStatus?: 'pending' | 'accepted' | 'declined' | 'withdrawn';
+  myApplicationRole?: string;
+  applications?: { id: string; applicantId: string; applicantName: string; applicantAvatar: string; applicantRole: string; requestedRole?: string; message: string; status: 'pending' | 'accepted' | 'declined' | 'withdrawn'; createdAt: string }[];
 }
 
 export interface Opportunity {
@@ -189,30 +201,6 @@ export interface Opportunity {
   featured?: boolean;
   publishedAt?: string;
   updatedAt?: string;
-}
-
-export interface Project {
-  id: string;
-  title: string;
-  tagline: string;
-  description: string;
-  thumbnail: string;
-  technologies: string[];
-  contributors: {
-    id: string;
-    identity?: StudentIdentity;
-    name: string;
-    avatar: string;
-    role: string;
-  }[];
-  status: 'In Development' | 'MVP Ready' | 'Live / Shipped';
-  demoUrl?: string;
-  githubUrl?: string;
-  achievements?: string[];
-  likes?: number;
-  views?: number;
-  isLiked?: boolean;
-  isBookmarked?: boolean;
 }
 
 export interface ChatMessage {
@@ -256,13 +244,14 @@ export interface ChatRoom {
 
 export interface NotificationItem {
   id: string;
-  type: 'match' | 'team_application' | 'team_invite' | 'message' | 'idea_collab' | 'deadline' | 'achievement';
+  type: 'match' | 'team_application' | 'team_invite' | 'message' | 'idea_collab' | 'deadline' | 'achievement' | 'general';
   title: string;
   message: string;
   timestamp: string;
   read: boolean;
   actionUrl?: string;
   avatar?: string;
+  isDemo?: boolean;
 }
 
 export interface LeaderboardUser {
@@ -297,6 +286,8 @@ export interface CommunityPostComment {
   userRole?: string;
   content: string;
   createdAt: string;
+  updatedAt?: string;
+  isOwn?: boolean;
 }
 
 export interface CommunityPost {
@@ -338,6 +329,7 @@ export interface CommunityPost {
   eventRoleNeeded?: string;
   eventDate?: string;
   teamId?: string;
+  openPositions?: number;
 
   // For Projects:
   demoUrl?: string;
@@ -350,6 +342,9 @@ export interface CommunityPost {
   commentsCount?: number;
   isLiked?: boolean;
   isSaved?: boolean;
+  likesAvailable?: boolean;
+  commentsAvailable?: boolean;
+  savesAvailable?: boolean;
   comments?: CommunityPostComment[];
 }
 
@@ -429,6 +424,7 @@ export interface StudyResource {
   fileName: string;
   pdfUrl?: string;
   pdfFileName?: string;
+  youtubeLink?: string;
   driveFileId?: string;
   fileSizeMb?: number;
   sourceFolderUrl?: string;
@@ -451,5 +447,20 @@ export interface StudyResource {
   uploader: CommunityPost['author'];
   uploadedAt: string;
   isBookmarked?: boolean;
+}
+
+export type StudyResourceLinkType = 'youtube' | 'chatgpt';
+
+export interface StudyResourceLink {
+  id: string;
+  study_resource_id: string;
+  resource_type: StudyResourceLinkType;
+  title: string;
+  url: string;
+  submitted_by: string;
+  created_at: string;
+  updated_at: string;
+  contributorName?: string;
+  isMine: boolean;
 }
 

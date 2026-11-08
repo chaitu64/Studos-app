@@ -3,17 +3,16 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Spacing } from '../../constants/theme';
 import { TeamCard } from '../../components/cards/TeamCard';
 import { Chip } from '../../components/ui/Chip';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { SearchField } from '../../components/ui/SearchField';
 import { useApp } from '../../context/AppContext';
 import { StudentRole } from '../../types';
 
@@ -54,21 +53,13 @@ export default function TeamsScreen() {
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       {/* Search & Create Button */}
       <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={16} color={Colors.textMuted} />
-          <TextInput
-            placeholder="Search teams, hackathons, open roles..."
-            placeholderTextColor={Colors.textSubtle}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={styles.searchInput}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        <SearchField
+          accessibilityLabel="Search teams"
+          placeholder="Search teams, events, or roles"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          style={styles.searchField}
+        />
 
         <Button
           title="Create Team"
@@ -95,7 +86,12 @@ export default function TeamsScreen() {
       </View>
 
       {/* Teams List */}
-      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {filteredTeams.length > 0 ? (
           filteredTeams.map((team) => <TeamCard key={team.id} team={team} />)
         ) : (
@@ -125,22 +121,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 8,
   },
-  searchBar: {
+  searchField: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 12,
-    height: 40,
-  },
-  searchInput: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: Typography.body,
-    marginLeft: 8,
+    minWidth: 0,
   },
   createBtn: {
     paddingHorizontal: 12,

@@ -105,7 +105,7 @@ async function listLegacyStudyHubPdfPage(options: StudyResourceFilters, offset: 
 
 export async function fetchStudyHubPdf(id: string): Promise<StudyResource | null> {
   const db = requireSupabase();
-  const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,pdf_file_name,pdf_link,file_size_mb,source_folder_url,drive_file_id,created_at';
+  const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,language,pdf_file_name,pdf_link,youtube_link,file_size_mb,source_folder_url,drive_file_id,created_at';
   const run = (withRelations: boolean) => db.from('study_resources')
     .select(`${columns}${withRelations ? ',profiles(first_name,last_name,college),saved_resources(user_id)' : ''}`)
     .eq('id', id).not('pdf_link', 'is', null).not('pdf_file_name', 'is', null)

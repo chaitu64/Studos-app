@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { safeBack } from '@/navigation/safeBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createStudyResource, fetchResource, ResourceInput, updateStudyResource } from '../services/resourceApi';
 import { StudyResource, StudyResourceType } from '../types';
@@ -28,7 +29,7 @@ export default function ShareResourceScreen() {
     if (!values.title?.trim() || !values.subject?.trim() || !values.academic_year?.trim() || !values.drive_url?.trim()) { setError('Complete the title, subject, academic year, and Drive URL.'); return; }
     if (!rights) { setError('Confirm you have permission to share this material.'); return; }
     setError(''); setBusy(true);
-    try { const input = { ...values, title: values.title.trim(), subject: values.subject.trim(), academic_year: values.academic_year.trim(), category, drive_url: values.drive_url.trim(), rights_confirmed: rights }; if (id) await updateStudyResource(id, input); else await createStudyResource(input); Alert.alert(id ? 'Resource updated' : 'Resource shared', id ? 'Your Study Hub details have been updated.' : 'Your Drive link and study details are now in Study Hub.', [{ text: 'Done', onPress: () => router.back() }]); }
+    try { const input = { ...values, title: values.title.trim(), subject: values.subject.trim(), academic_year: values.academic_year.trim(), category, drive_url: values.drive_url.trim(), rights_confirmed: rights }; if (id) await updateStudyResource(id, input); else await createStudyResource(input); Alert.alert(id ? 'Resource updated' : 'Resource shared', id ? 'Your Study Hub details have been updated.' : 'Your Drive link and study details are now in Study Hub.', [{ text: 'Done', onPress: () => safeBack() }]); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not share this resource.'); }
     finally { setBusy(false); }
   };

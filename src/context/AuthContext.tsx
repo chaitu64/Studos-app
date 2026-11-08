@@ -49,7 +49,7 @@ export function AuthProvider({ children }: React.PropsWithChildren) {
 
   useEffect(() => {
     if (loading || !supabaseConfigured) return;
-    const inAuth = segments[0] === 'login' || segments[0] === 'signup' || segments[0] === 'forgot-password' || segments[0] === 'reset-password' || segments[0] === 'auth-callback';
+    const inAuth = !segments[0] || segments[0] === 'index' || segments[0] === 'welcome' || segments[0] === 'login' || segments[0] === 'signup' || segments[0] === 'forgot-password' || segments[0] === 'reset-password' || segments[0] === 'auth-callback';
     if (!session && !inAuth) router.replace('/login');
     else if (session && inAuth && segments[0] !== 'reset-password') router.replace('/(tabs)');
   }, [loading, router, segments, session]);

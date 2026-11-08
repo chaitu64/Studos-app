@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
+import { safeBack } from '@/navigation/safeBack';
 import { Ionicons } from '@expo/vector-icons';
 import { StudyResource, StudyResourceType } from '../../types';
 import { listStudyHubPdfPage, saveResource } from '../../services/resourceApi';
 import { ResourceCard } from '../../components/home/ResourceCard';
+import { SearchField } from '../../components/ui/SearchField';
+import { BorderRadius, Colors, Spacing, Typography } from '../../constants/theme';
+import { Header } from '../../components/navigation/Header';
 
 const PAGE_SIZE = 24;
 const CATEGORIES: { label: string; value: StudyResourceType | 'all' }[] = [
@@ -14,9 +18,10 @@ const CATEGORIES: { label: string; value: StudyResourceType | 'all' }[] = [
   { label: 'Lab manuals', value: 'lab_manual' }, { label: 'Study guides', value: 'study_guide' },
 ];
 
-type Filters = { search?: string; subject?: string; studyYear?: number; semester?: string; category?: string };
+type Filters = { search?: string; subject?: string; studyYear?: number; semester?: string; category?: string; regulation?: string };
 
 export default function AcademicLibraryScreen() {
+  const pathname = usePathname();
   const [items, setItems] = useState<StudyResource[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -31,6 +36,7 @@ export default function AcademicLibraryScreen() {
   const [subject, setSubject] = useState('');
   const [studyYear, setStudyYear] = useState('');
   const [semester, setSemester] = useState('');
+  const [regulation, setRegulation] = useState('');
   const [category, setCategory] = useState<StudyResourceType | 'all'>('all');
   const sequence = useRef(0);
 
@@ -44,8 +50,9 @@ export default function AcademicLibraryScreen() {
     subject: subject.trim() || undefined,
     studyYear: /^\d+$/.test(studyYear) ? Number(studyYear) : undefined,
     semester: semester.trim() || undefined,
+    regulation: regulation.trim() || undefined,
     category,
-  }), [debouncedSearch, subject, studyYear, semester, category]);
+  }), [debouncedSearch, subject, studyYear, semester, regulation, category]);
 
   useEffect(() => {
     const current = ++sequence.current;
@@ -88,42 +95,61 @@ export default function AcademicLibraryScreen() {
 
   const refresh = () => { setRefreshing(true); setRetry((value) => value + 1); };
   const visibleSubjects = [...new Set(items.map((item) => item.subject).filter(Boolean))];
+  const availableCategories = CATEGORIES.filter((entry) => entry.value === 'all' || items.some((item) => item.type === entry.value));
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
+    <Header title="Study Hub" subtitle="Your semester, organized." hideGreeting showSearch={false} />
     <FlatList
       data={items}
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => <ResourceCard compact resource={item} onOpen={() => router.push({ pathname: '/resource/[id]', params: { id: item.id } } as never)} onBookmark={() => { void saveResource(item.id, !item.isBookmarked).then(() => setItems((rows) => rows.map((row) => row.id === item.id ? { ...row, isBookmarked: !item.isBookmarked } : row))).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not update saved resources.')); }} />}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       ListHeaderComponent={<View>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={21} color="#FFF" /></TouchableOpacity>
-        <Text style={styles.title}>Study Hub</Text>
-        <Text style={styles.subtitle}>PDFs and study resources from the STUDOS database.</Text>
-        <TextInput accessibilityLabel="Search study resources" value={search} onChangeText={setSearch} placeholder="Search title, filename, or subject" placeholderTextColor="#858D9E" style={styles.input} />
+        {pathname.includes('academic-library') ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack()} style={styles.back}><Ionicons name="arrow-back" size={21} color="#FFF" /></TouchableOpacity> : null}
+        <Text style={styles.eyebrow}>STUDOS LIBRARY</Text>
+        <SearchField accessibilityLabel="Search study resources" value={search} onChangeText={setSearch} placeholder="Search title, filename, or subject" />
         <View style={styles.filtersRow}>
-          <TextInput accessibilityLabel="Filter by study year" value={studyYear} onChangeText={setStudyYear} placeholder="Year" keyboardType="number-pad" placeholderTextColor="#858D9E" style={styles.smallInput} />
-          <TextInput accessibilityLabel="Filter by semester" value={semester} onChangeText={setSemester} placeholder="Semester" placeholderTextColor="#858D9E" style={styles.smallInput} />
-          <TextInput accessibilityLabel="Filter by full subject name" value={subject} onChangeText={setSubject} placeholder="Subject" placeholderTextColor="#858D9E" style={[styles.smallInput, styles.subjectInput]} />
+          <TextInput accessibilityLabel="Filter by study year" value={studyYear} onChangeText={setStudyYear} placeholder="Study year" keyboardType="number-pad" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
+          <TextInput accessibilityLabel="Filter by semester" value={semester} onChangeText={setSemester} placeholder="Semester" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
+          <TextInput accessibilityLabel="Filter by full subject name" value={subject} onChangeText={setSubject} placeholder="Subject" placeholderTextColor={Colors.textSubtle} style={[styles.smallInput, styles.subjectInput]} />
+          <TextInput accessibilityLabel="Filter by regulation" value={regulation} onChangeText={setRegulation} placeholder="Regulation" placeholderTextColor={Colors.textSubtle} style={[styles.smallInput, styles.subjectInput]} />
         </View>
-        <FlatList horizontal data={CATEGORIES} keyExtractor={(item) => item.value} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow} renderItem={({ item }) => <TouchableOpacity onPress={() => setCategory(item.value)} style={[styles.category, category === item.value && styles.categorySelected]}><Text style={[styles.categoryText, category === item.value && styles.categoryTextSelected]}>{item.label}</Text></TouchableOpacity>} />
-        {visibleSubjects.length ? <Text style={styles.subjectHints}>Subjects in these results: {visibleSubjects.join('  ·  ')}</Text> : null}
+        <FlatList horizontal data={availableCategories} keyExtractor={(item) => item.value} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow} renderItem={({ item }) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected: category === item.value }} onPress={() => setCategory(item.value)} style={[styles.category, category === item.value && styles.categorySelected]}><Text style={[styles.categoryText, category === item.value && styles.categoryTextSelected]}>{item.label}</Text></TouchableOpacity>} />
+        {visibleSubjects.length ? <Text style={styles.subjectHints}>Subjects: {visibleSubjects.slice(0, 3).join(' · ')}{visibleSubjects.length > 3 ? ` +${visibleSubjects.length - 3} more` : ''}</Text> : null}
         <Text style={styles.count}>{loading ? 'Loading resources…' : `${items.length} loaded${total ? ` of ${total}` : ''}`}</Text>
+        {error && items.length ? <View style={styles.inlineError}><Text accessibilityRole="alert" style={styles.stateText}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
       </View>}
-      ListEmptyComponent={loading ? <View style={styles.state}><ActivityIndicator color="#FF6B63" /><Text style={styles.stateText}>Loading study resources…</Text></View> : error ? <View style={styles.state}><Ionicons name="cloud-offline-outline" size={30} color="#858D9E" /><Text style={styles.stateText}>{error}</Text><TouchableOpacity style={styles.retryButton} onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <View style={styles.state}><Text style={styles.stateText}>No study resources match these filters.</Text></View>}
-      ListFooterComponent={loadingMore ? <ActivityIndicator color="#FF6B63" style={{ padding: 20 }} /> : hasMore ? <TouchableOpacity onPress={() => void loadMore()} style={styles.loadMore}><Text style={styles.retryText}>Load more resources</Text></TouchableOpacity> : undefined}
+      ListEmptyComponent={loading ? <View style={styles.state}><ActivityIndicator color={Colors.primary} /><Text style={styles.stateText}>Loading study resources…</Text></View> : error ? <View style={styles.state}><Ionicons name="cloud-offline-outline" size={30} color={Colors.textMuted} /><Text accessibilityRole="alert" style={styles.stateText}>{error}</Text><TouchableOpacity accessibilityRole="button" style={styles.retryButton} onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <View style={styles.state}><Text style={styles.stateText}>No study resources match these filters.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { setSearch(''); setStudyYear(''); setSemester(''); setSubject(''); setRegulation(''); setCategory('all'); }}><Text style={styles.retryText}>Clear filters</Text></TouchableOpacity></View>}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={Colors.primary} style={{ padding: 20 }} /> : hasMore ? <TouchableOpacity accessibilityRole="button" onPress={() => void loadMore()} style={styles.loadMore}><Text style={styles.retryText}>Load more resources</Text></TouchableOpacity> : undefined}
       onEndReached={() => void loadMore()}
       onEndReachedThreshold={0.45}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#FF6B63" colors={['#FF6B63']} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
     />
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#090A0F' }, content: { paddingHorizontal: 16, paddingBottom: 30 },
-  back: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#171D2D', alignItems: 'center', justifyContent: 'center', marginVertical: 14 },
-  title: { color: '#FFF', fontSize: 28, lineHeight: 34, fontWeight: '800' }, subtitle: { color: '#A5ACBA', fontSize: 14, lineHeight: 20, marginTop: 5, marginBottom: 16 },
-  input: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 12, minHeight: 48, paddingHorizontal: 14, marginBottom: 9, fontSize: 15 },
-  filtersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, smallInput: { color: '#FFF', backgroundColor: '#121624', borderWidth: 1, borderColor: '#303749', borderRadius: 10, minHeight: 44, paddingHorizontal: 12, flex: 1, minWidth: 76, fontSize: 14 }, subjectInput: { flex: 1.5, minWidth: 110 },
-  categoryRow: { gap: 7, paddingVertical: 12 }, category: { minHeight: 40, justifyContent: 'center', borderWidth: 1, borderColor: '#303749', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#121624' }, categorySelected: { backgroundColor: '#C92F32', borderColor: '#C92F32' }, categoryText: { color: '#A5ACBA', fontSize: 12, fontWeight: '600' }, categoryTextSelected: { color: '#FFF' },
-  subjectHints: { color: '#929AAA', fontSize: 11, lineHeight: 17, marginBottom: 6 }, count: { color: '#929AAA', fontSize: 11, marginBottom: 12 }, state: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 36, paddingHorizontal: 24 }, stateText: { color: '#A5ACBA', fontSize: 13, textAlign: 'center', lineHeight: 20 }, retryButton: { backgroundColor: '#E5433B', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 9 }, retryText: { color: '#FFF', fontWeight: '800', fontSize: 12 }, loadMore: { backgroundColor: '#171D2D', padding: 14, alignItems: 'center', borderRadius: 9, marginTop: 10 },
+  safe: { flex: 1, backgroundColor: Colors.background },
+  content: { paddingHorizontal: Spacing.screenPadding, paddingBottom: 36 },
+  back: { width: 44, height: 44, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 8, marginBottom: 22 },
+  eyebrow: { color: Colors.primary, fontSize: 11, lineHeight: 16, letterSpacing: 1, fontWeight: Typography.bold, marginBottom: 5 },
+  title: { color: Colors.textPrimary, fontSize: 30, lineHeight: 38, fontWeight: Typography.bold, letterSpacing: -0.7 },
+  subtitle: { color: Colors.textMuted, fontSize: 15, lineHeight: 22, marginTop: 6, marginBottom: 18 },
+  filtersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  smallInput: { color: Colors.textPrimary, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, minHeight: 46, paddingHorizontal: 12, flex: 1, minWidth: 88, fontSize: 13 },
+  subjectInput: { flexBasis: '100%' },
+  categoryRow: { gap: 8, paddingVertical: 15 },
+  category: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.full, paddingHorizontal: 15, backgroundColor: Colors.surface },
+  categorySelected: { backgroundColor: Colors.primarySubtle, borderColor: Colors.primary },
+  categoryText: { color: Colors.textSecondary, fontSize: 12, fontWeight: Typography.semiBold },
+  categoryTextSelected: { color: Colors.primary },
+  inlineError: { borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.error, backgroundColor: Colors.errorSubtle, padding: 12, marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  subjectHints: { color: Colors.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 8 },
+  count: { color: Colors.textMuted, fontSize: 12, marginBottom: 12 },
+  state: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 36, paddingHorizontal: 24, backgroundColor: Colors.surface, borderRadius: 18, borderWidth: 1, borderColor: Colors.border },
+  stateText: { color: Colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  retryButton: { backgroundColor: Colors.primary, minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 11 },
+  retryText: { color: Colors.textOnPrimary, fontWeight: Typography.bold, fontSize: 13 },
+  loadMore: { backgroundColor: Colors.surface, minHeight: 48, padding: 14, alignItems: 'center', justifyContent: 'center', borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: Colors.border },
 });
