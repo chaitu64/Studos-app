@@ -7,7 +7,7 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { Button } from '../../../components/ui/Button';
 import { Colors, Typography, Spacing } from '../../../constants/theme';
 import { studentDirectoryService } from '../../../services/studentDirectoryService';
-import { chatService } from '../../../services/chatService';
+import { chatService, chatRequestsEnabled } from '../../../services/chatService';
 import { useApp } from '../../../context/AppContext';
 import type { StudentIdentity } from '../../../types';
 
@@ -19,7 +19,7 @@ export default function StudentPortfolioScreen() {
   const load = useCallback(async () => { if (!id || (type !== 'real' && type !== 'demo')) { setError('This student profile link is invalid.'); setLoading(false); return; } setError(''); try { const result = await studentDirectoryService.portfolio({ type, id } as StudentIdentity); setData(result); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not load this profile.'); } finally { setLoading(false); setRefreshing(false); } }, [id, type]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   const openUrl = (url?: string) => { const safe = validWebUrl(url); if (safe) void Linking.openURL(safe); };
-  const messageStudent = async () => { if (!data || type !== 'real' || data.profile.id === user.id || messaging) return; setMessaging(true); try { const conversationId = await chatService.startDirectConversation(data.profile.id); router.push({ pathname: '/chat/[id]', params: { id: conversationId } } as never); } catch (cause) { Alert.alert('Could not open chat', cause instanceof Error ? cause.message : 'Please try again.'); } finally { setMessaging(false); } };
+  const messageStudent = async () => { if (!data || type !== 'real' || data.profile.id === user.id || messaging) return; setMessaging(true); try { const conversationId = await chatService.existingConversation(data.profile.id); if (conversationId) router.push({ pathname: '/chat/[id]', params: { id: conversationId } } as never); else if (chatRequestsEnabled) router.push({ pathname: '/messages', params: { recipient: data.profile.id } } as never); else Alert.alert('Messaging setup required', 'Chat requests are not available until the reviewed database migration is deployed and verified.'); } catch (cause) { Alert.alert('Could not open chat', cause instanceof Error ? cause.message : 'Please try again.'); } finally { setMessaging(false); } };
   if (loading) return <SafeAreaView style={styles.safe} edges={['top']}><TouchableOpacity accessibilityRole="button" style={styles.backButton} onPress={() => safeBack()}><Text style={styles.back}>‹  Students</Text></TouchableOpacity><ActivityIndicator style={{ marginTop: 80 }} color={Colors.primary} /></SafeAreaView>;
   if (!data) return <SafeAreaView style={styles.safe} edges={['top']}><TouchableOpacity accessibilityRole="button" style={styles.backButton} onPress={() => safeBack()}><Text style={styles.back}>‹  Students</Text></TouchableOpacity><View style={styles.error}><Text style={styles.errorTitle}>Profile unavailable</Text><Text style={styles.body}>{error || 'Try again in a moment.'}</Text><TouchableOpacity accessibilityRole="button" onPress={() => { setLoading(true); void load(); }}><Text style={styles.link}>Retry</Text></TouchableOpacity></View></SafeAreaView>;
   const { profile } = data;
@@ -28,7 +28,7 @@ export default function StudentPortfolioScreen() {
     <TouchableOpacity onPress={() => safeBack()}><Text style={styles.back}>‹  Students</Text></TouchableOpacity>
     {type === 'real' && user.id === id ? <TouchableOpacity accessibilityRole="button" style={styles.editButton} onPress={() => router.push('/(tabs)/profile' as never)}><Text style={styles.editText}>Edit my profile</Text></TouchableOpacity> : null}
     <View style={styles.hero}><Avatar uri={profile.avatar} name={profile.name} size={76} /><View style={{ flex: 1 }}><View style={styles.nameRow}><Text style={styles.name}>{profile.name}</Text>{profile.isDemo ? <Text style={styles.demo}>DEMO PROFILE</Text> : null}</View><Text style={styles.sub}>{[profile.branch, profile.college].filter(Boolean).join(' · ')}</Text><Text style={styles.sub}>{[profile.degree, profile.studyYear && `Year ${profile.studyYear}`, profile.gradYear && `Class of ${profile.gradYear}`].filter(Boolean).join(' · ')}</Text></View></View>
-    {type === 'real' && profile.id !== user.id ? <Button title={messaging ? 'Opening chat…' : 'Message student'} variant="outline" disabled={messaging} loading={messaging} onPress={() => { void messageStudent(); }} style={{ marginTop: 12 }} /> : null}
+    {type === 'real' && profile.id !== user.id ? <Button title={messaging ? 'Opening…' : 'Message student'} variant="outline" disabled={messaging} loading={messaging} onPress={() => { void messageStudent(); }} style={{ marginTop: 12 }} /> : null}
     {profile.shortBio ? <Text style={styles.bio}>{profile.shortBio}</Text> : null}
     {profile.skills.length ? <View style={styles.chips}><Text style={styles.label}>SKILLS</Text>{profile.skills.map((skill) => <Text key={skill} style={styles.chip}>{skill}</Text>)}</View> : null}
     {profile.interests.length ? <View style={styles.chips}><Text style={styles.label}>INTERESTS</Text>{profile.interests.map((item) => <Text key={item} style={styles.chip}>{item}</Text>)}</View> : null}

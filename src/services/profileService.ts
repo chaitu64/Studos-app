@@ -13,6 +13,7 @@ export const authIdentityProfile = (user: User): UserProfile => {
   return {
     id,
     name: name || 'Not provided',
+    middleName: String(metadata.middle_name || ''),
     givenName: givenName || fullName.split(/\s+/)[0] || '',
     familyName: familyName || fullName.split(/\s+/).slice(1).join(' '),
     email: user.email || '',
@@ -21,8 +22,12 @@ export const authIdentityProfile = (user: User): UserProfile => {
     collegeEmail: '',
     dateOfBirth: '',
     avatar: String(metadata.avatar_url || metadata.picture || ''),
-    college: '', branch: '', degree: '', studyYear: '', gradYear: '', shortBio: '',
-    skills: [], interests: [],
+    college: String(metadata.college || ''), branch: String(metadata.branch || ''), degree: String(metadata.degree || ''),
+    studyYear: metadata.study_year == null ? '' : String(metadata.study_year), gradYear: metadata.graduation_year == null ? '' : String(metadata.graduation_year),
+    shortBio: String(metadata.bio || ''), skills: Array.isArray(metadata.skills) ? metadata.skills.map(String) : [],
+    interests: Array.isArray(metadata.interests) ? metadata.interests.map(String) : [],
+    githubUrl: String(metadata.github_url || '') || undefined, linkedinUrl: String(metadata.linkedin_url || '') || undefined,
+    portfolioUrl: String(metadata.portfolio_url || '') || undefined, phoneNumber: String(metadata.phone_number || ''),
   };
 };
 
@@ -35,27 +40,30 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
   // A local/demo profile is never allowed to seed an authenticated account.
   const safeBase = fallback.id === id ? { ...authBase, ...fallback, id, email: authBase.email, emailVerified: authBase.emailVerified, givenName: authBase.givenName, familyName: authBase.familyName } : authBase;
 
-  let data: Record<string, any> | null = null;
-  let profileLinksAvailable = false;
-  const selects = [
-    'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url,github_url,linkedin_url,portfolio_url',
-    'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url',
-    'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests',
-    'id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio',
-    'id,first_name,last_name,college,branch',
-  ];
-  for (const columns of selects) {
-    const result = await db.from('profiles').select(columns).eq('id', id).maybeSingle();
-    if (!result.error) { data = result.data as Record<string, any> | null; profileLinksAvailable = columns.includes('github_url'); break; }
-    if (result.error.code !== '42703' && result.error.code !== 'PGRST204') throw result.error;
+  const { error: ensureError } = await db.rpc('ensure_student_profile');
+  if (ensureError) {
+    if (ensureError.code === 'PGRST202') {
+      // Keep Supabase's PostgREST code so callers can diagnose the missing RPC.
+      throw Object.assign(new Error('Student profile setup is unavailable. Ask the project administrator to apply migration 018 and reload the Supabase API schema cache.'), {
+        code: ensureError.code,
+        details: ensureError.details,
+        hint: ensureError.hint,
+      });
+    }
+    throw ensureError;
   }
+  const { data, error: profileError } = await db.from('profiles')
+    .select('id,auth_user_id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url,github_url,linkedin_url,portfolio_url,onboarding_completed')
+    .eq('auth_user_id', id).maybeSingle();
+  if (profileError) throw profileError;
+  const profileLinksAvailable = true;
 
   let privateData: Record<string, any> | null = null;
-  const privateResult = await db.from('profile_private').select('college_email,date_of_birth').eq('id', id).maybeSingle();
+  const privateResult = await db.from('profile_private').select('college_email,date_of_birth,phone_number').eq('id', id).maybeSingle();
   if (!privateResult.error) privateData = privateResult.data as Record<string, any> | null;
   else if (privateResult.error.code !== '42P01' && privateResult.error.code !== 'PGRST205' && privateResult.error.code !== '42703') throw privateResult.error;
 
-  if (!data) return { ...safeBase, collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '', profileLinksAvailable };
+  if (!data) return { ...safeBase, collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '', profileLinksAvailable, onboardingCompleted: false };
   const profileName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ').trim();
   const metadata = user.user_metadata || {};
   const metadataName = String(metadata.full_name || metadata.name || '').trim();
@@ -63,6 +71,7 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
     ...safeBase,
     name: profileName || metadataName || safeBase.name,
     givenName: data.first_name || authBase.givenName,
+    middleName: data.middle_name || undefined,
     familyName: data.last_name || authBase.familyName,
     email: user.email || '',
     emailVerified: Boolean(user.email_confirmed_at),
@@ -72,8 +81,9 @@ export async function getStudentProfile(id: string, fallback: UserProfile, authU
     shortBio: data.bio || '', skills: data.skills || [], interests: data.interests || [],
     githubUrl: data.github_url || undefined, linkedinUrl: data.linkedin_url || undefined,
     portfolioUrl: data.portfolio_url || undefined, profileLinksAvailable,
+    onboardingCompleted: Boolean(data.onboarding_completed),
     avatar: (user.app_metadata?.provider === 'google' ? String(metadata.avatar_url || metadata.picture || '') : '') || data.avatar_url || String(metadata.avatar_url || metadata.picture || ''),
-    collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '',
+    collegeEmail: privateData?.college_email || '', dateOfBirth: privateData?.date_of_birth || '', phoneNumber: privateData?.phone_number || '',
   };
 }
 
@@ -81,52 +91,27 @@ export async function updateStudentProfile(id: string, updated: Partial<UserProf
   const db = requireSupabase();
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.id !== id) throw new Error('Your session changed. Sign in again to edit this profile.');
-  const fields: Record<string, unknown> = {};
-  if (updated.shortBio !== undefined) fields.bio = updated.shortBio;
-  if (updated.skills !== undefined) fields.skills = updated.skills;
-  if (updated.interests !== undefined) fields.interests = updated.interests;
-  if (updated.college !== undefined) fields.college = updated.college || null;
-  if (updated.degree !== undefined) fields.degree = updated.degree || null;
-  if (updated.branch !== undefined) fields.branch = updated.branch || null;
-  if (updated.studyYear !== undefined) fields.study_year = updated.studyYear ? Number(updated.studyYear) : null;
-  if (updated.gradYear !== undefined) fields.graduation_year = updated.gradYear ? Number(updated.gradYear) : null;
-  if (updated.avatar !== undefined && updated.avatar) fields.avatar_url = updated.avatar;
-  if (updated.name !== undefined) {
-    const parts = updated.name.trim().split(/\s+/).filter(Boolean);
-    fields.first_name = parts.shift() || '';
-    fields.last_name = parts.pop() || '';
-    fields.middle_name = parts.join(' ') || null;
-  }
-  if (Object.keys(fields).length) {
-    fields.updated_at = new Date().toISOString();
-    const { error } = await db.from('profiles').update(fields).eq('id', id);
-    if (error) throw error;
-  }
-  const linkUpdates = {
-    ...(updated.githubUrl !== undefined ? { github_url: updated.githubUrl || null } : {}),
-    ...(updated.linkedinUrl !== undefined ? { linkedin_url: updated.linkedinUrl || null } : {}),
-    ...(updated.portfolioUrl !== undefined ? { portfolio_url: updated.portfolioUrl || null } : {}),
+  const links = [updated.githubUrl, updated.linkedinUrl, updated.portfolioUrl, updated.avatar].filter((value): value is string => Boolean(value?.trim()));
+  if (links.some((value) => !/^https:\/\//i.test(value.trim()))) throw new Error('Profile links and image URLs must use HTTPS.');
+  const skills = [...new Set((updated.skills ?? current.skills).map((value) => value.trim()).filter(Boolean))];
+  const interests = [...new Set((updated.interests ?? current.interests).map((value) => value.trim()).filter(Boolean))];
+  const parts = (updated.name ?? current.name).trim().split(/\s+/).filter(Boolean);
+  const firstName = parts.shift() || '';
+  const lastName = parts.pop() || '';
+  const payload = {
+    first_name: updated.givenName ?? firstName, middle_name: updated.middleName ?? (parts.join(' ') || ''),
+    last_name: updated.familyName ?? lastName, college: updated.college ?? current.college,
+    degree: updated.degree ?? current.degree, branch: updated.branch ?? current.branch ?? '',
+    study_year: updated.studyYear ?? current.studyYear ?? '', graduation_year: updated.gradYear ?? current.gradYear ?? '',
+    bio: updated.shortBio ?? current.shortBio, skills,
+    interests, avatar_url: updated.avatar ?? current.avatar,
+    github_url: updated.githubUrl ?? current.githubUrl ?? '', linkedin_url: updated.linkedinUrl ?? current.linkedinUrl ?? '',
+    portfolio_url: updated.portfolioUrl ?? current.portfolioUrl ?? '', phone_number: updated.phoneNumber ?? current.phoneNumber ?? '',
+    college_email: updated.collegeEmail ?? current.collegeEmail ?? '', date_of_birth: updated.dateOfBirth ?? current.dateOfBirth ?? '',
   };
-  let profileLinksAvailable = current.profileLinksAvailable ?? false;
-  if (Object.keys(linkUpdates).length) {
-    const probe = await db.from('profiles').select('github_url,linkedin_url,portfolio_url').eq('id', id).maybeSingle();
-    if (probe.error && (probe.error.code === '42703' || probe.error.code === 'PGRST204')) {
-      profileLinksAvailable = false;
-    } else if (probe.error) throw probe.error;
-    else {
-      profileLinksAvailable = true;
-      const { error } = await db.from('profiles').update(linkUpdates).eq('id', id);
-      if (error) throw error;
-    }
-  }
-  if (updated.collegeEmail !== undefined || updated.dateOfBirth !== undefined) {
-    const privateFields: Record<string, unknown> = {};
-    if (updated.collegeEmail !== undefined) privateFields.college_email = updated.collegeEmail || null;
-    if (updated.dateOfBirth !== undefined) privateFields.date_of_birth = updated.dateOfBirth || null;
-    privateFields.updated_at = new Date().toISOString();
-    const { error } = await db.from('profile_private').upsert({ id, ...privateFields }, { onConflict: 'id' });
-    if (error) throw error;
-  }
+  const { error: saveError } = await db.rpc('save_student_profile', { p_profile: payload });
+  if (saveError) throw saveError;
+  const profileLinksAvailable = true;
   const refreshed = await getStudentProfile(id, current, user);
   return { ...refreshed, profileLinksAvailable };
 }

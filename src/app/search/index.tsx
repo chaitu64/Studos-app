@@ -25,6 +25,7 @@ import { studentCommunityService, StudentHelpRequest, StudentProblem, StudentTea
 import { studentServicesService } from '../../services/studentServicesService';
 import type { StudentService } from '../../services/homeDiscoveryData';
 import { listStudyResources } from '../../services/resourceApi';
+import { visibleSearchResultCount } from '../../utils/globalSearch';
 
 const SEARCH_TABS = ['All', 'Students', 'Ideas', 'Problems', 'Help requests', 'Openings', 'Services', 'Study resources', 'Posts', 'Teams', 'Opportunities', 'Rooms'];
 
@@ -122,18 +123,19 @@ export default function GlobalSearchScreen() {
     (q ? matchedRooms.length : 0) + matchedProblems.length + matchedHelp.length + matchedOpenings.length + matchedServices.length + matchedResources.length;
   const appSourceErrors = ['students', 'ideas', 'teams', 'posts', 'opportunities'].filter((key) => dataErrors[key]);
   const unavailableSources = [...new Set([...sourceErrors, ...loadError.split(', ').filter(Boolean), ...appSourceErrors.map((key) => `${key} data`)])];
-  const visibleResultCount = selectedTab === 'Students' ? matchedStudents.length
-    : selectedTab === 'Posts' ? matchedPosts.length
-      : selectedTab === 'Ideas' ? matchedIdeas.length
-        : selectedTab === 'Teams' ? matchedTeams.length
-          : selectedTab === 'Opportunities' ? matchedOpps.length
-            : selectedTab === 'Problems' ? matchedProblems.length
-              : selectedTab === 'Help requests' ? matchedHelp.length
-                : selectedTab === 'Openings' ? matchedOpenings.length
-                  : selectedTab === 'Services' ? matchedServices.length
-                    : selectedTab === 'Study resources' ? matchedResources.length
-                      : selectedTab === 'Rooms' ? matchedRooms.length
-              : totalResults;
+  const visibleResultCount = visibleSearchResultCount(selectedTab, {
+    Students: matchedStudents.length,
+    Posts: matchedPosts.length,
+    Ideas: matchedIdeas.length,
+    Teams: matchedTeams.length,
+    Opportunities: matchedOpps.length,
+    Problems: matchedProblems.length,
+    'Help requests': matchedHelp.length,
+    Openings: matchedOpenings.length,
+    Services: matchedServices.length,
+    'Study resources': matchedResources.length,
+    Rooms: matchedRooms.length,
+  }, totalResults);
 
   const handleSelectKeyword = (kw: string) => {
     setQuery(kw);

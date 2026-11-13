@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,11 +9,22 @@ import { authService } from '../../services/authService';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { Colors, Spacing, Typography, BorderRadius } from '../../constants/theme';
+import { chatRequestsEnabled, chatService } from '../../services/chatService';
 
 export default function SettingsScreen() {
   const { user } = useApp();
   const { session } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [allowChatRequests, setAllowChatRequests] = useState(true);
+  const [savingChatPrivacy, setSavingChatPrivacy] = useState(false);
+  useEffect(() => { if (chatRequestsEnabled) void chatService.requestPreference().then(setAllowChatRequests).catch(() => undefined); }, []);
+
+  const updateChatPreference = async (enabled: boolean) => {
+    setSavingChatPrivacy(true);
+    try { await chatService.setRequestPreference(enabled); setAllowChatRequests(enabled); }
+    catch (cause) { Alert.alert('Privacy setting not saved', cause instanceof Error ? cause.message : 'Please try again.'); }
+    finally { setSavingChatPrivacy(false); }
+  };
 
   const signOut = async () => {
     if (signingOut) return;
@@ -53,10 +64,10 @@ export default function SettingsScreen() {
           <View style={styles.infoRow}>
             <View style={styles.infoIcon}><Ionicons name="shield-checkmark-outline" size={19} color={Colors.accentCyan} /></View>
             <View style={styles.rowCopy}>
-              <Text style={styles.rowLabel}>Privacy controls</Text>
-              <Text style={styles.rowDetail}>Profile visibility and notification preferences are not available yet.</Text>
+              <Text style={styles.rowLabel}>Message requests</Text>
+              <Text style={styles.rowDetail}>{chatRequestsEnabled ? 'Allow other students to send you private chat requests.' : 'Available after messaging setup is deployed and verified.'}</Text>
             </View>
-            <Text style={styles.comingSoon}>Soon</Text>
+            <Switch accessibilityLabel="Allow message requests" value={allowChatRequests} disabled={!chatRequestsEnabled || savingChatPrivacy} onValueChange={(value) => void updateChatPreference(value)} trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }} thumbColor={Colors.textPrimary} />
           </View>
           <View style={styles.divider} />
           <View style={styles.infoRow}>

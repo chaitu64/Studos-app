@@ -9,7 +9,7 @@ const row = (overrides = {}) => ({
   pdf_file_name: 'Module 1 notes.pdf', pdf_link: 'https://drive.google.com/file/d/file-id-123456/view',
   file_size_mb: 2.5, source_folder_url: 'https://drive.google.com/drive/folders/folder-id-123456',
   drive_file_id: 'file-id-123456', created_at: '2025-01-02T00:00:00.000Z',
-  profiles: { first_name: 'STUDOS', last_name: '', college: 'VVIT' }, saved_resources: [],
+  author_profile: { first_name: 'STUDOS', last_name: '', college: 'VVIT' }, saved_resources: [],
   ...overrides,
 });
 
@@ -66,12 +66,15 @@ test('Study Hub reads the existing study_resources table without requiring Acade
 });
 
 test('resource detail keeps nullable PDF metadata and relations optional', () => {
-  const resource = toStudyHubPdfResource(row({ file_size_mb: null, source_folder_url: null, profiles: null, saved_resources: undefined }));
+  const resource = toStudyHubPdfResource(row({ file_size_mb: null, source_folder_url: null, author_profile: null, saved_resources: undefined }));
   assert.equal(resource.pdfUrl, row().pdf_link);
   assert.equal(resource.fileName, row().pdf_file_name);
+  assert.equal(resource.college, row().college);
   assert.equal(resource.fileSizeMb, undefined);
   assert.equal(resource.sourceFolderUrl, undefined);
   assert.equal(resource.uploader.name, 'Student');
+
+  assert.equal(toStudyHubPdfResource(row({ college: null })).college, undefined);
 
   const calls = [];
   const builder = {};

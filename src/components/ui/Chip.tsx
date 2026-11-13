@@ -76,9 +76,9 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 44,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
+    minHeight: 36,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: BorderRadius.full,
     marginRight: 8,
     borderWidth: 1,
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   text: {
-    fontSize: Typography.subhead,
+    fontSize: Typography.caption,
     fontWeight: Typography.medium,
   },
   textUnselected: {

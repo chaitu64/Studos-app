@@ -8,58 +8,93 @@ import { useAuth } from '../../context/AuthContext';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 type Mode = 'login' | 'signup' | 'forgot' | 'reset';
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const signupSteps = ['Account', 'Academic identity', 'Your profile'];
+
 export default function AuthScreen({ mode }: { mode: Mode }) {
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [step, setStep] = useState(1);
+  const [emailEnabled, setEmailEnabled] = useState(mode === 'login');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [needsVerification, setNeedsVerification] = useState(false);
   const { configurationError } = useAuth();
   const set = (key: string, value: string) => setFields((current) => ({ ...current, [key]: value }));
+
   const signInWithGoogle = async () => {
-    setError('');
-    setBusy(true);
+    setError(''); setNotice(''); setBusy(true);
     try {
-      const redirectTo = Platform.OS === 'web' ? undefined : Linking.createURL('auth-callback');
-      if (__DEV__ && redirectTo) console.info('[auth] Google redirect URL:', redirectTo);
-      const { data, error: authError } = await authService.signInWithGoogle(redirectTo ?? '', Platform.OS !== 'web');
+      const redirectTo = Linking.createURL('auth-callback');
+      const { data, error: authError } = await authService.signInWithGoogle(redirectTo, Platform.OS !== 'web');
       if (authError) throw authError;
       if (Platform.OS === 'web') return;
-      if (!data.url || !redirectTo) throw new Error('Could not start Google sign-in. Check your Supabase Google provider settings.');
-
+      if (!data.url) throw new Error('Google sign-in could not start. Check the Supabase Google provider settings.');
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success') return;
+      if (result.type === 'cancel' || result.type === 'dismiss') return;
+      if (result.type !== 'success') throw new Error('Google sign-in did not complete. Please try again.');
       const callback = new URL(result.url);
       const callbackError = callback.searchParams.get('error_description') || callback.searchParams.get('error');
       if (callbackError) throw new Error(callbackError);
       const code = callback.searchParams.get('code');
       if (!code) throw new Error('Google sign-in did not return an authorization code.');
       router.replace({ pathname: '/auth-callback', params: { code } });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Google sign-in failed. Try again.');
-    } finally {
-      setBusy(false);
-    }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Google sign-in failed. Try again.'); }
+    finally { setBusy(false); }
   };
+
+  const validateStep = () => {
+    if (step === 1) {
+      if (!emailPattern.test((fields.email || '').trim())) return 'Enter a valid email address.';
+      if ((fields.password || '').length < 8) return 'Use a password with at least 8 characters.';
+      if (fields.password !== fields.confirmPassword) return 'Your passwords do not match.';
+    } else if (step === 2) {
+      if (!fields.college?.trim() || !fields.degree?.trim() || !fields.branch?.trim()) return 'Add your college, degree and branch to continue.';
+      if (!/^[1-8]$/.test(fields.study_year || '')) return 'Study year must be from 1 to 8.';
+      const gradYear = Number(fields.graduation_year);
+      if (!/^\d{4}$/.test(fields.graduation_year || '') || gradYear < 2000 || gradYear > 2200) return 'Enter a valid graduation year.';
+    } else {
+      if (!fields.first_name?.trim() || !fields.last_name?.trim()) return 'Add your first and last name.';
+      if ([fields.github_url, fields.linkedin_url, fields.portfolio_url].some((url) => url?.trim() && !/^https:\/\//i.test(url.trim()))) return 'Profile links must begin with https://.';
+    }
+    return '';
+  };
+
+  const submitSignup = async () => {
+    const payload: SignupInput = {
+      email: fields.email.trim(), password: fields.password,
+      first_name: fields.first_name.trim(), middle_name: fields.middle_name.trim(), last_name: fields.last_name.trim(),
+      college: fields.college.trim(), degree: fields.degree.trim(), branch: fields.branch.trim(),
+      study_year: Number(fields.study_year), graduation_year: Number(fields.graduation_year),
+      bio: fields.bio.trim(), phone_number: fields.phone_number.trim(),
+      skills: splitList(fields.skills), interests: splitList(fields.interests),
+      github_url: fields.github_url.trim(), linkedin_url: fields.linkedin_url.trim(), portfolio_url: fields.portfolio_url.trim(),
+    };
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { data, error: authError } = await authService.signUp(payload, Linking.createURL('auth-callback'));
+      if (authError) throw authError;
+      if (!data.session) setNotice('Your account is ready. Check your email to confirm it, then sign in to finish your profile.');
+      else router.replace('/onboarding');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Account creation failed. Please try again.'); }
+    finally { setBusy(false); }
+  };
+
   const submit = async () => {
-    setError('');
-    setNotice('');
-    if (mode !== 'reset' && !fields.email?.trim() || (mode !== 'forgot' && !fields.password)) return setError('Enter your email and password.');
-    if (mode === 'signup' && (!fields.first_name?.trim() || !fields.last_name?.trim())) return setError('Enter your first and last name.');
-    if (mode === 'signup' && fields.study_year && (!/^\d+$/.test(fields.study_year) || Number(fields.study_year) < 1 || Number(fields.study_year) > 8)) return setError('Study year must be a number from 1 to 8.');
-    if (mode === 'signup' && fields.graduation_year && (!/^\d{4}$/.test(fields.graduation_year) || Number(fields.graduation_year) < 2000 || Number(fields.graduation_year) > 2200)) return setError('Enter a valid four-digit graduation year.');
-    if (mode !== 'forgot' && (fields.password?.length ?? 0) < 8) return setError('Use a password with at least 8 characters.');
+    setError(''); setNotice('');
+    if (mode === 'signup') {
+      const validation = validateStep();
+      if (validation) { setError(validation); return; }
+      if (step < 3) { setStep((current) => current + 1); return; }
+      await submitSignup(); return;
+    }
+    if (mode !== 'reset' && !emailPattern.test((fields.email || '').trim())) return setError('Enter a valid email address.');
+    if (mode !== 'forgot' && (fields.password || '').length < 8) return setError('Use a password with at least 8 characters.');
     setBusy(true);
     try {
       if (mode === 'login') {
         const { error: authError } = await authService.signIn(fields.email, fields.password);
         if (authError) { if ('code' in authError && authError.code === 'email_not_confirmed') setNeedsVerification(true); throw authError; }
-      } else if (mode === 'signup') {
-        const payload: SignupInput = { first_name: fields.first_name.trim(), middle_name: fields.middle_name?.trim(), last_name: fields.last_name.trim(), email: fields.email, password: fields.password, college: fields.college?.trim(), degree: fields.degree?.trim(), branch: fields.branch?.trim(), study_year: fields.study_year ? Number(fields.study_year) : undefined, graduation_year: fields.graduation_year ? Number(fields.graduation_year) : undefined };
-        const { data, error: authError } = await authService.signUp(payload);
-        if (authError) throw authError;
-        if (!data.session) setNotice('We sent a verification link. Confirm your email, then sign in.');
-        else router.replace('/(tabs)');
       } else if (mode === 'forgot') {
         const { error: authError } = await authService.resetPassword(fields.email);
         if (authError) throw authError;
@@ -67,25 +102,44 @@ export default function AuthScreen({ mode }: { mode: Mode }) {
       } else {
         const { error: authError } = await authService.updatePassword(fields.password);
         if (authError) throw authError;
-        setNotice('Your password has been updated.');
-        router.replace('/(tabs)');
+        setNotice('Your password has been updated.'); router.replace('/(tabs)');
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Authentication failed. Try again.'); }
     finally { setBusy(false); }
   };
-  const input = (key: string, placeholder: string, secure = false, keyboardType?: 'email-address' | 'numeric') => <TextInput accessibilityLabel={placeholder} autoCapitalize={keyboardType === 'email-address' || secure ? 'none' : 'sentences'} keyboardType={keyboardType ?? 'default'} secureTextEntry={secure} placeholder={placeholder} placeholderTextColor={Colors.textSubtle} value={fields[key] ?? ''} onChangeText={(value) => set(key, value)} style={styles.input} />;
-  const title = mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Join StuDos' : mode === 'reset' ? 'Choose a new password' : 'Reset your password';
-  return <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><View style={styles.brand}><Text style={styles.logo}>STUDOS</Text><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>Your student innovation community.</Text></View>
-    {configurationError ? <Text style={styles.error}>{configurationError}</Text> : null}
-    {mode === 'login' || mode === 'signup' ? <><TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue with Google" disabled={busy || Boolean(configurationError)} onPress={signInWithGoogle} style={[styles.googleButton, (busy || Boolean(configurationError)) && { opacity: .55 }]}><Text style={styles.googleMark}>G</Text><Text style={styles.googleText}>{busy ? 'Connecting…' : 'Continue with Google'}</Text></TouchableOpacity><View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>or continue with email</Text><View style={styles.dividerLine} /></View></> : null}
-    {mode === 'signup' ? <><Text style={styles.formSection}>YOUR NAME</Text>{input('first_name', 'First name')}{input('middle_name', 'Middle name (optional)')}{input('last_name', 'Last name')}<Text style={styles.formSection}>YOUR STUDIES</Text>{input('college', 'College')}{input('degree', 'Degree / program')}{input('branch', 'Branch')}{input('study_year', 'Study year', false, 'numeric')}{input('graduation_year', 'Graduation year', false, 'numeric')}</> : null}
-    {mode !== 'reset' ? input('email', 'Email address', false, 'email-address') : null}{mode !== 'forgot' ? input('password', mode === 'reset' ? 'New password (8+ characters)' : 'Password (8+ characters)', true) : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}
+
+  const input = (key: string, label: string, options: { secure?: boolean; numeric?: boolean; email?: boolean; multiline?: boolean } = {}) => (
+    <View style={styles.field} key={key}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} autoCapitalize={options.email || options.secure ? 'none' : 'sentences'} autoCorrect={!options.email && !options.secure} keyboardType={options.email ? 'email-address' : options.numeric ? 'number-pad' : 'default'} secureTextEntry={options.secure} multiline={options.multiline} value={fields[key] ?? ''} onChangeText={(value) => set(key, value)} placeholder={label} placeholderTextColor={Colors.textSubtle} style={[styles.input, options.multiline && styles.multiline]} /></View>
+  );
+  const authMode = mode === 'login' || mode === 'signup';
+  const title = mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Build your student profile' : mode === 'reset' ? 'Choose a new password' : 'Reset your password';
+
+  return <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={styles.brand}><Text style={styles.logo}>STUDOS</Text><Text style={styles.eyebrow}>LEARN · BUILD · CONNECT</Text><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{mode === 'signup' ? 'A thoughtful profile helps the right people find you.' : 'Your student community, ready when you are.'}</Text></View>
+    {configurationError ? <Text accessibilityRole="alert" style={styles.error}>{configurationError}</Text> : null}
+    {mode === 'signup' ? <View style={styles.progress} accessibilityLabel={`Signup step ${step} of 3`}>{signupSteps.map((label, index) => <View key={label} style={styles.progressItem}><View style={[styles.progressDot, index < step && styles.progressActive]}><Text style={styles.progressNumber}>{index + 1}</Text></View><Text style={[styles.progressLabel, index + 1 === step && styles.progressCurrent]}>{label}</Text></View>)}</View> : null}
+    {authMode && (mode === 'login' || step === 1) ? <>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue with Google" disabled={busy || Boolean(configurationError)} onPress={() => void signInWithGoogle()} style={styles.googleButton}><Text style={styles.googleMark}>G</Text><Text style={styles.googleText}>{busy ? 'Connecting to Google…' : 'Continue with Google'}</Text>{busy ? <ActivityIndicator size="small" color={Colors.primary}/> : null}</TouchableOpacity>
+      {mode === 'signup' ? <TouchableOpacity accessibilityRole="button" onPress={() => setEmailEnabled((value) => !value)} style={styles.emailChoice}><Text style={styles.emailChoiceText}>{emailEnabled ? 'Use email instead' : 'Continue with email'}</Text></TouchableOpacity> : null}
+      {(mode === 'login' || emailEnabled) ? <View style={styles.emailForm}><View style={styles.divider}><View style={styles.dividerLine}/><Text style={styles.dividerText}>EMAIL</Text><View style={styles.dividerLine}/></View>{input('email', 'Email address', { email: true })}{input('password', 'Password (8+ characters)', { secure: true })}{mode === 'signup' ? input('confirmPassword', 'Confirm password', { secure: true }) : null}</View> : null}
+    </> : null}
+    {mode === 'signup' && step === 2 ? <View style={styles.form}>{input('college', 'College or university')}{input('degree', 'Degree or program')}{input('branch', 'Branch / major')}{input('study_year', 'Current study year (1–8)', { numeric: true })}{input('graduation_year', 'Expected graduation year', { numeric: true })}<Text style={styles.helper}>You can enter your college name if it is not listed.</Text></View> : null}
+    {mode === 'signup' && step === 3 ? <View style={styles.form}>{input('first_name', 'First name')}{input('middle_name', 'Middle name (optional)')}{input('last_name', 'Last name')}{input('phone_number', 'Phone number (private, optional)', { numeric: true })}{input('bio', 'A little about you (optional)', { multiline: true })}{input('skills', 'Skills, separated by commas (optional)')}{input('interests', 'Interests, separated by commas (optional)')}{input('github_url', 'GitHub URL (optional)')}{input('linkedin_url', 'LinkedIn URL (optional)')}{input('portfolio_url', 'Portfolio URL (optional)')}</View> : null}
+    {mode !== 'login' && mode !== 'signup' ? <View style={styles.form}>{mode !== 'reset' ? input('email', 'Email address', { email: true }) : null}{mode !== 'forgot' ? input('password', 'New password (8+ characters)', { secure: true }) : null}</View> : null}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}
     {needsVerification ? <TouchableOpacity accessibilityRole="button" onPress={async () => { try { const { error: resendError } = await authService.resendVerification(fields.email); if (resendError) throw resendError; setNotice('Verification email sent. Check your inbox and spam folder.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not resend verification.'); } }}><Text style={styles.link}>Resend verification email</Text></TouchableOpacity> : null}
-    <TouchableOpacity disabled={busy || Boolean(configurationError)} onPress={submit} accessibilityRole="button" style={[styles.primary, (busy || Boolean(configurationError)) && { opacity: .55 }]}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryText}>{mode === 'login' ? 'Log in' : mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Update password' : 'Send reset link'}</Text>}</TouchableOpacity>
+    <View style={styles.actions}>{mode === 'signup' && step > 1 ? <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => { setError(''); setStep((current) => current - 1); }} style={styles.back}><Text style={styles.backText}>Back</Text></TouchableOpacity> : null}<TouchableOpacity disabled={busy || Boolean(configurationError) || (mode === 'signup' && step === 1 && !emailEnabled)} onPress={() => void submit()} accessibilityRole="button" style={[styles.primary, ((busy || Boolean(configurationError)) || (mode === 'signup' && step === 1 && !emailEnabled)) && styles.disabled]}>{busy ? <ActivityIndicator color="#FFF"/> : <Text style={styles.primaryText}>{mode === 'signup' ? step === 3 ? 'Create account' : 'Continue' : mode === 'login' ? 'Log in' : mode === 'reset' ? 'Update password' : 'Send reset link'}</Text>}</TouchableOpacity></View>
     {mode === 'login' ? <Link href="/forgot-password" style={styles.link}>Forgot password?</Link> : null}
     {mode !== 'reset' && mode !== 'forgot' ? <View style={styles.footer}><Text style={styles.subtitle}>{mode === 'login' ? 'New to StuDos? ' : 'Already have an account? '}</Text><Link href={mode === 'login' ? '/signup' : '/login'} style={styles.link}>{mode === 'login' ? 'Create account' : 'Log in'}</Link></View> : null}
   </ScrollView></KeyboardAvoidingView>;
 }
-const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: Colors.background }, content: { flexGrow: 1, justifyContent: 'center', padding: Spacing.xxl, gap: 12 }, brand: { marginBottom: 18 }, logo: { color: Colors.primary, fontWeight: Typography.bold, letterSpacing: 3, fontSize: Typography.footnote, marginBottom: 20 }, title: { color: Colors.textPrimary, fontSize: Typography.title1, fontWeight: Typography.bold }, subtitle: { color: Colors.textMuted, fontSize: Typography.subhead, lineHeight: 21 }, formSection: { color: Colors.textMuted, fontSize: Typography.caption, letterSpacing: 0.8, fontWeight: Typography.bold, marginTop: 4 }, googleButton: { minHeight: 52, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: '#D9DEE7', backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }, googleMark: { color: '#4285F4', fontWeight: Typography.bold, fontSize: Typography.title3 }, googleText: { color: '#202124', fontWeight: Typography.semiBold, fontSize: Typography.body }, divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 2 }, dividerLine: { height: 1, flex: 1, backgroundColor: Colors.border }, dividerText: { color: Colors.textSubtle, fontSize: Typography.caption }, input: { minHeight: 52, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, color: Colors.textPrimary, paddingHorizontal: 15, fontSize: Typography.body }, primary: { minHeight: 52, borderRadius: BorderRadius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 6 }, primaryText: { color: Colors.textOnPrimary, fontWeight: Typography.bold, fontSize: Typography.body }, link: { color: Colors.primary, fontWeight: Typography.bold, textAlign: 'center', paddingVertical: 8 }, footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 14 }, error: { color: Colors.error, fontSize: Typography.footnote, lineHeight: 19 }, success: { color: Colors.success, fontSize: Typography.footnote, lineHeight: 19, padding: 12, borderRadius: BorderRadius.md, backgroundColor: Colors.successSubtle } });
+
+function splitList(value?: string) { return [...new Set((value || '').split(',').map((item) => item.trim()).filter(Boolean))]; }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.background }, content: { flexGrow: 1, width: '100%', maxWidth: 600, alignSelf: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, paddingVertical: 32, gap: 16 },
+  brand: { marginBottom: 2 }, logo: { color: Colors.primary, fontWeight: Typography.bold, letterSpacing: 3, fontSize: 13 }, eyebrow: { color: Colors.textMuted, fontSize: 10, letterSpacing: 1.6, marginTop: 20, marginBottom: 8 }, title: { color: Colors.textPrimary, fontSize: 30, lineHeight: 37, fontWeight: Typography.bold }, subtitle: { color: Colors.textMuted, fontSize: 14, lineHeight: 21, marginTop: 6 },
+  progress: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 5 }, progressItem: { alignItems: 'center', gap: 6 }, progressDot: { width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' }, progressActive: { backgroundColor: Colors.primary }, progressNumber: { color: '#FFF', fontSize: 11, fontWeight: Typography.bold }, progressLabel: { color: Colors.textSubtle, fontSize: 10 }, progressCurrent: { color: Colors.textPrimary },
+  googleButton: { minHeight: 52, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.borderLight, backgroundColor: Colors.surface, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }, googleMark: { color: '#4285F4', fontWeight: Typography.bold, fontSize: 19 }, googleText: { color: Colors.textPrimary, fontWeight: Typography.semiBold, fontSize: 14 }, emailChoice: { minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.md, backgroundColor: Colors.primary }, emailChoiceText: { color: '#FFF', fontWeight: Typography.bold, fontSize: 14 }, emailForm: { gap: 10 }, divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 2 }, dividerLine: { height: 1, flex: 1, backgroundColor: Colors.border }, dividerText: { color: Colors.textSubtle, fontSize: 10, letterSpacing: 1.4 },
+  form: { gap: 2 }, field: { gap: 7 }, label: { color: Colors.textSecondary, fontSize: 12, fontWeight: Typography.semiBold }, input: { minHeight: 50, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, color: Colors.textPrimary, paddingHorizontal: 14, fontSize: 14 }, multiline: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' }, helper: { color: Colors.textMuted, fontSize: 11, marginTop: 5 }, actions: { flexDirection: 'row', gap: 10, marginTop: 3 }, back: { minHeight: 52, paddingHorizontal: 22, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' }, backText: { color: Colors.textSecondary, fontWeight: Typography.semiBold }, primary: { flex: 1, minHeight: 52, borderRadius: BorderRadius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' }, disabled: { opacity: 0.55 }, primaryText: { color: '#FFF', fontWeight: Typography.bold, fontSize: 14 }, link: { color: Colors.primary, fontWeight: Typography.bold, textAlign: 'center', paddingVertical: 8 }, footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 7 }, error: { color: Colors.error, fontSize: 12, lineHeight: 18 }, success: { color: Colors.success, fontSize: 12, lineHeight: 18, padding: 12, borderRadius: BorderRadius.md, backgroundColor: Colors.successSubtle },
+});

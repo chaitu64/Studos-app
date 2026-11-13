@@ -3,7 +3,7 @@ import { requireSupabase } from './supabase';
 import { validateStudyResourceLinkDraft } from './studyResourceLinkValidation';
 
 const LINK_COLUMNS = 'id,study_resource_id,resource_type,title,url,submitted_by,created_at,updated_at';
-export { normalizeResourceLinkUrl, validateStudyResourceLinkDraft } from './studyResourceLinkValidation';
+export { normalizeResourceLinkUrl } from './studyResourceLinkValidation';
 
 async function authenticatedUserId() {
   const { data, error } = await requireSupabase().auth.getUser();
@@ -30,7 +30,7 @@ export const studyResourceLinksService = {
     const rows = data || [];
     const contributorIds = [...new Set(rows.map((row: any) => row.submitted_by).filter((id: unknown): id is string => typeof id === 'string'))];
     const profileResult = contributorIds.length
-      ? await db.from('profiles').select('id,first_name,last_name').in('id', contributorIds)
+      ? await db.from('profiles').select('id:auth_user_id,first_name,last_name').in('auth_user_id', contributorIds)
       : { data: [], error: null };
     // Link rows remain useful when profile names are hidden by RLS.
     const names = new Map((profileResult.data || []).map((profile: any) => [profile.id, [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim()]));

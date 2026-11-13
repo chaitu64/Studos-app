@@ -19,7 +19,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { useApp } from '../../context/AppContext';
-import { sharedContentService } from '../../services/sharedContentService';
+import { chatService, chatRequestsEnabled } from '../../services/chatService';
 import { StudentRole } from '../../types';
 
 export default function TeamDetailScreen() {
@@ -70,8 +70,10 @@ export default function TeamDetailScreen() {
     if (!team.lead.id || team.lead.id === user.id || messagingLead) return;
     setMessagingLead(true);
     try {
-      const conversationId = await sharedContentService.startDirectConversation(team.lead.id);
-      router.push(`/chat/${conversationId}` as never);
+      const conversationId = await chatService.existingConversation(team.lead.id);
+      if (conversationId) router.push(`/chat/${conversationId}` as never);
+      else if (chatRequestsEnabled) router.push({ pathname: '/messages', params: { recipient: team.lead.id } } as never);
+      else Alert.alert('Messaging setup required', 'Chat requests are not available until the reviewed database migration is deployed and verified.');
     } catch (cause) {
       Alert.alert('Could not start a conversation', cause instanceof Error ? cause.message : 'Please try again.');
     } finally {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { usePathname } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import {
   UserProfile,
   Idea,
@@ -19,7 +19,7 @@ import { sharedContentService } from '../services/sharedContentService';
 import { authIdentityProfile, getStudentProfile, updateStudentProfile } from '../services/profileService';
 import { studentServicesService } from '../services/studentServicesService';
 import { notificationService } from '../services/notificationService';
-import { addDemoIdeaComment, getDemoIdeas, toggleDemoIdeaSave, toggleDemoIdeaSpark, toAppIdea } from '../services/demoIdeasService';
+import { addDemoIdeaComment, createStudentIdea, getDemoIdeas, toggleDemoIdeaSave, toggleDemoIdeaSpark, toAppIdea } from '../services/demoIdeasService';
 import type { StudentService } from '../services/homeDiscoveryData';
 import { useAuth } from './AuthContext';
 
@@ -111,8 +111,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const requests: { key: string; table: string; run: () => Promise<unknown> }[] = [
       { key: 'profile', table: 'profiles', run: () => getStudentProfile(session.user.id, authIdentityProfile(session.user), session.user) },
       ...(needs.has('students') ? [{ key: 'students', table: 'profiles', run: () => sharedContentService.students() }] : []),
-      ...(needs.has('services') ? [{ key: 'services', table: 'student_services', run: () => studentServicesService.list() }] : []),
-      ...(needs.has('ideas') ? [{ key: 'ideas', table: 'student_ideas', run: () => getDemoIdeas({ limit: 30 }).then((result) => result.items.map(toAppIdea)) }] : []),
+      ...(needs.has('services') ? [{ key: 'services', table: 'services', run: () => studentServicesService.list() }] : []),
+      ...(needs.has('ideas') ? [{ key: 'ideas', table: 'ideas', run: () => getDemoIdeas({ limit: 30 }).then((result) => result.items.map(toAppIdea)) }] : []),
       ...(needs.has('teams') ? [{ key: 'teams', table: 'teams,team_members,team_applications', run: () => sharedContentService.list<TeamListing>('teams') }] : []),
       ...(needs.has('leaderboard') ? [{ key: 'leaderboard', table: 'leaderboard,profiles', run: () => sharedContentService.leaderboard() }] : []),
       ...(needs.has('posts') ? [{ key: 'posts', table: 'posts,post_likes,post_comments,saved_posts', run: () => postService.feed(1, 20).then((result) => result.posts) }] : []),
@@ -128,13 +128,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.status === 'rejected') {
         const cause = result.reason as { code?: string; message?: string; details?: string | null; hint?: string | null };
         const code = cause?.code || 'unknown';
-        errors[request.key] = `${request.key} data is unavailable (Supabase ${code}).`;
+        errors[request.key] = request.key === 'profile' && code === 'PGRST202'
+          ? 'Student profile setup is unavailable. Ask the project administrator to apply migration 018 and reload the Supabase API schema cache.'
+          : `${request.key} data is unavailable (Supabase ${code}).`;
         if (__DEV__) console.warn('[Supabase query failed]', { feature: request.key, relation: request.table, code, message: cause?.message, details: cause?.details, hint: cause?.hint });
         return;
       }
       loaded.set(request.key, result.value);
       switch (request.key) {
-        case 'profile': setUser(result.value as UserProfile); break;
+        case 'profile': {
+          const profile = result.value as UserProfile;
+          setUser(profile);
+          if (!profile.onboardingCompleted && pathname !== '/onboarding') router.replace('/onboarding' as never);
+          break;
+        }
         case 'students': setStudents(result.value as UserProfile[]); break;
         case 'services': setStudentServices(result.value as StudentService[]); break;
         case 'ideas': setIdeas(result.value as Idea[]); break;
@@ -207,8 +214,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitIdea = async (newIdea: Omit<Idea, 'id' | 'createdAt' | 'upvotes' | 'commentsCount' | 'creator'>) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to submit an idea.');
-    void newIdea;
-    throw new Error('Idea publishing is temporarily unavailable until the live student_ideas write schema is verified.');
+    const created = await createStudentIdea({
+      title: newIdea.title, description: newIdea.tagline || newIdea.problemStatement,
+      category: newIdea.category, ideaType: newIdea.ideaType, stage: newIdea.stage,
+      tags: newIdea.tags, skillsNeeded: newIdea.requiredSkills, collaborationOpen: newIdea.collaborationOpen,
+      problemStatement: newIdea.problemStatement, proposedSolution: newIdea.proposedSolution,
+      targetAudience: newIdea.targetAudience, rolesNeeded: newIdea.rolesNeeded,
+      githubUrl: newIdea.resources?.find((item) => /github\.com/i.test(item.url))?.url,
+      youtubeUrl: newIdea.resources?.find((item) => /youtube\.com|youtu\.be/i.test(item.url))?.url,
+      links: newIdea.resources?.map((item) => item.url) || [],
+    });
+    const mapped = toAppIdea(created);
+    setIdeas((rows) => [mapped, ...rows.filter((idea) => idea.id !== mapped.id)]);
+    return mapped;
   };
 
   const createTeam = async (newTeam: Omit<TeamListing, 'id' | 'createdAt' | 'applicantCount' | 'lead' | 'members'>) => {
@@ -276,14 +294,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addCommunityPost = async (newPost: Omit<CommunityPost, 'id' | 'createdAt' | 'createdAtTimestamp' | 'likesCount' | 'commentsCount' | 'author'>) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to create a post.');
-    const image_urls = await uploadPostImages((newPost.images || []).map((uri) => ({ uri, fileName: uri.split('/').pop(), mimeType: 'image/jpeg' } as any)));
-    const created = await postService.create({ title: newPost.title, content: newPost.content, type: newPost.type, category: newPost.category, tags: newPost.tags, image_urls });
+    const image_urls = await uploadPostImages((newPost.images || []).map((uri) => ({ uri, fileName: uri.split(/[?#]/)[0].split('/').pop() } as any)));
+    const created = await postService.create({ title: newPost.title || newPost.content.trim().slice(0, 80) || 'Post', content: newPost.content, type: newPost.type, category: newPost.category, tags: newPost.tags, image_urls, links: newPost.links, attachments: newPost.attachments, metadata: { githubUrl: newPost.githubUrl, demoUrl: newPost.demoUrl, technologies: newPost.technologies, rolesNeeded: newPost.rolesNeeded, problemStatement: newPost.problemStatement, proposedSolution: newPost.proposedSolution, targetAudience: newPost.targetAudience, stage: newPost.stage, servicePricing: newPost.servicePricing, serviceAvailability: newPost.serviceAvailability, eventName: newPost.eventName, eventRoleNeeded: newPost.eventRoleNeeded, eventDate: newPost.eventDate, ...newPost.metadata } });
     setCommunityPosts((rows) => [created, ...rows]); return created;
   };
 
   const editCommunityPost = async (id: string, patch: Partial<CommunityPost>) => {
     if (!session || !supabaseConfigured) throw new Error('Sign in to edit a community post.');
-    const updated = await postService.update(id, { title: patch.title, content: patch.content, tags: patch.tags });
+    const updated = await postService.update(id, { title: patch.title, content: patch.content, type: patch.type, category: patch.category, tags: patch.tags, links: patch.links, attachments: patch.attachments, metadata: patch.metadata });
     setCommunityPosts((previous) => previous.map((post) => post.id === id ? updated : post));
   };
   const deleteCommunityPost = async (id: string) => {

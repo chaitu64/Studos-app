@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { safeBack } from '@/navigation/safeBack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/ui/Avatar';
+import { CommunityPollCard } from '../../components/home/CommunityPollCard';
 import { Button } from '../../components/ui/Button';
 import { BorderRadius, Colors, Spacing, Typography } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
@@ -184,6 +185,10 @@ export default function PostDetailScreen() {
         <Text style={styles.postBody}>{post.content}</Text>
         {post.tags?.length ? <View style={styles.tags}>{post.tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}</View> : null}
         {post.images?.map((uri, index) => <Image key={`${uri}-${index}`} accessibilityLabel={`Post image ${index + 1}`} source={{ uri }} style={styles.image} />)}
+        {[...(post.links || []), ...(post.githubUrl ? [post.githubUrl] : []), ...(post.demoUrl ? [post.demoUrl] : [])].map((url) => <TouchableOpacity key={url} accessibilityRole="link" onPress={() => { try { const parsed = new URL(url); if (['https:', 'http:'].includes(parsed.protocol)) void Linking.openURL(parsed.toString()); } catch { /* Ignore invalid stored URLs. */ } }} style={styles.action}><Ionicons name="link-outline" size={17} color={Colors.primary}/><Text numberOfLines={1} style={[styles.actionText,{color:Colors.primary,flex:1}]}>{url}</Text></TouchableOpacity>)}
+        {post.attachments?.map((url, index) => <TouchableOpacity key={`${url}:${index}`} accessibilityRole="link" onPress={() => { try { const parsed = new URL(url); if (['https:', 'http:'].includes(parsed.protocol)) void Linking.openURL(parsed.toString()); } catch { /* Ignore invalid stored URLs. */ } }} style={styles.action}><Ionicons name="document-attach-outline" size={17} color={Colors.primary}/><Text numberOfLines={1} style={[styles.actionText,{color:Colors.primary,flex:1}]}>Open attachment {index + 1}</Text></TouchableOpacity>)}
+        {post.type === 'poll' && typeof post.metadata?.pollId === 'string' ? <CommunityPollCard pollId={post.metadata.pollId}/> : null}
+        {post.technologies?.length ? <Text style={styles.meta}>Built with {post.technologies.join(' · ')}</Text> : null}
         <View style={styles.stats}>{post.likesAvailable === false ? <Text style={styles.meta}>Likes unavailable</Text> : <Text style={styles.meta}>{post.likesCount ?? 0} {(post.likesCount ?? 0) === 1 ? 'like' : 'likes'}</Text>}{post.commentsAvailable === false ? <Text style={styles.meta}>Comments unavailable</Text> : <Text style={styles.meta}>{comments.length || post.commentsCount || 0} {((comments.length || post.commentsCount || 0) === 1) ? 'comment' : 'comments'}</Text>}</View>
         <View style={styles.actions}>
           {post.likesAvailable !== false ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={post.isLiked ? 'Unlike post' : 'Like post'} accessibilityState={{ selected: Boolean(post.isLiked), disabled: busy }} disabled={busy} onPress={() => void handleLike()} style={styles.action}><Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={20} color={post.isLiked ? Colors.primary : Colors.textSecondary} /><Text style={[styles.actionText, post.isLiked && styles.actionActive]}>Like</Text></TouchableOpacity> : null}

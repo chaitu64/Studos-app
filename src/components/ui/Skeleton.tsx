@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Animated, Platform, ViewStyle } from 'react-native';
 import { Colors, BorderRadius } from '../../constants/theme';
 
-export interface SkeletonProps {
+interface SkeletonProps {
   width?: number | `${number}%` | 'auto';
   height?: number;
   borderRadius?: number;
   style?: ViewStyle;
 }
 
-export const Skeleton: React.FC<SkeletonProps> = ({
+const Skeleton: React.FC<SkeletonProps> = ({
   width = '100%',
   height = 20,
   borderRadius = BorderRadius.sm,

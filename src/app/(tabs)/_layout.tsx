@@ -2,8 +2,12 @@ import React from 'react';
 import { Tabs } from 'expo-router/tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Typography } from '../../constants/theme';
+import { useApp } from '../../context/AppContext';
+import { Avatar } from '../../components/ui/Avatar';
+import { View } from 'react-native';
 
 export default function TabLayout() {
+  const { user } = useApp();
   return (
     <Tabs
       screenOptions={{
@@ -29,7 +33,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarLabel: 'HOME',
+          tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="home-variant-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
         }}
       />
@@ -37,7 +41,7 @@ export default function TabLayout() {
         name="study"
         options={{
           title: 'Study',
-          tabBarLabel: 'STUDY',
+          tabBarLabel: 'Study',
           tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="book-open-variant" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
         }}
       />
@@ -45,7 +49,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: 'Explore',
-          tabBarLabel: 'EXPLORE',
+          tabBarLabel: 'Explore',
           tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="compass-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
         }}
       />
@@ -53,21 +57,21 @@ export default function TabLayout() {
         name="swipe"
         options={{
           title: 'Connect',
-          tabBarLabel: 'CONNECT',
-          tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="handshake-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
+          tabBarLabel: 'Connect',
+          tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="account-group-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarLabel: 'PROFILE',
-          tabBarIcon: ({ focused }) => <MaterialCommunityIcons name="account-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />,
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ focused }) => <View style={{ width: 27, height: 27, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: focused ? 1.5 : 0, borderColor: focused ? Colors.primary : 'transparent' }}>
+            {user.avatar ? <Avatar key={user.avatar} uri={user.avatar} name={user.name} size={22} /> : <MaterialCommunityIcons name="account-outline" size={21} color={focused ? Colors.primary : Colors.textMuted} />}
+          </View>,
         }}
       />
       <Tabs.Screen name="chat" options={{ href: null }} />
-      <Tabs.Screen name="discover" options={{ href: null }} />
-      <Tabs.Screen name="create" options={{ href: null }} />
     </Tabs>
   );
 }

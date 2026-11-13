@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,16 +36,21 @@ export default function StudentCommunityDetailsScreen() {
     await studentCommunityService.updateProblem(record.id, draft);
     await load(); setEditing(false);
   };
-  const removeProblem = async () => {
-    if (!record || kind !== 'problem' || busy) return;
+  const saveHelpRequest = async (draft: CommunityDraft) => {
+    if (kind !== 'help' || !record) return;
+    await studentCommunityService.updateHelpRequest(record.id, draft);
+    await load(); setEditing(false);
+  };
+  const removeRecord = async () => {
+    if (!record || busy) return;
     setBusy(true);
-    try { await studentCommunityService.deleteProblem(record.id); setConfirmDelete(false); safeBack('/(tabs)'); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'The problem could not be deleted.'); setConfirmDelete(false); }
+    try { if (kind === 'problem') await studentCommunityService.deleteProblem(record.id); else await studentCommunityService.deleteHelpRequest(record.id); setConfirmDelete(false); safeBack('/(tabs)'); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'This community post could not be deleted.'); setConfirmDelete(false); }
     finally { setBusy(false); }
   };
 
   return <SafeAreaView style={styles.safe} edges={['top','bottom']}>
-    <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack('/(tabs)')} style={styles.iconButton}><Ionicons name="arrow-back" size={20} color={Colors.textPrimary}/></Pressable><Text style={styles.headerTitle}>{kind === 'problem' ? 'Problem Details' : 'Help Request'}</Text>{isOwner && kind === 'problem' ? <Pressable accessibilityRole="button" accessibilityLabel="More problem actions" onPress={() => setConfirmDelete(true)} style={styles.iconButton}><Ionicons name="ellipsis-horizontal" size={20} color={Colors.textPrimary}/></Pressable> : <View style={styles.iconButton}/>}</View>
+    <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack('/(tabs)')} style={styles.iconButton}><Ionicons name="arrow-back" size={20} color={Colors.textPrimary}/></Pressable><Text style={styles.headerTitle}>{kind === 'problem' ? 'Problem Details' : 'Help Request'}</Text>{isOwner ? <Pressable accessibilityRole="button" accessibilityLabel="More community post actions" onPress={() => setConfirmDelete(true)} style={styles.iconButton}><Ionicons name="ellipsis-horizontal" size={20} color={Colors.textPrimary}/></Pressable> : <View style={styles.iconButton}/>}</View>
     {loading ? <View style={styles.state}><ActivityIndicator color={Colors.primary}/><Text style={styles.muted}>Loading details…</Text></View> : error && !record ? <View style={styles.state}><Text style={styles.error}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.link}>Retry</Text></Pressable></View> : record ? <ScrollView contentContainerStyle={styles.content}>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <View style={styles.kindTag}><Ionicons name={kind === 'problem' ? 'help-circle-outline' : 'hand-right-outline'} size={15} color={Colors.primary}/><Text style={styles.kindText}>{kind === 'problem' ? 'STUDENT PROBLEM' : 'HELP NEEDED'}</Text>{record.isDemo ? <Text style={styles.demoTag}>DEMO</Text> : null}</View>
@@ -53,16 +58,19 @@ export default function StudentCommunityDetailsScreen() {
       <View style={styles.authorRow}><Pressable accessibilityRole="button" onPress={() => router.push(`/student/${record.author.identity.type}/${record.author.id}` as never)}><Avatar uri={record.author.avatar} name={record.author.name} size={44}/></Pressable><View style={styles.authorCopy}><Pressable accessibilityRole="button" onPress={() => router.push(`/student/${record.author.identity.type}/${record.author.id}` as never)}><Text style={styles.author}>{record.author.name}</Text></Pressable><Text style={styles.authorMeta}>{[record.author.college,record.author.degree,record.author.branch,record.author.studyYear ? `Year ${record.author.studyYear}` : null].filter(Boolean).join(' · ') || (record.isDemo ? 'Sample student profile' : 'STUDOS student')}</Text></View></View>
       <View style={styles.metadata}><Text style={styles.metaChip}>{record.category || 'Community'}</Text><Text style={styles.status}>{record.status || 'Open'}</Text></View>
       <View style={styles.description}>{paragraphs.map((paragraph, index) => <Text key={`${index}-${paragraph.slice(0,12)}`} style={styles.paragraph}>{paragraph}</Text>)}</View>
+      {kind === 'problem' && (record as StudentProblem).context ? <><Text style={styles.sectionTitle}>Context</Text><Text style={styles.secondary}>{(record as StudentProblem).context}</Text></> : null}
+      {kind === 'problem' && (record as StudentProblem).expectedSolution ? <><Text style={styles.sectionTitle}>Expected solution</Text><Text style={styles.secondary}>{(record as StudentProblem).expectedSolution}</Text></> : null}
+      {record.attachments.length ? <><Text style={styles.sectionTitle}>Attachments & links</Text>{record.attachments.map((url) => <Pressable key={url} accessibilityRole="link" onPress={() => void Linking.openURL(url)}><Text style={styles.link}>{url}</Text></Pressable>)}</> : null}
       {kind === 'problem' ? <View style={styles.tags}>{(record as StudentProblem).tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag.replace(/^#/, '')}</Text>)}</View> : <>
         <Text style={styles.sectionTitle}>Help type</Text><Text style={styles.secondary}>{(record as StudentHelpRequest).helpType || 'Not specified'}</Text>
         <Text style={styles.sectionTitle}>Skills needed</Text><View style={styles.tags}>{(record as StudentHelpRequest).skillsNeeded.map((skill) => <Text key={skill} style={styles.skill}>{skill}</Text>)}</View>
         <View style={styles.notice}><Ionicons name="information-circle-outline" size={17} color={Colors.accentAmber}/><Text style={styles.noticeText}>Help response requests are not yet connected to a secure backend workflow, so this sample request is read-only for now.</Text></View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: true }} disabled style={[styles.primaryButton,styles.disabled]}><Text style={styles.primaryText}>Offer Help (not available yet)</Text></Pressable>
       </>}
-      {isOwner && kind === 'problem' ? <View style={styles.ownerActions}><Pressable accessibilityRole="button" onPress={() => setEditing(true)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Edit problem</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setConfirmDelete(true)} style={styles.deleteButton}><Text style={styles.deleteText}>Delete</Text></Pressable></View> : null}
+      {isOwner ? <View style={styles.ownerActions}><Pressable accessibilityRole="button" onPress={() => setEditing(true)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{kind === 'problem' ? 'Edit problem' : 'Edit request'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setConfirmDelete(true)} style={styles.deleteButton}><Text style={styles.deleteText}>Delete</Text></Pressable></View> : null}
     </ScrollView> : null}
-    {record && kind === 'problem' ? <CommunityRecordComposer visible={editing} kind="problem" initial={record as StudentProblem} onClose={() => setEditing(false)} onSubmit={saveProblem}/> : null}
-    <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}><View style={styles.scrim}><View style={styles.confirm}><Text style={styles.confirmTitle}>Delete this problem?</Text><Text style={styles.muted}>This removes your problem from the community feed.</Text><View style={styles.ownerActions}><Pressable onPress={() => setConfirmDelete(false)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={busy} onPress={() => void removeProblem()} style={styles.deleteButton}><Text style={styles.deleteText}>{busy ? 'Deleting…' : 'Delete'}</Text></Pressable></View></View></View></Modal>
+    {record ? <CommunityRecordComposer visible={editing} kind={kind} initial={record} onClose={() => setEditing(false)} onSubmit={kind === 'problem' ? saveProblem : saveHelpRequest}/> : null}
+    <Modal visible={confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(false)}><View style={styles.scrim}><View style={styles.confirm}><Text style={styles.confirmTitle}>Delete this {kind === 'problem' ? 'problem' : 'help request'}?</Text><Text style={styles.muted}>This removes your post from the community feed.</Text><View style={styles.ownerActions}><Pressable onPress={() => setConfirmDelete(false)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={busy} onPress={() => void removeRecord()} style={styles.deleteButton}><Text style={styles.deleteText}>{busy ? 'Deleting…' : 'Delete'}</Text></Pressable></View></View></View></Modal>
   </SafeAreaView>;
 }
 

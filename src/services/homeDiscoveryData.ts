@@ -7,7 +7,3 @@ export interface StudentSpotlight {
 export interface StudentService {
   id: string; title: string; description: string; provider: StudentSpotlight; skills: string[]; availability: string; category?: string; startingPrice?: number; createdAt?: string; isActive?: boolean;
 }
-
-export interface CommunityQuestionPreview {
-  id: string; author: string; branchYear: string; title: string; replies: number; topic: string;
-}

@@ -13,10 +13,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
-import { OpportunityCard } from '../../components/cards/ExploreOpportunityCard';
-import { Chip } from '../../components/ui/Chip';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { OpportunityCard } from '../../components/cards/OpportunityCard';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { CardSkeleton } from '../../components/ui/Skeleton';
@@ -37,23 +36,7 @@ const ALL_CATEGORIES: (OpportunityCategory | 'All')[] = [
   'Conferences / Meets',
 ];
 
-const SUGGESTED_SEARCHES = [
-  'Remote',
-  'AI & ML',
-  'Frontend',
-  'Web3',
-  'Hackathon',
-  'Full Stack',
-  'UI/UX',
-];
-
 const FORMAT_OPTIONS = ['All', 'Online', 'In-Person', 'Hybrid'];
-
-const TEAM_SIZE_OPTIONS = [
-  'Individual',
-  '2–4 members',
-  '5+ members',
-];
 
 const DEADLINE_OPTIONS = [
   'All Deadlines',
@@ -72,13 +55,22 @@ const PAYMENT_OPTIONS = [
 
 type SortOption = 'deadline' | 'recent' | 'prize';
 
+function uniqueOpportunities(items: Opportunity[]): Opportunity[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
 export default function ExploreScreen() {
   const params = useLocalSearchParams<{ category?: string; query?: string }>();
+  const insets = useSafeAreaInsets();
 
   // Search input and debounce state
   const [searchQuery, setSearchQuery] = useState(params.query || '');
   const [debouncedSearch, setDebouncedSearch] = useState(params.query || '');
-
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -102,6 +94,7 @@ export default function ExploreScreen() {
   const [selectedTeamSizes, setSelectedTeamSizes] = useState<string[]>([]);
   const [selectedDeadlineFilter, setSelectedDeadlineFilter] = useState<string>('All Deadlines');
   const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
+  const [keywordFilter, setKeywordFilter] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('deadline');
 
   // Filter modal draft state
@@ -111,6 +104,7 @@ export default function ExploreScreen() {
   const [draftTeamSizes, setDraftTeamSizes] = useState<string[]>([]);
   const [draftDeadline, setDraftDeadline] = useState<string>('All Deadlines');
   const [draftPayments, setDraftPayments] = useState<string[]>([]);
+  const [draftKeywordFilter, setDraftKeywordFilter] = useState('');
 
   // Feed master data and states
   const [masterFeed, setMasterFeed] = useState<Opportunity[]>([]);
@@ -118,6 +112,10 @@ export default function ExploreScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const teamSizeOptions = useMemo(
+    () => Array.from(new Set(masterFeed.map((item) => item.teamSize).filter((value): value is string => Boolean(value && value !== 'Not specified')))),
+    [masterFeed]
+  );
 
   // Initial load
   useEffect(() => {
@@ -127,7 +125,7 @@ export default function ExploreScreen() {
       try {
         const data = await dataService.getOpportunities();
         if (!ignore) {
-          setMasterFeed(data);
+          setMasterFeed(uniqueOpportunities(data));
           setHasError(false);
           setErrorMessage('');
           setIsLoading(false);
@@ -156,7 +154,7 @@ export default function ExploreScreen() {
     setIsRefreshing(true);
     try {
       const data = await dataService.getOpportunities({ forceRefresh: true });
-      setMasterFeed(data);
+      setMasterFeed(uniqueOpportunities(data));
       setHasError(false);
       setErrorMessage('');
     } catch (err: any) {
@@ -178,6 +176,7 @@ export default function ExploreScreen() {
   const displayedOpportunities = useMemo(() => {
     let items = dataService.applyFiltersAndSort(masterFeed, {
       search: debouncedSearch,
+      keywords: keywordFilter,
       categories: activeCategories,
       teamSize: selectedTeamSizes,
       payment: selectedPayments,
@@ -208,6 +207,7 @@ export default function ExploreScreen() {
   }, [
     masterFeed,
     debouncedSearch,
+    keywordFilter,
     activeCategories,
     selectedTeamSizes,
     selectedPayments,
@@ -220,6 +220,7 @@ export default function ExploreScreen() {
   const draftMatchingCount = useMemo(() => {
     let items = dataService.applyFiltersAndSort(masterFeed, {
       search: debouncedSearch,
+      keywords: draftKeywordFilter,
       categories: draftCategories,
       teamSize: draftTeamSizes,
       payment: draftPayments,
@@ -253,17 +254,19 @@ export default function ExploreScreen() {
     draftTeamSizes,
     draftDeadline,
     draftPayments,
+    draftKeywordFilter,
     sortBy,
   ]);
 
   // Active filter badge count (filters beyond top-level quick category chip)
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (selectedCategories.length > 1) count += selectedCategories.length;
+    if (selectedCategories.length > 0) count += selectedCategories.length;
     if (selectedFormat !== 'All') count += 1;
     if (selectedTeamSizes.length > 0) count += selectedTeamSizes.length;
     if (selectedDeadlineFilter !== 'All Deadlines') count += 1;
     if (selectedPayments.length > 0) count += selectedPayments.length;
+    if (keywordFilter.trim()) count += 1;
     return count;
   }, [
     selectedCategories,
@@ -271,6 +274,7 @@ export default function ExploreScreen() {
     selectedTeamSizes,
     selectedDeadlineFilter,
     selectedPayments,
+    keywordFilter,
   ]);
 
   const openFilterModal = () => {
@@ -285,6 +289,7 @@ export default function ExploreScreen() {
     setDraftTeamSizes([...selectedTeamSizes]);
     setDraftDeadline(selectedDeadlineFilter);
     setDraftPayments([...selectedPayments]);
+    setDraftKeywordFilter(keywordFilter);
     setShowFilterModal(true);
   };
 
@@ -301,6 +306,7 @@ export default function ExploreScreen() {
     setSelectedTeamSizes(draftTeamSizes);
     setSelectedDeadlineFilter(draftDeadline);
     setSelectedPayments(draftPayments);
+    setKeywordFilter(draftKeywordFilter.trim());
     setShowFilterModal(false);
   };
 
@@ -311,12 +317,14 @@ export default function ExploreScreen() {
     setSelectedTeamSizes([]);
     setSelectedDeadlineFilter('All Deadlines');
     setSelectedPayments([]);
+    setKeywordFilter('');
     setSearchQuery('');
     setDraftCategories([]);
     setDraftFormat('All');
     setDraftTeamSizes([]);
     setDraftDeadline('All Deadlines');
     setDraftPayments([]);
+    setDraftKeywordFilter('');
   };
 
   const toggleDraftCategory = (cat: string) => {
@@ -337,15 +345,6 @@ export default function ExploreScreen() {
     );
   };
 
-  const handleSelectQuickCategory = (cat: string) => {
-    setUserSelectedCategory(cat);
-    if (cat === 'All') {
-      setUserSelectedCategories([]);
-    } else {
-      setUserSelectedCategories([cat]);
-    }
-  };
-
   const renderOpportunityCard = useCallback(({ item }: { item: Opportunity }) => {
     return <OpportunityCard opportunity={item} />;
   }, []);
@@ -353,42 +352,15 @@ export default function ExploreScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <Header hideGreeting showSearch={false} />
-      {/* Header bar */}
       <View style={styles.header}>
-        <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Explore Opportunities</Text>
-          <Text style={styles.headerSubtitle}>
-            Live verified hackathons, internships, jobs & scholarships
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.filterBtn, activeFilterCount > 0 ? styles.filterBtnActive : undefined]}
-          onPress={openFilterModal}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Open opportunity filters"
-        >
-          <Ionicons
-            name="options-outline"
-            size={20}
-            color={activeFilterCount > 0 ? '#FFF' : Colors.primary}
-          />
-          {activeFilterCount > 0 ? (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-            </View>
-          ) : null}
-        </TouchableOpacity>
+        <View style={styles.titleBlock}><Text style={styles.headerTitle}>Explore</Text><Text style={styles.headerSubtitle}>Find your next opportunity</Text></View>
       </View>
-
-      {/* Search Input Section */}
       <View style={styles.searchSection}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={18} color={Colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by title, organizer, skill, role, location..."
+            placeholder="Search opportunities..."
             placeholderTextColor={Colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -410,117 +382,36 @@ export default function ExploreScreen() {
         </View>
       </View>
 
-      {/* Suggested Search Shortcuts (when search input is empty) */}
-      {!searchQuery.trim() ? (
-        <View style={styles.suggestedBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.suggestedScroll}
-            keyboardShouldPersistTaps="handled"
+      <FlatList
+        data={isLoading || hasError ? [] : displayedOpportunities}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
+        renderItem={renderOpportunityCard}
+        ListHeaderComponent={<View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickControlsScroll} contentContainerStyle={styles.sortButtons}>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: selectedCategory === 'All' }} style={[styles.sortPill, selectedCategory === 'All' && styles.sortPillActive]} onPress={() => { setUserSelectedCategory('All'); setUserSelectedCategories([]); }}><Text style={[styles.sortPillText, selectedCategory === 'All' && styles.sortPillTextActive]}>All</Text></TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortPill, sortBy === 'deadline' && styles.sortPillActive]}
+            onPress={() => setSortBy('deadline')}
+            accessibilityRole="button"
+            accessibilityLabel="Sort by closing deadline"
           >
-            <Text style={styles.suggestedLabel}>Trending:</Text>
-            {SUGGESTED_SEARCHES.map((term) => (
-              <TouchableOpacity
-                key={term}
-                style={styles.suggestedPill}
-                onPress={() => setSearchQuery(term)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.suggestedPillText}>{term}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Horizontal Category Filter Chips */}
-      <View style={styles.categoryBar}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryScroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {ALL_CATEGORIES.map((cat) => (
-            <Chip
-              key={cat}
-              label={cat}
-              selected={selectedCategory === cat}
-              onPress={() => handleSelectQuickCategory(cat)}
-            />
-          ))}
+            <Ionicons name="time-outline" size={12} color={sortBy === 'deadline' ? '#FFF' : Colors.textMuted} />
+            <Text style={[styles.sortPillText, sortBy === 'deadline' && styles.sortPillTextActive]}>Deadline</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.sortPill, sortBy === 'recent' && styles.sortPillActive]} onPress={() => setSortBy('recent')} accessibilityRole="button" accessibilityLabel="Sort by most recent listing">
+            <Ionicons name="sparkles-outline" size={12} color={sortBy === 'recent' ? '#FFF' : Colors.textMuted} />
+            <Text style={[styles.sortPillText, sortBy === 'recent' && styles.sortPillTextActive]}>Recent</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.sortPill, sortBy === 'prize' && styles.sortPillActive]} onPress={() => setSortBy('prize')} accessibilityRole="button" accessibilityLabel="Sort by highest prize reward">
+            <Ionicons name="trophy-outline" size={12} color={sortBy === 'prize' ? '#FFF' : Colors.textMuted} />
+            <Text style={[styles.sortPillText, sortBy === 'prize' && styles.sortPillTextActive]}>Prize</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.filterBtn, styles.filterBtnCompact, activeFilterCount > 0 && styles.filterBtnActive]} onPress={openFilterModal} accessibilityRole="button" accessibilityLabel="Open opportunity filters">
+            <Ionicons name="options-outline" size={17} color={activeFilterCount > 0 ? '#FFF' : Colors.primary} />
+            {activeFilterCount > 0 ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}
+          </TouchableOpacity>
         </ScrollView>
-      </View>
-
-      {/* Active Dismissible Filters Strip */}
-      {activeFilterCount > 0 ? (
-        <View style={styles.activeFiltersBar}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.activeFiltersScroll}
-            keyboardShouldPersistTaps="handled"
-          >
-            {selectedFormat !== 'All' ? (
-              <TouchableOpacity
-                style={styles.activeFilterChip}
-                onPress={() => setSelectedFormat('All')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.activeFilterText}>Mode: {selectedFormat}</Text>
-                <Ionicons name="close" size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            ) : null}
-
-            {selectedDeadlineFilter !== 'All Deadlines' ? (
-              <TouchableOpacity
-                style={styles.activeFilterChip}
-                onPress={() => setSelectedDeadlineFilter('All Deadlines')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.activeFilterText}>{selectedDeadlineFilter}</Text>
-                <Ionicons name="close" size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            ) : null}
-
-            {selectedTeamSizes.map((ts) => (
-              <TouchableOpacity
-                key={ts}
-                style={styles.activeFilterChip}
-                onPress={() => setSelectedTeamSizes((prev) => prev.filter((t) => t !== ts))}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.activeFilterText}>{ts}</Text>
-                <Ionicons name="close" size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            ))}
-
-            {selectedPayments.map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={styles.activeFilterChip}
-                onPress={() => setSelectedPayments((prev) => prev.filter((item) => item !== p))}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.activeFilterText}>{p}</Text>
-                <Ionicons name="close" size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity
-              style={styles.clearAllFiltersBtn}
-              onPress={resetFilters}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.clearAllFiltersText}>Clear all</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Meta Row: Live Count & Sort Controls */}
-      <View style={styles.metaRow}>
+        <View style={styles.metaRow}>
         <Text style={styles.counterText}>
           {isLoading
             ? 'Updating listings...'
@@ -528,71 +419,15 @@ export default function ExploreScreen() {
             ? `${displayedOpportunities.length} ${
                 displayedOpportunities.length === 1 ? 'result' : 'results'
               } for "${debouncedSearch.trim()}"`
-            : `${displayedOpportunities.length} ${
-                displayedOpportunities.length === 1 ? 'Opportunity' : 'Opportunities'
+    : `${displayedOpportunities.length} ${
+                displayedOpportunities.length === 1 ? 'opportunity' : 'opportunities'
               }`}
         </Text>
 
-        <View style={styles.sortButtons}>
-          <TouchableOpacity
-            style={[styles.sortPill, sortBy === 'deadline' && styles.sortPillActive]}
-            onPress={() => setSortBy('deadline')}
-            accessibilityRole="button"
-            accessibilityLabel="Sort by closing deadline"
-          >
-            <Ionicons
-              name="time-outline"
-              size={12}
-              color={sortBy === 'deadline' ? '#FFF' : Colors.textMuted}
-            />
-            <Text style={[styles.sortPillText, sortBy === 'deadline' && styles.sortPillTextActive]}>
-              Deadline
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sortPill, sortBy === 'recent' && styles.sortPillActive]}
-            onPress={() => setSortBy('recent')}
-            accessibilityRole="button"
-            accessibilityLabel="Sort by most recent listing"
-          >
-            <Ionicons
-              name="sparkles-outline"
-              size={12}
-              color={sortBy === 'recent' ? '#FFF' : Colors.textMuted}
-            />
-            <Text style={[styles.sortPillText, sortBy === 'recent' && styles.sortPillTextActive]}>
-              Recent
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sortPill, sortBy === 'prize' && styles.sortPillActive]}
-            onPress={() => setSortBy('prize')}
-            accessibilityRole="button"
-            accessibilityLabel="Sort by highest prize reward"
-          >
-            <Ionicons
-              name="trophy-outline"
-              size={12}
-              color={sortBy === 'prize' ? '#FFF' : Colors.textMuted}
-            />
-            <Text style={[styles.sortPillText, sortBy === 'prize' && styles.sortPillTextActive]}>
-              Prize
-            </Text>
-          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Opportunities Feed / Virtualized FlatList */}
-      {isLoading ? (
-        <ScrollView contentContainerStyle={styles.skeletonContainer}>
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </ScrollView>
-      ) : hasError ? (
-        <View style={styles.errorContainer}>
+        {activeFilterCount > 0 ? <Text style={styles.activeSummary}>{activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'}</Text> : null}
+        </View>}
+        ListEmptyComponent={isLoading ? <View style={styles.skeletonContainer}><CardSkeleton /><CardSkeleton /><CardSkeleton /></View> : hasError ? <View style={styles.errorContainer}>
           <Ionicons name="cloud-offline-outline" size={48} color={Colors.primary} />
           <Text style={styles.errorTitle}>Connection Issue</Text>
           <Text style={styles.errorDescription}>{errorMessage}</Text>
@@ -602,9 +437,7 @@ export default function ExploreScreen() {
             onPress={onRefresh}
             style={{ marginTop: 16 }}
           />
-        </View>
-      ) : displayedOpportunities.length === 0 ? (
-        debouncedSearch.trim() ? (
+        </View> : debouncedSearch.trim() ? (
           <EmptyState
             icon="search-outline"
             title={`No results for "${debouncedSearch.trim()}"`}
@@ -625,34 +458,28 @@ export default function ExploreScreen() {
         ) : (
           <EmptyState
             icon="cube-outline"
-            title="No Opportunities Found"
-            description="There are currently no open listings in this category. Pull down to refresh or check back soon."
+            title="No active opportunities right now"
+            description="Try refreshing or changing filters."
             actionTitle="Refresh Feed"
             onAction={onRefresh}
             style={styles.emptyContainer}
           />
-        )
-      ) : (
-        <FlatList
-          data={displayedOpportunities}
-          keyExtractor={(item) => item.id}
-          renderItem={renderOpportunityCard}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          removeClippedSubviews={Platform.OS === 'android'}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
+        )}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={onRefresh}
               tintColor={Colors.primary}
             />
-          }
-        />
-      )}
+        }
+      />
 
       {/* FILTER MODAL */}
       <Modal
@@ -686,7 +513,7 @@ export default function ExploreScreen() {
               keyboardShouldPersistTaps="handled"
             >
               {/* Category Multi-select */}
-              <Text style={styles.filterSectionTitle}>CATEGORIES</Text>
+              <Text style={styles.filterSectionTitle}>Categories</Text>
               <View style={styles.chipsWrap}>
                 {ALL_CATEGORIES.filter((c) => c !== 'All').map((cat) => {
                   const isChecked = draftCategories.includes(cat);
@@ -716,8 +543,19 @@ export default function ExploreScreen() {
                 })}
               </View>
 
+              <Text style={styles.filterSectionTitle}>Skill or keyword</Text>
+              <TextInput
+                style={styles.filterKeywordInput}
+                value={draftKeywordFilter}
+                onChangeText={setDraftKeywordFilter}
+                placeholder="Search skills, roles, or topics"
+                placeholderTextColor={Colors.textMuted}
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+
               {/* Mode / Format */}
-              <Text style={styles.filterSectionTitle}>MODE / LOCATION FORMAT</Text>
+              <Text style={styles.filterSectionTitle}>Format</Text>
               <View style={styles.chipsWrap}>
                 {FORMAT_OPTIONS.map((fmt) => {
                   const isChecked = draftFormat === fmt;
@@ -748,7 +586,7 @@ export default function ExploreScreen() {
               </View>
 
               {/* Upcoming Deadlines */}
-              <Text style={styles.filterSectionTitle}>UPCOMING DEADLINE</Text>
+              <Text style={styles.filterSectionTitle}>Deadline</Text>
               <View style={styles.chipsWrap}>
                 {DEADLINE_OPTIONS.map((dl) => {
                   const isChecked = draftDeadline === dl;
@@ -779,9 +617,9 @@ export default function ExploreScreen() {
               </View>
 
               {/* Team Size */}
-              <Text style={styles.filterSectionTitle}>TEAM SIZE</Text>
+              <Text style={styles.filterSectionTitle}>Team size</Text>
               <View style={styles.chipsWrap}>
-                {TEAM_SIZE_OPTIONS.map((ts) => {
+                {teamSizeOptions.map((ts) => {
                   const isChecked = draftTeamSizes.includes(ts);
                   return (
                     <TouchableOpacity
@@ -810,7 +648,7 @@ export default function ExploreScreen() {
               </View>
 
               {/* Rewards & Fee */}
-              <Text style={styles.filterSectionTitle}>REWARDS & REGISTRATION FEE</Text>
+              <Text style={styles.filterSectionTitle}>Rewards and registration</Text>
               <View style={styles.chipsWrap}>
                 {PAYMENT_OPTIONS.map((pay) => {
                   const isChecked = draftPayments.includes(pay);
@@ -842,7 +680,7 @@ export default function ExploreScreen() {
             </ScrollView>
 
             {/* Modal Footer Controls */}
-            <View style={styles.sheetFooter}>
+            <View style={[styles.sheetFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
               <TouchableOpacity
                 style={styles.sheetResetBtn}
                 onPress={() => {
@@ -851,6 +689,7 @@ export default function ExploreScreen() {
                   setDraftTeamSizes([]);
                   setDraftDeadline('All Deadlines');
                   setDraftPayments([]);
+                  setDraftKeywordFilter('');
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Clear all draft filters"
@@ -859,7 +698,7 @@ export default function ExploreScreen() {
               </TouchableOpacity>
 
               <Button
-                title={`Show Results (${draftMatchingCount})`}
+                title={`Apply Filters (${draftMatchingCount})`}
                 variant="primary"
                 size="md"
                 onPress={applyDraftFilters}
@@ -883,27 +722,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.screenPadding,
-    paddingTop: 8,
     paddingBottom: 12,
+    paddingTop: 7,
   },
-  headerTitles: {
-    flex: 1,
-    marginRight: 12,
+  titleBlock: { gap: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconBtn: {
+    width: 40, height: 40, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: Typography.title1,
+    fontSize: 26,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
-    lineHeight: 32,
+    lineHeight: 31,
   },
-  headerSubtitle: {
-    fontSize: Typography.footnote,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
+  headerSubtitle: { fontSize: 12, color: Colors.textMuted, letterSpacing: 0.15 },
   filterBtn: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
@@ -911,8 +748,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    ...Shadows.card,
   },
+  filterBtnCompact: { width: 34, height: 32, borderRadius: 8 },
   filterBtnActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
@@ -921,7 +758,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: Colors.accentAmber,
+    backgroundColor: Colors.primary,
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -931,13 +768,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.background,
   },
   filterBadgeText: {
-    color: '#000',
+    color: Colors.textOnPrimary,
     fontSize: 10,
     fontWeight: '900',
   },
   searchSection: {
     paddingHorizontal: Spacing.screenPadding,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -958,11 +795,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.subhead,
     height: '100%',
   },
+  filterKeywordInput: {
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 12,
+    color: Colors.textPrimary,
+    fontSize: Typography.footnote,
+  },
   clearSearchBtn: {
     padding: 4,
   },
   suggestedBar: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   suggestedScroll: {
     paddingHorizontal: Spacing.screenPadding,
@@ -976,6 +823,8 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   suggestedPill: {
+    minHeight: 32,
+    justifyContent: 'center',
     backgroundColor: Colors.surfaceHighlight,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -989,14 +838,14 @@ const styles = StyleSheet.create({
     fontWeight: Typography.medium,
   },
   categoryBar: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   categoryScroll: {
     paddingHorizontal: Spacing.screenPadding,
     gap: 8,
   },
   activeFiltersBar: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   activeFiltersScroll: {
     paddingHorizontal: Spacing.screenPadding,
@@ -1033,14 +882,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.screenPadding,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   counterText: {
     fontSize: Typography.caption,
     fontWeight: Typography.bold,
     color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
     flex: 1,
     marginRight: 8,
   },
@@ -1048,10 +895,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: Spacing.screenPadding,
+    paddingVertical: 2,
   },
+  quickControlsScroll: { flexGrow: 0, marginBottom: 7 },
   sortPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 32,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: BorderRadius.full,
@@ -1078,8 +929,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   listContent: {
+    flexGrow: 1,
     paddingHorizontal: Spacing.screenPadding,
-    paddingBottom: 40,
+    paddingBottom: 36,
+  },
+  activeSummary: {
+    color: Colors.textMuted, fontSize: Typography.caption, paddingHorizontal: Spacing.screenPadding,
+    marginTop: -3, marginBottom: 7,
   },
   errorContainer: {
     flex: 1,
@@ -1101,15 +957,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   emptyContainer: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 60,
+    justifyContent: 'flex-start',
+    paddingTop: 20,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'flex-end',
+    justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end',
+    alignItems: Platform.OS === 'web' ? 'center' : undefined,
   },
   sheetContainer: {
     backgroundColor: Colors.card,
@@ -1118,6 +974,11 @@ const styles = StyleSheet.create({
     maxHeight: '85%',
     borderWidth: 1,
     borderColor: Colors.cardBorder,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 560 : undefined,
+    alignSelf: 'center',
+    borderBottomLeftRadius: Platform.OS === 'web' ? BorderRadius.xl : 0,
+    borderBottomRightRadius: Platform.OS === 'web' ? BorderRadius.xl : 0,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -1145,13 +1006,11 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   filterSectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginTop: 12,
-    marginBottom: 10,
+    fontSize: 13,
+    fontWeight: Typography.semiBold,
+    color: Colors.textPrimary,
+    marginTop: 16,
+    marginBottom: 8,
   },
   chipsWrap: {
     flexDirection: 'row',

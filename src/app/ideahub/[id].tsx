@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { Colors, Spacing, Typography, BorderRadius } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { sharedContentService } from '../../services/sharedContentService';
+import { chatService, chatRequestsEnabled } from '../../services/chatService';
 import { supabaseConfigured } from '../../services/supabase';
 import { studentIdeaBookmarksService } from '../../services/studentIdeaBookmarksService';
 import {
@@ -110,7 +111,7 @@ export default function IdeaDetailScreen() {
                 college: demoRow.author.college || '',
                 role: demoRow.author.branch || '',
                 studyYear: demoRow.author.studyYear ? `Year ${demoRow.author.studyYear}` : undefined,
-                identity: demoRow.author.id ? { type: 'demo', id: demoRow.author.id } : undefined,
+                identity: demoRow.author.identity,
               },
             };
             setRemote({ id, idea: mappedIdea, isDemoIdea: true });
@@ -164,7 +165,7 @@ export default function IdeaDetailScreen() {
                 college: demoRow.author.college || '',
                 role: demoRow.author.branch || '',
                 studyYear: demoRow.author.studyYear ? `Year ${demoRow.author.studyYear}` : undefined,
-                identity: demoRow.author.id ? { type: 'demo', id: demoRow.author.id } : undefined,
+                identity: demoRow.author.identity,
               },
             };
             setRemote({ id, idea: mappedIdea, isDemoIdea: true });
@@ -379,8 +380,10 @@ export default function IdeaDetailScreen() {
     if (!author || author.identity?.type !== 'real' || author.id === user.id) return;
     setMoreActionsVisible(false);
     try {
-      const conversationId = await sharedContentService.startDirectConversation(author.id);
-      router.push({ pathname: '/chat/[id]', params: { id: conversationId } } as never);
+      const conversationId = await chatService.existingConversation(author.id);
+      if (conversationId) router.push({ pathname: '/chat/[id]', params: { id: conversationId } } as never);
+      else if (chatRequestsEnabled) router.push({ pathname: '/messages', params: { recipient: author.id } } as never);
+      else Alert.alert('Messaging setup required', 'Chat requests are not available until the reviewed database migration is deployed and verified.');
     } catch (cause) {
       Alert.alert('Could not open chat', cause instanceof Error ? cause.message : 'Please try again.');
     }

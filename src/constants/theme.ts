@@ -53,53 +53,6 @@ export const Colors = {
   skeletonHighlight: '#2A3240',
 };
 
-// Paired light palette for screens that opt into the system color scheme.
-// Keep semantic names aligned with `Colors` so components can share styles.
-export const LightColors = {
-  ...Colors,
-  background: '#F6F7F9',
-  surface: '#FFFFFF',
-  surfaceElevated: '#FFFFFF',
-  surfaceHighlight: '#F1F2F5',
-  surfaceSubtle: '#F8F8FA',
-  card: '#FFFFFF',
-  cardBorder: '#E5E7EB',
-  cardBorderHover: '#D1D5DB',
-  accentCyan: '#087E8B',
-  accentCyanSubtle: '#E6F6F7',
-  accentPurple: '#7254C8',
-  accentPurpleSubtle: '#F0ECFA',
-  accentGreen: '#18835B',
-  accentGreenSubtle: '#E7F5EE',
-  accentAmber: '#A86A0A',
-  accentAmberSubtle: '#FFF4DF',
-  primary: '#C92F32',
-  primaryHover: '#A92327',
-  primarySubtle: '#C92F3214',
-  primaryBorder: '#C92F3240',
-  primaryGlow: 'rgba(201, 47, 50, 0.14)',
-  textOnPrimary: '#FFFFFF',
-  textPrimary: '#17191F',
-  textSecondary: '#444955',
-  textMuted: '#646B78',
-  textSubtle: '#747B87',
-  textDisabled: '#9AA0AA',
-  border: '#E5E7EB',
-  borderLight: '#D8DBE1',
-  divider: '#ECEEF1',
-  success: '#18835B',
-  successSubtle: '#E7F5EE',
-  warning: '#A86A0A',
-  warningSubtle: '#FFF4DF',
-  error: '#C13F50',
-  errorSubtle: '#FBECEE',
-  info: '#3769B1',
-  infoSubtle: '#EAF1FC',
-  overlay: 'rgba(18, 20, 25, 0.48)',
-  skeleton: '#E6E8EC',
-  skeletonHighlight: '#F1F2F5',
-};
-
 export const Spacing = {
   xs: 4,
   sm: 8,
@@ -126,8 +79,8 @@ export const Typography = {
   lineHeights: { body: 23, compact: 19, title: 31 },
 
   // Weights
-  bold: '700' as const,
-  semiBold: '600' as const,
+  bold: '600' as const,
+  semiBold: '500' as const,
   medium: '500' as const,
   regular: '400' as const,
 };

@@ -35,6 +35,7 @@ export interface UserProfile {
   id: string;
   name: string;
   givenName?: string;
+  middleName?: string;
   familyName?: string;
   email?: string;
   authProvider?: string;
@@ -58,6 +59,8 @@ export interface UserProfile {
   portfolioUrl?: string;
   /** False when the optional public-link columns have not been deployed yet. */
   profileLinksAvailable?: boolean;
+  onboardingCompleted?: boolean;
+  phoneNumber?: string;
   ideasCount?: number;
   hackathonsCount?: number;
   leaderboardRank?: number;
@@ -276,6 +279,7 @@ export type CommunityPostType =
   | 'project'
   | 'question'
   | 'study_material'
+  | 'poll'
   | 'achievement';
 
 export interface CommunityPostComment {
@@ -310,6 +314,9 @@ export interface CommunityPost {
   tags?: string[];
   skills?: string[];
   images?: string[];
+  links?: string[];
+  attachments?: string[];
+  metadata?: Record<string, unknown>;
   document?: StudyResource;
 
   // For Ideas:
@@ -394,12 +401,6 @@ export interface AcademicPdf {
   is_published: boolean;
   extraction_status: string;
   created_at: string;
-}
-
-export interface AcademicPdfSubject {
-  subject_name: string;
-  subject_code: string | null;
-  document_count: number;
 }
 
 export interface StudyResource {

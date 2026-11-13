@@ -35,7 +35,8 @@ function queryOptionalRelation(relation: string, requestKey: string, makeQuery: 
 }
 
 function mapPost(row: any, profile: any = {}): CommunityPost {
-  const supportedTypes = ['idea','service','story','event_collab','project','question','study_material','achievement'];
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const supportedTypes = ['idea','service','story','event_collab','project','question','study_material','poll','achievement'];
   const postType = row.post_type || row.category;
   const type = (supportedTypes.includes(postType) ? postType : 'story') as CommunityPostType;
   return {
@@ -43,16 +44,22 @@ function mapPost(row: any, profile: any = {}): CommunityPost {
     author: { id: row.author_id || row.user_id, identity: { type: 'real', id: row.author_id || row.user_id }, name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Student', avatar: profile.avatar_url || '', college: profile.college || undefined, role: profile.branch || undefined },
     createdAt: row.created_at, createdAtTimestamp: new Date(row.created_at).getTime(), category: row.category && row.category !== postType ? row.category : undefined,
     tags: row.tags || [], images: row.image_urls || (row.image_url ? [row.image_url] : []),
+    links: row.links || [], attachments: row.attachments || [], metadata: row.metadata || {},
+    problemStatement: metadata.problemStatement, proposedSolution: metadata.proposedSolution,
+    targetAudience: metadata.targetAudience, stage: metadata.stage, rolesNeeded: metadata.rolesNeeded,
+    githubUrl: metadata.githubUrl, demoUrl: metadata.demoUrl, technologies: metadata.technologies,
+    servicePricing: metadata.servicePricing, serviceAvailability: metadata.serviceAvailability,
+    eventName: metadata.eventName, eventRoleNeeded: metadata.eventRoleNeeded, eventDate: metadata.eventDate,
   };
 }
 
 async function mapRows(rows: any[]): Promise<CommunityPost[]> {
   if (!rows.length) return [];
   const db = requireSupabase();
-  // author_id is canonical (posts RLS uses it); user_id remains a legacy fallback only.
+  // author_id and legacy user_id store Auth UUIDs, resolved through auth_user_id.
   const ids = [...new Set(rows.flatMap((row) => [row.author_id, row.user_id]).filter(Boolean))];
   const { data: { user } } = await db.auth.getUser();
-  const result = ids.length ? await db.from('profiles').select('id,first_name,last_name,avatar_url,college,branch').in('id', ids) : { data: [], error: null };
+  const result = ids.length ? await db.from('profiles').select('id:auth_user_id,first_name,last_name,avatar_url,college,branch').in('auth_user_id', ids) : { data: [], error: null };
   if (result.error) throw result.error;
   const profiles = new Map((result.data || []).map((profile: any) => [profile.id, profile]));
   const postIds = rows.map((row) => row.id).sort();
@@ -77,6 +84,7 @@ async function mapRows(rows: any[]): Promise<CommunityPost[]> {
     return ({
     ...mapPost({ ...row, author_id: resolvedAuthorId }, profile),
     images: await signPostImagePaths(row.image_urls || (row.image_url ? [row.image_url] : [])),
+    attachments: await signPostImagePaths(row.attachments || []),
     likesCount: likeRows ? likeRows.filter((entry: any) => entry.post_id === row.id).length : undefined,
     commentsCount: commentRows ? commentRows.filter((entry: any) => entry.post_id === row.id).length : undefined,
     isLiked: likeRows ? likeRows.some((entry: any) => entry.post_id === row.id && entry.user_id === user?.id) : undefined,
@@ -106,10 +114,11 @@ export const postService = {
     if (error) throw error;
     return mapRows(data || []);
   },
-  async create(input: { title: string; content: string; type: CommunityPostType; category?: string; tags?: string[]; image_urls?: string[] }) {
+  async create(input: { title: string; content: string; type: CommunityPostType; category?: string; tags?: string[]; image_urls?: string[]; links?: string[]; attachments?: string[]; metadata?: Record<string, unknown> }) {
     const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to post.');
     const tags = [...(input.tags || []), ...(input.category ? [input.category] : [])];
-    const { data, error } = await db.from('posts').insert({ author_id: user.id, user_id: user.id, title: input.title, content: input.content, post_type: input.type, category: input.category || null, tags, image_urls: input.image_urls || [] }).select('*').single();
+    if (['opportunity','hackathon','internship','job','scholarship','competition'].includes(input.type)) throw new Error('Official Explore opportunities can only be published by approved providers.');
+    const { data, error } = await db.from('posts').insert({ author_id: user.id, user_id: user.id, title: input.title, content: input.content, post_type: input.type, category: input.category || null, tags, image_urls: input.image_urls || [], links: input.links || [], attachments: input.attachments || [], metadata: input.metadata || {} }).select('*').single();
     if (error) throw error; return (await mapRows([data]))[0];
   },
   async toggleLike(postId: string): Promise<boolean> {
@@ -148,7 +157,7 @@ export const postService = {
     const { data, error } = await db.from('post_comments').select('id,user_id,body,created_at,updated_at').eq('post_id', postId).order('created_at', { ascending: true });
     if (error) throw unavailableInteraction('post_comments', error) || error;
     const ids = [...new Set((data || []).map((row: any) => row.user_id))];
-    const profiles = ids.length ? await db.from('profiles').select('id,first_name,last_name,avatar_url,branch').in('id', ids) : { data: [], error: null };
+    const profiles = ids.length ? await db.from('profiles').select('id:auth_user_id,first_name,last_name,avatar_url,branch').in('auth_user_id', ids) : { data: [], error: null };
     if (profiles.error) throw profiles.error;
     const byId = new Map((profiles.data || []).map((row: any) => [row.id, row]));
     const { data: { user } } = await db.auth.getUser();
@@ -170,7 +179,7 @@ export const postService = {
     if (!user) throw new Error('Sign in to comment on posts.');
     const { data, error } = await db.from('post_comments').insert({ post_id: postId, user_id: user.id, body: value }).select('id,user_id,body,created_at,updated_at').single();
     if (error) throw unavailableInteraction('post_comments', error) || error;
-    const { data: profile } = await db.from('profiles').select('first_name,last_name,avatar_url,branch').eq('id', user.id).maybeSingle();
+    const { data: profile } = await db.from('profiles').select('first_name,last_name,avatar_url,branch').eq('auth_user_id', user.id).maybeSingle();
     return { id: data.id, userId: user.id, userName: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || 'Student', userAvatar: profile?.avatar_url || '', userRole: profile?.branch || '', content: data.body, createdAt: data.created_at, updatedAt: data.updated_at, isOwn: true };
   },
   async updateComment(commentId: string, content: string): Promise<CommunityPostComment> {
@@ -181,7 +190,7 @@ export const postService = {
     const { data, error } = await db.from('post_comments').update({ body: value, updated_at: new Date().toISOString() }).eq('id', commentId).eq('user_id', user.id).select('id,user_id,body,created_at,updated_at').maybeSingle();
     if (error) throw unavailableInteraction('post_comments', error) || error;
     if (!data) throw new Error('Comment could not be updated. You may not have permission to edit it.');
-    const { data: profile } = await db.from('profiles').select('first_name,last_name,avatar_url,branch').eq('id', user.id).maybeSingle();
+    const { data: profile } = await db.from('profiles').select('first_name,last_name,avatar_url,branch').eq('auth_user_id', user.id).maybeSingle();
     return { id: data.id, userId: user.id, userName: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || 'Student', userAvatar: profile?.avatar_url || '', userRole: profile?.branch || '', content: data.body, createdAt: data.created_at, updatedAt: data.updated_at, isOwn: true };
   },
   async deleteComment(commentId: string): Promise<void> {
@@ -191,10 +200,21 @@ export const postService = {
     if (error) throw unavailableInteraction('post_comments', error) || error;
     if (!data?.length) throw new Error('Comment could not be deleted. You may not have permission to delete it.');
   },
-  async remove(postId: string) { const { error } = await requireSupabase().from('posts').delete().eq('id', postId); if (error) throw error; },
-  async update(postId: string, patch: { title?: string; content?: string; category?: string | null; tags?: string[]; image_urls?: string[] }) {
+  async remove(postId: string) {
+    const db = requireSupabase();
+    const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to delete posts.');
+    const { data: current, error: readError } = await db.from('posts').select('post_type,metadata').eq('id', postId).eq('author_id', user.id).maybeSingle();
+    if (readError) throw readError; if (!current) throw new Error('This post could not be deleted. You may not own it.');
+    const { data, error } = await db.from('posts').delete().eq('id', postId).eq('author_id', user.id).select('id');
+    if (error) throw error; if (!data?.length) throw new Error('This post could not be deleted. You may not own it.');
+    const pollId = current.post_type === 'poll' ? current.metadata?.pollId : null;
+    if (typeof pollId === 'string') { const { error: pollError } = await db.from('polls').delete().eq('id', pollId).eq('author_id', user.id); if (pollError) throw pollError; }
+  },
+  async update(postId: string, patch: { title?: string; content?: string; type?: CommunityPostType; category?: string | null; tags?: string[]; image_urls?: string[]; links?: string[]; attachments?: string[]; metadata?: Record<string, unknown> }) {
+    if (patch.type && ['opportunity','hackathon','internship','job','scholarship','competition'].includes(patch.type)) throw new Error('Official Explore opportunities can only be published by approved providers.');
     const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to edit posts.');
-    const { data, error } = await db.from('posts').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', postId).eq('author_id', user.id).select('*').single();
+    const { type, ...values } = patch;
+    const { data, error } = await db.from('posts').update({ ...values, ...(type ? { post_type: type } : {}), updated_at: new Date().toISOString() }).eq('id', postId).eq('author_id', user.id).select('*').single();
     if (error) throw error; return (await mapRows([data]))[0];
   },
 };

@@ -1,6 +1,20 @@
 # STUDOS Supabase table migration map
 
-This map records the frontend relation changes for the consolidated student dataset. The repository had no usable Supabase anon key during this implementation (`EXPO_PUBLIC_SUPABASE_ANON_KEY` is empty), so deployed column names, foreign keys, grants, row counts, and RLS policies could not be confirmed live. The mappings below reflect the requested production schema and require deployment verification before relying on writes.
+The table below records relation names before migration 016, from the earlier
+consolidation work. The repository had no usable Supabase anon key during that
+implementation, so deployed schema details could not be confirmed live.
+
+## Relation rename in migration 016
+
+The `student_` relation names below describe the pre-016 schema. Migration
+`backend/migrations/016_rename_student_public_relations.sql` removes that prefix
+from every matching public table and view, including interaction tables. App
+queries and current diagnostics use the post-016 names. It renames the canonical
+`student_profiles` relation to `profiles`; it does not create or restore the
+retired legacy `profiles` table. `study_resources` and `study_resource_links`
+are unchanged.
+
+The migration has not been applied to the live database by this code change.
 
 | Previous relation | Current relation | Active use |
 | --- | --- | --- |
@@ -24,4 +38,6 @@ This map records the frontend relation changes for the consolidated student data
 | `ideas`, `idea_sparks`, `idea_comments`, `idea_collaboration_requests`, `idea_collaborators` | No active client target | Legacy generic idea queries removed from active Idea Hub/comment paths |
 | `projects` | No active client target | Standalone Projects routes and API calls removed; database tables were not changed |
 
-The identity resolver maps `profiles.id` to a real Auth identity and `student_profiles.id` to a sample student identity. It never substitutes a sample profile UUID for `auth.uid()`.
+The identity resolver maps `profiles.auth_user_id` to a real Auth identity and
+uses `profiles.id` for sample student identities where `auth_user_id` is null.
+It never substitutes a sample profile UUID for `auth.uid()`.

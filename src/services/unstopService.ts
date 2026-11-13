@@ -1,12 +1,13 @@
 import { Opportunity, OpportunityCategory, OpportunityType } from '../types';
 import { Platform } from 'react-native';
+import { isOpportunityActive } from './opportunityUtils';
 
 const BASE_URL = 'https://unstop.com';
 const API_URL = `${BASE_URL}/api/public/opportunity/search-result`;
 const CDN_BASE = 'https://d8it4huxumps7.cloudfront.net';
 
 // 8 Core Categories (Cultural Events removed as requested)
-export const UNSTOP_CATEGORIES: Record<OpportunityCategory, string> = {
+const UNSTOP_CATEGORIES: Record<OpportunityCategory, string> = {
   Hackathons: 'hackathons',
   Internships: 'internships',
   Jobs: 'jobs',
@@ -94,21 +95,85 @@ function absoluteUrl(value: unknown, fallbackId?: string): string {
 
 function parsePrizeAmount(prizeStr: string): number | undefined {
   if (!prizeStr) return undefined;
-  const digits = prizeStr.replace(/[^0-9]/g, '');
-  return digits ? parseInt(digits, 10) : undefined;
+  const amount = prizeStr.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  if (!amount) return undefined;
+  let value = Number(amount[0]);
+  if (/\b(crore|crores|cr)\b/i.test(prizeStr)) value *= 10_000_000;
+  else if (/\b(lakh|lakhs|lac|lacs)\b/i.test(prizeStr)) value *= 100_000;
+  else if (/\b(thousand|k)\b/i.test(prizeStr)) value *= 1_000;
+  return Number.isFinite(value) ? Math.round(value) : undefined;
 }
 
-function calculateDaysRemaining(deadlineStr: string | null): number | undefined {
+export function calculateDaysRemaining(deadlineStr: string | null): number | undefined {
   if (!deadlineStr) return undefined;
   try {
-    const deadlineDate = new Date(deadlineStr);
+    const deadlineDate = parseSourceDate(deadlineStr);
     if (isNaN(deadlineDate.getTime())) return undefined;
     const now = new Date();
-    const diffTime = deadlineDate.getTime() - now.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Compare calendar dates in the source's local timezone, so a deadline
+    // earlier today is still available through the end of that date.
+    const deadlineDay = Date.UTC(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate());
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((deadlineDay - today) / (1000 * 60 * 60 * 24));
   } catch {
     return undefined;
   }
+}
+
+function parseSourceDate(value: string): Date {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (dateOnly) return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+  return new Date(value);
+}
+
+/** Preserve paragraph, heading, list and link boundaries from Unstop HTML/text. */
+function normalizeDescription(value: unknown): string {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(normalizeDescription).filter(Boolean).join('\n\n');
+  if (typeof value === 'object') {
+    const record = asRecord(value);
+    const title = text(record.title ?? record.name);
+    const sectionContent = record.content ?? record.description ?? record.html ?? record.text;
+    if (title && sectionContent != null) return `${title}\n\n${normalizeDescription(sectionContent)}`;
+    const direct = record.html ?? record.content_html ?? record.content ?? record.description ?? record.text ?? record.value;
+    if (direct != null) return normalizeDescription(direct);
+    return Object.entries(record)
+      .filter(([, content]) => content != null && typeof content !== 'object')
+      .map(([heading, content]) => `${heading.replace(/[_-]/g, ' ')}\n${String(content)}`)
+      .join('\n\n');
+  }
+  const raw = String(value)
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+  return raw
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1 ($2)')
+    .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '$1$2')
+    .replace(/\*([^*]+)\*|_([^_]+)_/g, '$1$2')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<a\b[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<h[1-6]\b[^>]*>/gi, '\n\n')
+    .replace(/<(?:p|div|section|article)\b[^>]*>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|section|article|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '• ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export function formatDaysRemaining(daysRemaining: number | undefined): {
@@ -160,7 +225,7 @@ export function formatDaysRemaining(daysRemaining: number | undefined): {
 function formatDeadlineDate(dateStr: string | null): string {
   if (!dateStr) return 'Not specified';
   try {
-    const d = new Date(dateStr);
+    const d = parseSourceDate(dateStr);
     if (isNaN(d.getTime())) return dateStr.slice(0, 10);
     return d.toLocaleDateString('en-US', {
       month: 'short',
@@ -172,7 +237,7 @@ function formatDeadlineDate(dateStr: string | null): string {
   }
 }
 
-export function normalizeUnstopItem(
+function normalizeUnstopItem(
   item: UnknownRecord,
   categoryName: OpportunityCategory
 ): Opportunity | null {
@@ -195,7 +260,7 @@ export function normalizeUnstopItem(
   }
 
   if (!organizerName) {
-    organizerName = 'Unstop Verified Host';
+    organizerName = 'Organizer not specified';
   }
 
   // Separate organizer logo and opportunity banner
@@ -224,14 +289,15 @@ export function normalizeUnstopItem(
   // Registration Requirements (team sizes, deadlines, eligibility)
   const regnReq = asRecord(item.regnRequirements);
   const rawDeadline = text(
-    item.end_date ?? regnReq.end_regn_dt ?? item.registration_deadline ?? item.last_date
+    item.deadline ?? item.application_deadline ?? item.submission_end ?? item.registration_end
+      ?? item.end_date ?? regnReq.end_regn_dt ?? item.registration_deadline ?? item.last_date
   ) || null;
 
   // Days remaining calculation
   let daysRemaining: number | undefined;
   const remDaysArr = asRecord(regnReq.remainingDaysArray);
-  if (remDaysArr.durations != null && !isNaN(Number(remDaysArr.durations))) {
-    daysRemaining = Math.max(0, Number(remDaysArr.durations));
+  if (remDaysArr.durations != null && !isNaN(Number(remDaysArr.durations)) && Number(remDaysArr.durations) >= 0) {
+    daysRemaining = Number(remDaysArr.durations);
   } else {
     daysRemaining = calculateDaysRemaining(rawDeadline);
   }
@@ -254,7 +320,7 @@ export function normalizeUnstopItem(
   }
 
   // Eligibility
-  let eligibility = 'Everyone can apply';
+  let eligibility = '';
   const filters = Array.isArray(item.filters) ? item.filters : [];
   for (const f of filters) {
     const fRec = asRecord(f);
@@ -266,7 +332,7 @@ export function normalizeUnstopItem(
       break;
     }
   }
-  if (eligibility === 'Everyone can apply' && regnReq.eligibility) {
+  if (!eligibility && regnReq.eligibility) {
     const regnElig = text(regnReq.eligibility);
     if (regnElig) eligibility = regnElig;
   }
@@ -303,9 +369,7 @@ export function normalizeUnstopItem(
     const firstP = asRecord(prizesList[0]);
     prizeText = text(firstP.cash ?? firstP.title);
   }
-  if (!prizeText) {
-    prizeText = text(item.prize_money ?? item.prize ?? item.prizes);
-  }
+  if (!prizeText) prizeText = text(item.cash_prize ?? item.prize_pool ?? item.prize_money ?? item.prize ?? item.reward ?? item.rewards ?? item.scholarship_amount ?? item.grant_amount ?? item.salary_package ?? item.salary ?? item.stipend ?? item.stipend_amount ?? item.prizes);
   const prizeAmount = parsePrizeAmount(prizeText);
 
   // Registration URL
@@ -319,8 +383,9 @@ export function normalizeUnstopItem(
     orgObj.is_verified || orgObj.verified || item.is_verified || item.verified
   );
 
-  let status: 'Open' | 'Closing Soon' | 'Expired' = 'Open';
-  if (daysRemaining !== undefined) {
+  const providerStatus = text(item.status ?? item.state ?? item.opportunity_status ?? item.registration_status);
+  let status: 'Open' | 'Closing Soon' | 'Closed' | 'Expired' = /closed|expired|ended|complete|cancelled|inactive/i.test(providerStatus) ? 'Closed' : 'Open';
+  if (daysRemaining !== undefined && status !== 'Closed') {
     if (daysRemaining < 0) {
       status = 'Expired';
     } else if (daysRemaining <= 5) {
@@ -328,7 +393,7 @@ export function normalizeUnstopItem(
     }
   }
 
-  return {
+  const opportunity: Opportunity = {
     id: id || regUrl || title,
     title,
     organizer: organizerName,
@@ -344,26 +409,24 @@ export function normalizeUnstopItem(
     eligibility,
     prizeOrCompensation: prizeText || 'Not specified',
     prizeAmount,
+    stipend: text(item.stipend ?? item.stipend_amount ?? item.stipend_details) || undefined,
     registrationFee: isPaid ? 'Paid' : 'Free',
     teamSize,
     minTeamSize,
     maxTeamSize,
     isVerified,
     tags,
-    requiredSkills: skills.length > 0 ? skills.slice(0, 6) : tags.slice(0, 4),
-    description: text(item.details ?? item.description) || `${categoryName} hosted on Unstop.`,
+    requiredSkills: Array.from(new Set(skills.length > 0 ? skills : tags)).slice(0, 6),
+    description: normalizeDescription(item.details) || normalizeDescription(item.description),
     officialUrl: regUrl,
-    checklist: [
-      'Review problem statements and eligibility on Unstop',
-      'Register on official portal before deadline',
-      'Prepare submission materials and pitch',
-    ],
+    checklist: [],
     source: 'Unstop',
     status,
     isSaved: false,
     featured: (prizeAmount && prizeAmount > 50000) || false,
     publishedAt: text(item.approved_date ?? item.updated_at) || new Date().toISOString(),
   };
+  return isOpportunityActive(opportunity) ? opportunity : null;
 }
 
 // Memory Cache with 15-minute TTL
@@ -377,7 +440,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // In-flight request deduplication map
 const inFlightRequests = new Map<string, Promise<Opportunity[]>>();
 
-export async function fetchCategoryFromUnstop(
+async function fetchCategoryFromUnstop(
   category: OpportunityCategory,
   page = 1,
   perPage = 20
@@ -494,8 +557,9 @@ export async function fetchLiveOpportunities(options?: {
       if (backendRes.ok) {
         const json = (await backendRes.json()) as { data?: Opportunity[] };
         if (json?.data && Array.isArray(json.data)) {
-          memoryCache.set(cacheKey, { data: json.data, timestamp: now });
-          return json.data;
+          const active = json.data.filter((item) => isOpportunityActive(item));
+          memoryCache.set(cacheKey, { data: active, timestamp: now });
+          return active;
         }
       }
       if (Platform.OS === 'web') {
@@ -559,7 +623,7 @@ export async function fetchLiveOpportunities(options?: {
       })
     );
 
-    const aggregated = Array.from(resultsMap.values());
+    const aggregated = Array.from(resultsMap.values()).filter((item) => isOpportunityActive(item));
 
     if (aggregated.length === 0 && errors.length > 0) {
       // If all requests failed, throw honest error so the UI shows retry action

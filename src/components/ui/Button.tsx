@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.md,
   },
   sizeSm: {
     minHeight: 44,
@@ -132,11 +132,8 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: Colors.primary,
-    shadowColor: Colors.primaryGlow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
   secondary: {
     backgroundColor: Colors.surfaceElevated,

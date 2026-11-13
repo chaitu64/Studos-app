@@ -4,11 +4,11 @@
 
 with target(table_name) as (
   values
-    ('student_services'), ('student_ideas'), ('student_ideas_feed'),
-    ('student_profiles'), ('student_idea_actors'), ('student_idea_sparks'),
-    ('student_idea_comments'), ('student_idea_requests'),
-    ('student_idea_live_sparks'), ('student_idea_live_comments'),
-    ('student_idea_live_requests'), ('student_idea_live_collaborators'),
+    ('services'), ('ideas'), ('ideas_feed'),
+    ('profiles'), ('idea_actors'), ('idea_sparks'),
+    ('idea_comments'), ('idea_requests'),
+    ('idea_live_sparks'), ('idea_live_comments'),
+    ('idea_live_requests'), ('idea_live_collaborators'),
     ('study_resources'), ('notifications')
 )
 select c.table_name, c.column_name, c.data_type, c.udt_name, c.is_nullable, c.column_default
@@ -19,11 +19,11 @@ order by c.table_name, c.ordinal_position;
 
 with target(table_name) as (
   values
-    ('student_services'), ('student_ideas'), ('student_ideas_feed'),
-    ('student_profiles'), ('student_idea_actors'), ('student_idea_sparks'),
-    ('student_idea_comments'), ('student_idea_requests'),
-    ('student_idea_live_sparks'), ('student_idea_live_comments'),
-    ('student_idea_live_requests'), ('student_idea_live_collaborators'),
+    ('services'), ('ideas'), ('ideas_feed'),
+    ('profiles'), ('idea_actors'), ('idea_sparks'),
+    ('idea_comments'), ('idea_requests'),
+    ('idea_live_sparks'), ('idea_live_comments'),
+    ('idea_live_requests'), ('idea_live_collaborators'),
     ('study_resources'), ('notifications')
 )
 select tc.table_name, tc.constraint_name, tc.constraint_type,
@@ -43,11 +43,11 @@ order by tc.table_name, tc.constraint_type, tc.constraint_name;
 
 with target(table_name) as (
   values
-    ('student_services'), ('student_ideas'), ('student_ideas_feed'),
-    ('student_profiles'), ('student_idea_actors'), ('student_idea_sparks'),
-    ('student_idea_comments'), ('student_idea_requests'),
-    ('student_idea_live_sparks'), ('student_idea_live_comments'),
-    ('student_idea_live_requests'), ('student_idea_live_collaborators'),
+    ('services'), ('ideas'), ('ideas_feed'),
+    ('profiles'), ('idea_actors'), ('idea_sparks'),
+    ('idea_comments'), ('idea_requests'),
+    ('idea_live_sparks'), ('idea_live_comments'),
+    ('idea_live_requests'), ('idea_live_collaborators'),
     ('study_resources'), ('notifications')
 )
 select c.relname as relation_name, c.relkind, c.relrowsecurity as rls_enabled,
@@ -60,11 +60,11 @@ order by c.relname;
 
 with target(table_name) as (
   values
-    ('student_services'), ('student_ideas'), ('student_ideas_feed'),
-    ('student_profiles'), ('student_idea_actors'), ('student_idea_sparks'),
-    ('student_idea_comments'), ('student_idea_requests'),
-    ('student_idea_live_sparks'), ('student_idea_live_comments'),
-    ('student_idea_live_requests'), ('student_idea_live_collaborators'),
+    ('services'), ('ideas'), ('ideas_feed'),
+    ('profiles'), ('idea_actors'), ('idea_sparks'),
+    ('idea_comments'), ('idea_requests'),
+    ('idea_live_sparks'), ('idea_live_comments'),
+    ('idea_live_requests'), ('idea_live_collaborators'),
     ('study_resources'), ('notifications')
 )
 select p.schemaname, p.tablename, p.policyname, p.permissive, p.roles,
@@ -76,11 +76,11 @@ order by p.tablename, p.policyname;
 
 with target(table_name) as (
   values
-    ('student_services'), ('student_ideas'), ('student_ideas_feed'),
-    ('student_profiles'), ('student_idea_actors'), ('student_idea_sparks'),
-    ('student_idea_comments'), ('student_idea_requests'),
-    ('student_idea_live_sparks'), ('student_idea_live_comments'),
-    ('student_idea_live_requests'), ('student_idea_live_collaborators'),
+    ('services'), ('ideas'), ('ideas_feed'),
+    ('profiles'), ('idea_actors'), ('idea_sparks'),
+    ('idea_comments'), ('idea_requests'),
+    ('idea_live_sparks'), ('idea_live_comments'),
+    ('idea_live_requests'), ('idea_live_collaborators'),
     ('study_resources'), ('notifications')
 )
 select table_schema, table_name, grantee, privilege_type
@@ -91,15 +91,15 @@ order by table_name, grantee, privilege_type;
 
 -- Aggregate data presence. A Supabase SQL editor role may see more rows than
 -- anon/authenticated; compare with PostgREST behavior when reviewing RLS.
-select 'student_services' as table_name, count(*) as row_count from public.student_services
-union all select 'student_ideas', count(*) from public.student_ideas
-union all select 'student_profiles', count(*) from public.student_profiles
-union all select 'student_idea_actors', count(*) from public.student_idea_actors
-union all select 'student_idea_sparks', count(*) from public.student_idea_sparks
-union all select 'student_idea_comments', count(*) from public.student_idea_comments
-union all select 'student_idea_requests', count(*) from public.student_idea_requests
-union all select 'student_idea_live_sparks', count(*) from public.student_idea_live_sparks
-union all select 'student_idea_live_comments', count(*) from public.student_idea_live_comments
-union all select 'student_idea_live_requests', count(*) from public.student_idea_live_requests
-union all select 'student_idea_live_collaborators', count(*) from public.student_idea_live_collaborators
+select 'services' as table_name, count(*) as row_count from public.services
+union all select 'ideas', count(*) from public.ideas
+union all select 'profiles', count(*) from public.profiles
+union all select 'idea_actors', count(*) from public.idea_actors
+union all select 'idea_sparks', count(*) from public.idea_sparks
+union all select 'idea_comments', count(*) from public.idea_comments
+union all select 'idea_requests', count(*) from public.idea_requests
+union all select 'idea_live_sparks', count(*) from public.idea_live_sparks
+union all select 'idea_live_comments', count(*) from public.idea_live_comments
+union all select 'idea_live_requests', count(*) from public.idea_live_requests
+union all select 'idea_live_collaborators', count(*) from public.idea_live_collaborators
 union all select 'study_resources', count(*) from public.study_resources;

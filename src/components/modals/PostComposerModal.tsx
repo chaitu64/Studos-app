@@ -58,7 +58,9 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [skillsInput, setSkillsInput] = useState('');
+  const [collaborationNeedsInput, setCollaborationNeedsInput] = useState('');
   const [tagsInput, setTagsInput] = useState('');
+  const [linksInput, setLinksInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
 
@@ -86,6 +88,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setContent('');
     setSkillsInput('');
     setTagsInput('');
+    setLinksInput('');
     setProblemStatement('');
     setProposedSolution('');
     setServicePricing('');
@@ -109,7 +112,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!title.trim()) {
+    if (!title.trim() && postType !== 'story') {
       Alert.alert('Missing Field', 'Please enter a post title.');
       return;
     }
@@ -129,19 +132,24 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         .split(',')
         .map((t) => t.trim().replace(/^#/, ''))
         .filter(Boolean);
+      const links = linksInput.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
+      for (const link of links) {
+        try { const parsed = new URL(link); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); }
+        catch { Alert.alert('Check your links', 'Use complete http or https links.'); return; }
+      }
 
       await onSubmit({
         type: postType,
-        title: title.trim(),
+        title: title.trim() || content.trim().slice(0, 80),
         content: content.trim(),
         skills: skills.length > 0 ? skills : undefined,
         tags: tags.length > 0 ? tags : undefined,
+        links: links.length ? links : undefined,
         images: images.map((image) => image.uri),
         // Idea fields
         problemStatement: postType === 'idea' ? problemStatement.trim() || undefined : undefined,
         proposedSolution: postType === 'idea' ? proposedSolution.trim() || undefined : undefined,
         stage: postType === 'idea' ? stage : undefined,
-        rolesNeeded: postType === 'idea' ? selectedRoles : undefined,
         // Service fields
         servicePricing: postType === 'service' ? servicePricing.trim() || undefined : undefined,
         serviceAvailability: postType === 'service' ? serviceAvailability.trim() || undefined : undefined,
@@ -153,6 +161,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         demoUrl: postType === 'project' ? demoUrl.trim() || undefined : undefined,
         githubUrl: postType === 'project' ? githubUrl.trim() || undefined : undefined,
         technologies: postType === 'project' && skills.length > 0 ? skills : undefined,
+        rolesNeeded: postType === 'project' ? collaborationNeedsInput.split(',').map((value) => value.trim()).filter(Boolean) as StudentRole[] : postType === 'idea' ? selectedRoles : undefined,
         document: undefined,
       });
 
@@ -219,7 +228,9 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                   ? 'Service Name (e.g. UI/UX Prototyping, Full-Stack Mentorship)'
                   : postType === 'event_collab'
                   ? 'Event / Initiative Title'
-                  : postType === 'question'
+                : postType === 'story'
+                  ? 'Headline (optional)'
+                : postType === 'question'
                   ? 'Question Summary'
                   : 'Post Title'
               }
@@ -349,6 +360,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
             {/* Dynamic Fields for Projects */}
             {postType === 'project' ? (
+              <>
               <View style={styles.twoColRow}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Input
@@ -369,6 +381,8 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                   />
                 </View>
               </View>
+              <Input label="Collaboration needs (optional)" value={collaborationNeedsInput} onChangeText={setCollaborationNeedsInput} placeholder="e.g. Backend developer, UI designer" />
+              </>
             ) : null}
 
             {/* Skills & Tags */}
@@ -377,6 +391,15 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               value={skillsInput}
               onChangeText={setSkillsInput}
               placeholder="e.g. React Native, Python, Figma, PyTorch"
+            />
+
+            <Input
+              label="Links (optional, comma or space separated)"
+              value={linksInput}
+              onChangeText={setLinksInput}
+              placeholder="https://example.edu/resource"
+              autoCapitalize="none"
+              keyboardType="url"
             />
 
             <Input

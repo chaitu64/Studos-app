@@ -35,7 +35,7 @@ export const sharedContentService = {
     if (teamApplicationResult.error) throw teamApplicationResult.error;
     const applicantIds = (teamApplicationResult.data || []).map((row: any) => row.applicant_id);
     const profileIds = [...new Set([...ownerIds, ...memberIds, ...applicantIds])];
-    const profiles = profileIds.length ? await db.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,avatar_url').in('id', profileIds) : { data: [], error: null };
+    const profiles = profileIds.length ? await db.from('profiles').select('id:auth_user_id,first_name,last_name,college,branch,degree,study_year,avatar_url').in('auth_user_id', profileIds) : { data: [], error: null };
     if (profiles.error) throw profiles.error;
     const byId = new Map((profiles.data || []).map((profile: any) => [profile.id, profile]));
     const engagement = new Map<string, any>();
@@ -62,7 +62,7 @@ export const sharedContentService = {
     }) as T[];
   },
   async create<T extends Idea | TeamListing>(entity: Entity, payload: T): Promise<T> {
-    if (entity === 'ideas') throw new Error('Idea publishing requires the verified student_ideas write schema.');
+    if (entity === 'ideas') throw new Error('Idea publishing requires the verified ideas write schema.');
     const db = requireSupabase(); const { data: { user } } = await db.auth.getUser();
     if (!user) throw new Error('Sign in to publish shared content.');
     const { id: _localId, creator: _creator, lead: _lead, members: _members, contributors: _contributors, createdAt: _createdAt, upvotes: _upvotes, commentsCount: _commentsCount, applicantCount: _applicantCount, likes: _likes, views: _views, ...body } = payload as any;
@@ -107,7 +107,7 @@ export const sharedContentService = {
   async removeIdeaComment(commentId: string) {
     const db = requireSupabase(); const { data: { user } } = await db.auth.getUser();
     if (!user) throw new Error('Sign in to remove your comment.');
-    const { error } = await db.from('student_idea_live_comments').delete().eq('id', commentId).eq('user_id', user.id);
+    const { error } = await db.from('idea_live_comments').delete().eq('id', commentId).eq('user_id', user.id);
     if (error) throw error;
   },
   async reportIdea(ideaId: string, reason: string) {
@@ -143,13 +143,13 @@ export const sharedContentService = {
   },
   async students(): Promise<UserProfile[]> {
     const rows: any[] = []; const db = requireSupabase();
-    for (let offset = 0; ; offset += 500) { const { data, error } = await db.from('profiles').select('id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').order('created_at', { ascending: false }).range(offset, offset + 499); if (error) throw error; rows.push(...(data || [])); if (!data || data.length < 500) break; }
+    for (let offset = 0; ; offset += 500) { const { data, error } = await db.from('profiles').select('id:auth_user_id,first_name,middle_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').not('auth_user_id', 'is', null).order('created_at', { ascending: false }).range(offset, offset + 499); if (error) throw error; rows.push(...(data || [])); if (!data || data.length < 500) break; }
     return rows.map((row: any) => ({ id: row.id, name: [row.first_name,row.middle_name,row.last_name].filter(Boolean).join(' ') || 'Student', avatar: row.avatar_url || '', college: row.college || '', branch: row.branch || '', degree: row.degree || '', studyYear: row.study_year ? String(row.study_year) : '', gradYear: row.graduation_year ? String(row.graduation_year) : '', shortBio: row.bio || '', skills: row.skills || [], interests: row.interests || [] })) as UserProfile[];
   },
   async leaderboard(): Promise<LeaderboardUser[]> {
     const db = requireSupabase(); const { data, error } = await db.from('leaderboard').select('user_id,points,rank').order('points', { ascending: false }).limit(100); if (error) throw error;
     const ids = (data || []).map((row: any) => row.user_id); if (!ids.length) return [];
-    const profiles = await db.from('profiles').select('id,first_name,last_name,college,branch,avatar_url').in('id', ids); if (profiles.error) throw profiles.error;
+    const profiles = await db.from('profiles').select('id:auth_user_id,first_name,last_name,college,branch,avatar_url').in('auth_user_id', ids); if (profiles.error) throw profiles.error;
     const byId = new Map((profiles.data || []).map((row: any) => [row.id, row]));
     return (data || []).map((row: any, index) => { const profile: any = byId.get(row.user_id) || {}; return { id: row.user_id, rank: row.rank ?? index + 1, name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Student', avatar: profile.avatar_url || '', college: profile.college || '', role: profile.branch || '', points: Number(row.points) }; });
   },
@@ -159,7 +159,6 @@ export const sharedContentService = {
     if (error) throw error;
     return (data || []).map((row: any) => ({ id: row.id, title: row.title, topic: row.slug, description: row.description || '', membersCount: 0, activeNow: 0, icon: 'chatbubbles-outline', isPrivate: false }));
   },
-  async startDirectConversation(otherUserId: string): Promise<string> { return chatService.startDirectConversation(otherUserId); },
   async messages(conversationId: string): Promise<ChatMessage[]> { return chatService.messages(conversationId); },
   async sendMessage(conversationId: string, content: string) { return chatService.sendMessage(conversationId, content); },
   async joinChatRoom(roomId: string) { const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to join chat rooms.'); const { error } = await db.from('chat_room_members').insert({ room_id: roomId, user_id: user.id }); if (error?.code === '23505') return; if (error) throw error; },
@@ -169,7 +168,7 @@ export const sharedContentService = {
     const { data, error } = await db.from('chat_room_messages').select('id,room_id,user_id,content,created_at').eq('room_id', roomId).order('created_at', { ascending: true }).limit(500);
     if (error) throw error;
     const ids = [...new Set((data || []).map((row: any) => row.user_id))];
-    const profiles = ids.length ? await db.from('profiles').select('id,first_name,last_name,avatar_url').in('id', ids) : { data: [], error: null };
+    const profiles = ids.length ? await db.from('profiles').select('id:auth_user_id,first_name,last_name,avatar_url').in('auth_user_id', ids) : { data: [], error: null };
     if (profiles.error) throw profiles.error;
     const byId = new Map((profiles.data || []).map((row: any) => [row.id, row]));
     return (data || []).map((row: any) => { const profile: any = byId.get(row.user_id) || {}; return { id: row.id, conversationId: roomId, senderId: row.user_id, senderName: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Student', senderAvatar: profile.avatar_url || '', text: row.content, timestamp: row.created_at, isCurrentUser: row.user_id === user.id }; });

@@ -4,7 +4,7 @@ const ownerId = (row: any): string => typeof row?.provider_id === 'string' ? row
 
 async function readActiveServices(options: { providerId?: string; ids?: string[]; limit?: number } = {}) {
   const db = requireSupabase();
-  let query = db.from('student_services')
+  let query = db.from('services')
     .select('id,provider_id,title,description,category,price_from,is_active,created_at')
     .eq('is_active', true).order('created_at', { ascending: false });
   if (options.providerId) query = query.eq('provider_id', options.providerId);
@@ -27,12 +27,11 @@ async function mapActiveServices(rows: any[], options: { providerId?: string; id
   const services = rows.filter((row) => row.is_active === true && (!options.providerId || ownerId(row) === options.providerId) && (!idFilter || idFilter.has(row.id)));
   const providerIds = [...new Set(services.map(ownerId).filter(Boolean))];
   const authProfiles = providerIds.length
-    ? await db.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,avatar_url,skills,interests,bio').in('id', providerIds)
+    ? await db.from('profiles').select('id:auth_user_id,first_name,last_name,college,branch,degree,study_year,avatar_url,skills,interests,bio').in('auth_user_id', providerIds)
     : { data: [], error: null };
   if (authProfiles.error) logLookupFailure('profiles', authProfiles.error);
 
-  // provider_id references auth.users, so resolve it only through auth-backed
-  // public profiles. This lookup enriches cards but never controls visibility.
+  // provider_id is an Auth UUID; resolve only canonical authenticated profiles.
   const byId = new Map<string, { row: any; kind: 'real' }>();
   for (const profile of authProfiles.data || []) byId.set(profile.id, { row: profile, kind: 'real' });
 
@@ -61,10 +60,10 @@ async function list(options: { providerId?: string; ids?: string[]; limit?: numb
   if (options.ids?.length === 0) return [];
   const { data, error } = await readActiveServices(options);
   if (error) {
-    if (__DEV__) console.warn('[Supabase query failed]', { feature: 'Student services', relation: 'student_services', code: error.code || 'unknown', message: error.message, details: error.details, hint: error.hint });
+    if (__DEV__) console.warn('[Supabase query failed]', { feature: 'Student services', relation: 'services', code: error.code || 'unknown', message: error.message, details: error.details, hint: error.hint });
     throw error;
   }
-  if (__DEV__ && data?.length === 0) console.info('[Student services] Query succeeded with no rows for authenticated discovery.', { relation: 'student_services', activeOnly: true, ownerFilter: Boolean(options.providerId) });
+  if (__DEV__ && data?.length === 0) console.info('[Student services] Query succeeded with no rows for authenticated discovery.', { relation: 'services', activeOnly: true, ownerFilter: Boolean(options.providerId) });
   return mapActiveServices(data || [], options);
 }
 
@@ -75,7 +74,7 @@ export const studentServicesService = {
       if (error) throw error;
       return mapActiveServices(data || [], { limit: 4 });
     } catch (error: any) {
-      if (__DEV__) console.warn('[Supabase query failed]', { feature: 'Home services', relation: 'student_services', code: error?.code || 'unknown', message: error?.message, details: error?.details, hint: error?.hint });
+      if (__DEV__) console.warn('[Supabase query failed]', { feature: 'Home services', relation: 'services', code: error?.code || 'unknown', message: error?.message, details: error?.details, hint: error?.hint });
       throw error;
     }
   },

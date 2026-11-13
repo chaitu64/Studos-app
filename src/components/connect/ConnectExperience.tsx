@@ -12,10 +12,11 @@ import { useApp } from '../../context/AppContext';
 import { StudentDirectoryProfile, CommunityPost } from '../../types';
 import { StudentService } from '../../services/homeDiscoveryData';
 import { studentDirectoryService } from '../../services/studentDirectoryService';
-import { studentContactRequestService } from '../../services/studentContactRequestService';
+import { chatService, chatRequestsEnabled } from '../../services/chatService';
 import { studentServicesService } from '../../services/studentServicesService';
 import { studentCommunityService, StudentTeamOpening } from '../../services/studentCommunityService';
 import { DiscoveryItem, DiscoveryPerson, DiscoverySwipeCard, DiscoverySwipeCardHandle } from '../cards/DiscoverySwipeCard';
+import { matchesConnectSearch } from '../../utils/connectSearch';
 
 type Section = 'services' | 'teammates' | 'people';
 const sections: { id: Section; title: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -120,7 +121,7 @@ export default function ConnectExperience() {
       const text = item.kind === 'person'
         ? [item.person.author.name, item.person.profile?.college, item.person.profile?.branch, item.person.profile?.shortBio, ...tags].join(' ')
         : [item.post.title, item.post.content, item.post.category, item.post.eventName, ...tags].join(' ');
-      return (!term || text.toLowerCase().includes(term)) && (filter === 'All' || tags.includes(filter));
+      return matchesConnectSearch(text, tags, term, filter);
     });
   }, [allItems, filter, requested, search, skipped]);
   const current = candidates[0];
@@ -138,6 +139,10 @@ export default function ConnectExperience() {
 
   const pass = (item: DiscoveryItem) => setSkipped((currentIds) => currentIds.includes(item.id) ? currentIds : [...currentIds, item.id]);
   const beginRequest = (item: DiscoveryItem) => {
+    if (!chatRequestsEnabled && section !== 'teammates') {
+      Alert.alert('Messaging setup required', 'Chat requests are unavailable until the reviewed database migration is deployed and verified.');
+      return;
+    }
     if (section === 'teammates' && item.kind === 'post') {
       setRequestUnavailable(item.post.author.identity?.type === 'demo'
         ? 'This is a demonstration opening. It is view-only and does not accept applications.'
@@ -161,7 +166,11 @@ export default function ConnectExperience() {
       else {
         const target = contactTarget(requestItem);
         if (!target.id) throw new Error('This student does not have a contactable account.');
-        await studentContactRequestService.send({ targetUserId: target.id, serviceId: target.serviceId, message });
+        if (!chatRequestsEnabled) throw new Error('Chat requests are unavailable until the reviewed database migration is deployed and verified.');
+        const context = requestItem.kind === 'post' && requestItem.post.type === 'service' ? `Service: ${requestItem.post.title}\n\n` : '';
+        const requestMessage = `${context}${message}`;
+        if (requestMessage.length > 1000) throw new Error('Keep the introduction under 1,000 characters.');
+        await chatService.createRequest(target.id, requestMessage);
       }
       setRequested((ids) => ids.includes(requestItem.id) ? ids : [...ids, requestItem.id]);
       setRequestItem(null); setMessage('');
@@ -184,13 +193,13 @@ export default function ConnectExperience() {
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
     <Header hideGreeting showSearch={false} />
-    <View style={styles.connectHeading}><Text style={styles.pageTitle}>Connect</Text><Text style={styles.pageSubtitle}>Find people, discover skills, build together.</Text></View>
+     <View style={styles.connectHeading}><Text style={styles.pageTitle}>Connect</Text><Text style={styles.pageSubtitle}>Students, skills and ways to work together</Text></View>
     <View style={styles.segmentRow}>{sections.map((entry) => <Pressable key={entry.id} accessibilityRole="tab" accessibilityState={{ selected: section === entry.id }} onPress={() => { setSection(entry.id); setFilter('All'); setSkipped([]); setRequested([]); }} style={[styles.segment, section === entry.id && styles.segmentActive]}><Ionicons name={entry.icon} size={16} color={section === entry.id ? Colors.primary : Colors.textMuted}/><Text style={[styles.segmentText, section === entry.id && styles.segmentTextActive]}>{entry.title}</Text></Pressable>)}</View>
     <View style={styles.searchControls}>
-      <View style={styles.searchRow}><Ionicons name="search-outline" size={17} color={Colors.textMuted}/><TextInput value={search} onChangeText={setSearch} placeholder={`Search ${sectionTitle.toLowerCase()}...`} placeholderTextColor={Colors.textMuted} style={styles.search}/>{search ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(''); setFilter('All'); }}><Ionicons name="close-circle" size={18} color={Colors.textMuted}/></Pressable> : null}</View>
+       <View style={styles.searchRow}><Ionicons name="search-outline" size={17} color={Colors.textMuted}/><TextInput accessibilityLabel={`Search ${sectionTitle.toLowerCase()}`} value={search} onChangeText={setSearch} placeholder={`Search ${sectionTitle.toLowerCase()}`} placeholderTextColor={Colors.textMuted} style={styles.search}/>{search ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(''); setFilter('All'); }}><Ionicons name="close-circle" size={18} color={Colors.textMuted}/></Pressable> : null}</View>
       <Pressable accessibilityRole="button" accessibilityLabel={browseAll ? 'Switch to swipe deck' : 'Browse all suggestions'} accessibilityState={{ selected: browseAll }} onPress={() => setBrowseAll((value) => !value)} style={styles.browseButton}><Ionicons name={browseAll ? 'albums-outline' : 'list-outline'} size={16} color={Colors.textPrimary}/><Text style={styles.browseText}>{browseAll ? 'Swipe' : 'Browse'}</Text></Pressable>
     </View>
-    {filterOptions.length > 0 ? <View style={styles.filterRow}><ScrollView horizontal style={styles.filterScroll} showsHorizontalScrollIndicator contentContainerStyle={styles.filters}>{['All', ...filterOptions].map((option) => <Pressable key={option} accessibilityRole="button" accessibilityState={{ selected: filter === option }} onPress={() => setFilter(option)} style={[styles.filterPill, filter === option && styles.filterPillActive]}><Text style={[styles.filterText, filter === option && styles.filterTextActive]}>{option}</Text></Pressable>)}</ScrollView></View> : <View style={styles.filtersSpacer}/ >}
+    {filterOptions.length > 0 ? <View style={styles.filterRow}><ScrollView horizontal style={styles.filterScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{['All', ...filterOptions].map((option) => <Pressable key={option} accessibilityRole="button" accessibilityState={{ selected: filter === option }} onPress={() => setFilter(option)} style={[styles.filterPill, filter === option && styles.filterPillActive]}><Text style={[styles.filterText, filter === option && styles.filterTextActive]}>{option}</Text></Pressable>)}</ScrollView></View> : <View style={styles.filtersSpacer}/ >}
     <View style={styles.deckArea}>
       {loading ? <CardSkeleton/> : error ? <EmptyState icon="cloud-offline-outline" title={`Couldn't load ${sectionTitle.toLowerCase()}`} description={error} actionTitle="Retry" onAction={retryCurrent} style={styles.empty}/> : candidates.length === 0 ? <EmptyState icon="sparkles-outline" title={allItems.length ? 'You’ve explored all current suggestions.' : section === 'services' ? 'No active student services found' : section === 'teammates' ? 'No open teammate roles found' : 'No students to discover'} description={allItems.length ? 'Review skipped suggestions, adjust filters, or browse all available records.' : 'New opportunities will appear here when students share them.'} actionTitle={skipped.length ? 'Review skipped' : filter !== 'All' || search ? 'Clear filters' : 'Refresh'} onAction={() => { if (skipped.length) { setSkipped([]); setRequested([]); } else if (filter !== 'All' || search) { setFilter('All'); setSearch(''); } else retryCurrent(); }} style={styles.empty}/> : browseAll ? <ScrollView contentContainerStyle={styles.browseList}>{candidates.map((item) => <Pressable key={item.id} onPress={() => openDetails(item)} style={styles.browseCard}><Avatar uri={item.kind === 'person' ? item.person.author.avatar : item.post.author.avatar} name={item.kind === 'person' ? item.person.author.name : item.post.author.name} size={42}/><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.browseTitle} numberOfLines={2}>{displayName(item)}</Text><Text style={styles.browseSub} numberOfLines={2}>{item.kind === 'person' ? item.person.profile?.college : item.post.content}</Text></View><Ionicons name="chevron-forward" size={18} color={Colors.textMuted}/></Pressable>)}</ScrollView> : current ? <View style={[styles.cardWrap, { maxWidth: width > 720 ? 480 : 520 }]}><DiscoverySwipeCard key={current.id} ref={card} item={current} disabled={busy} onSkip={() => pass(current)} onInterest={() => beginRequest(current)}/><View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel="Pass suggestion" onPress={() => card.current?.swipeLeft()} style={styles.action}><Ionicons name="close" size={20} color={Colors.textMuted}/><Text style={styles.actionText}>Pass</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="View full details" onPress={() => openDetails(current)} style={[styles.action, styles.detailAction]}><Ionicons name="document-text-outline" size={18} color={Colors.textPrimary}/><Text style={styles.actionText}>Details</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={actionTitle} onPress={() => card.current?.swipeRight()} style={[styles.action, styles.interested]}><Ionicons name="arrow-forward" size={18} color={Colors.textOnPrimary}/><Text style={styles.interestedText}>{actionButtonLabel}</Text></Pressable></View>{skipped.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel="Undo last pass" onPress={() => setSkipped((ids) => ids.slice(0, -1))} style={styles.undo}><Ionicons name="arrow-undo-outline" size={15} color={Colors.primary}/><Text style={styles.undoText}>Undo last pass</Text></Pressable> : null}</View> : null}
     </View>
@@ -201,35 +210,35 @@ export default function ConnectExperience() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  connectHeading: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: 7, paddingBottom: 7 },
-  pageTitle: { color: Colors.textPrimary, fontSize: Typography.title2, lineHeight: 29, fontWeight: Typography.bold },
-  pageSubtitle: { color: Colors.textMuted, fontSize: Typography.caption, lineHeight: 18, marginTop: 2 },
-  searchControls: { maxWidth: 720, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: 12, paddingBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  browseButton: { minHeight: 42, borderRadius: 13, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surface },
+  connectHeading: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: 4, paddingBottom: 4 },
+  pageTitle: { color: Colors.textPrimary, fontSize: 20, lineHeight: 26, fontWeight: Typography.semiBold },
+  pageSubtitle: { color: Colors.textMuted, fontSize: Typography.caption, lineHeight: 16, marginTop: 0 },
+  searchControls: { maxWidth: 720, width: '100%', alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: 4, paddingBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  browseButton: { minHeight: 40, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surface },
   browseText: { color: Colors.textPrimary, fontSize: Typography.caption, fontWeight: Typography.semiBold },
-  segmentRow: { maxWidth: 720, width: '100%', alignSelf: 'center', flexDirection: 'row', paddingHorizontal: Spacing.screenPadding, gap: 6, marginTop: 8 },
-  segment: { flex: 1, minWidth: 0, minHeight: 42, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 6, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  segmentRow: { maxWidth: 720, width: '100%', alignSelf: 'center', flexDirection: 'row', paddingHorizontal: Spacing.screenPadding, gap: 4, marginTop: 2 },
+  segment: { flex: 1, minWidth: 0, minHeight: 40, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 6, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   segmentActive: { borderBottomColor: Colors.primary },
-  segmentText: { color: Colors.textMuted, fontSize: 11, fontWeight: Typography.semiBold },
+  segmentText: { color: Colors.textMuted, fontSize: 12, fontWeight: Typography.medium },
   segmentTextActive: { color: Colors.textPrimary },
-  searchRow: { flex: 1, minWidth: 0, minHeight: 42, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 13, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
-  search: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontSize: 13, paddingVertical: 8, outlineStyle: 'none' as any },
-  filterRow: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, marginTop: 10, marginBottom: 8 },
-  filterScroll: { width: '100%', flexGrow: 0 },
-  filters: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 2, paddingRight: 4 },
-  filterPill: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 18, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  searchRow: { flex: 1, minWidth: 0, minHeight: 40, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  search: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontSize: 14, paddingVertical: 6, outlineStyle: 'none' as any },
+  filterRow: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: Spacing.screenPadding, marginTop: 4, marginBottom: 4 },
+  filterScroll: { width: '100%', flexGrow: 0, flexShrink: 1, overflow: 'hidden' },
+  filters: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2, paddingVertical: 2 },
+  filterPill: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   filterPillActive: { backgroundColor: Colors.primarySubtle, borderColor: Colors.primary },
-  filterText: { color: Colors.textMuted, fontSize: 11, fontWeight: Typography.medium },
+  filterText: { color: Colors.textMuted, fontSize: 12, fontWeight: Typography.medium },
   filterTextActive: { color: Colors.primary, fontWeight: Typography.semiBold },
   filtersSpacer: { height: 8 },
-  deckArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
-  cardWrap: { flex: 1, minHeight: 0, width: '100%', gap: 12 },
-  actions: { minHeight: 48, flexDirection: 'row', gap: 8 },
-  action: { flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 4, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  deckArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
+  cardWrap: { flex: 1, minHeight: 0, width: '100%', gap: 8 },
+  actions: { minHeight: 44, flexDirection: 'row', gap: 8 },
+  action: { flex: 1, minWidth: 0, minHeight: 44, paddingHorizontal: 4, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   detailAction: { flex: 1.2 },
-  actionText: { color: Colors.textPrimary, fontSize: 10, fontWeight: Typography.semiBold },
+  actionText: { color: Colors.textPrimary, fontSize: 12, fontWeight: Typography.medium },
   interested: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  interestedText: { color: Colors.textOnPrimary, fontSize: 11, fontWeight: Typography.bold },
+  interestedText: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: Typography.medium },
   undo: { alignSelf: 'center', minHeight: 32, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
   undoText: { color: Colors.primary, fontSize: 11, fontWeight: Typography.medium },
   empty: { width: '100%', maxWidth: 520, alignSelf: 'center' },

@@ -2,30 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { safeBack } from '@/navigation/safeBack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchResource, isResourceSaved, listStudyResourcePage, openDriveResource, reportBrokenResource, removeStudyResource, saveResource } from '../../services/resourceApi';
 import { StudyResource } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { DrivePdfPreview } from '../../components/home/DrivePdfPreview';
-import { CommunityLearningLinks } from '../../components/resources/CommunityLearningLinks';
+import { LearningResourcesAction } from '../../components/resources/LearningResourcesAction';
 import { BorderRadius, Colors, Spacing, Typography } from '../../constants/theme';
+import { appendUniqueResources } from '../../utils/resourceDetail';
 
 export default function ResourceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { session } = useAuth(); const [saved, setSaved] = useState(false);
-  const [infoExpanded, setInfoExpanded] = useState(false);
+  const [readerAreaHeight, setReaderAreaHeight] = useState(0);
   const [resource, setResource] = useState<StudyResource>(); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [children, setChildren] = useState<StudyResource[]>([]); const [childrenLoading, setChildrenLoading] = useState(false); const [childrenLoadingMore, setChildrenLoadingMore] = useState(false); const [childrenHasMore, setChildrenHasMore] = useState(false); const [childrenError, setChildrenError] = useState(''); const [childSearch, setChildSearch] = useState(''); const [debouncedChildSearch, setDebouncedChildSearch] = useState(''); const [childReload, setChildReload] = useState(0); const childRequest = React.useRef(false); const childVersion = React.useRef(0);
   useEffect(() => {
     let active = true;
     if (!id) return;
     void fetchResource(id).then((item) => {
-      if (active) setResource(item);
-      return isResourceSaved(id).then((savedItem) => { if (active) setSaved(savedItem); }).catch(() => { if (active) setSaved(false); });
-    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Resource unavailable.'); })
-      .finally(() => { if (active) setLoading(false); });
+      if (active) { setResource(item); setLoading(false); }
+      void isResourceSaved(id).then((savedItem) => { if (active) setSaved(savedItem); }).catch(() => { if (active) setSaved(false); });
+    }).catch((cause) => { if (active) { setError(cause instanceof Error ? cause.message : 'Resource unavailable.'); setLoading(false); } });
     return () => { active = false; };
   }, [id]);
   useEffect(() => { const timer = setTimeout(() => setDebouncedChildSearch(childSearch.trim()), 300); return () => clearTimeout(timer); }, [childSearch]);
@@ -55,7 +56,7 @@ export default function ResourceDetailScreen() {
     childRequest.current = true; setChildrenLoadingMore(true);
     try {
       const page = await listStudyResourcePage({ parentResourceId: resource.id, search: debouncedChildSearch, offset: children.length, limit: 10 });
-      if (version === childVersion.current) { setChildren((current) => [...current, ...page.items.filter((item) => !current.some((existing) => existing.id === item.id))]); setChildrenHasMore(page.hasMore); }
+      if (version === childVersion.current) { setChildren((current) => appendUniqueResources(current, page.items)); setChildrenHasMore(page.hasMore); }
     } catch (cause) { if (version === childVersion.current) setChildrenError(cause instanceof Error ? cause.message : 'Could not load more PDFs.'); }
     finally { childRequest.current = false; setChildrenLoadingMore(false); }
   };
@@ -63,51 +64,18 @@ export default function ResourceDetailScreen() {
   const own = Boolean(resource && resource.resourceKind !== 'pdf' && session?.user.id === resource.uploader.id);
   const remove = () => Alert.alert('Delete resource?', 'The metadata will be removed from Study Hub. The file remains in your Drive.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void removeStudyResource(id).then(() => safeBack()).catch((cause) => Alert.alert('Could not delete', cause.message)) }]);
   return <SafeAreaView style={styles.safe}>
-    <View style={styles.header}>
+    {resource?.resourceKind === 'pdf' ? null : <View style={styles.header}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" onPress={() => safeBack()} style={styles.back}><Ionicons name="arrow-back" size={21} color={Colors.textPrimary}/></TouchableOpacity>
-      <Text style={styles.headerTitle} numberOfLines={1}>{resource?.resourceKind === 'pdf' ? 'PDF Details' : 'Resource details'}</Text>
-      {resource?.resourceKind === 'pdf' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={saved ? 'Remove saved PDF' : 'Bookmark PDF'} onPress={() => void saveResource(id, !saved).then(() => setSaved(!saved)).catch((cause) => Alert.alert('Could not save', cause.message))} style={styles.back}><Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? Colors.primary : Colors.textPrimary}/></TouchableOpacity> : resource?.resourceKind === 'link' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share resource" onPress={() => resource.pdfUrl && Share.share({ title: resource.title, message: resource.pdfUrl })} style={styles.back}><Ionicons name="share-social-outline" size={20} color={Colors.textPrimary}/></TouchableOpacity> : null}
-    </View>
+      <Text style={styles.headerTitle} numberOfLines={1}>Resource details</Text>
+      {resource?.resourceKind === 'link' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share resource" onPress={() => resource.pdfUrl && Share.share({ title: resource.title, message: resource.pdfUrl })} style={styles.back}><Ionicons name="share-social-outline" size={20} color={Colors.textPrimary}/></TouchableOpacity> : null}
+    </View>}
     {loading ? <View style={styles.state}><ActivityIndicator color={Colors.primary}/><Text style={styles.muted}>Loading resource...</Text></View>
       : error || !resource ? <View style={styles.state}><Text style={styles.muted}>{error || 'This resource is unavailable.'}</Text></View>
-      : resource.resourceKind === 'pdf' ? <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pdfContent}>
-        <View style={[styles.pdfContentInner, { maxWidth: screenWidth >= 900 ? 820 : 720 }]}>
-          <View style={styles.identityCard}>
-            <View style={styles.pdfIcon}><Ionicons name="document-text" size={21} color={Colors.primary}/></View>
-            <View style={styles.identityCopy}>
-              <Text style={styles.filename}>{resource.pdfFileName || resource.fileName}</Text>
-              {resource.title && resource.title !== (resource.pdfFileName || resource.fileName) ? <Text style={styles.documentTitle}>{resource.title}</Text> : null}
-              <Text style={styles.subject}>{resource.subject}</Text>
-              <View style={styles.chips}>
-                {resource.studyYear ? <Text style={styles.chip}>Year {resource.studyYear}</Text> : null}
-                {resource.semester ? <Text style={styles.chip}>Semester {resource.semester}</Text> : null}
-                {resource.regulation ? <Text style={styles.chip}>{resource.regulation}</Text> : null}
-                {resource.fileSizeMb != null ? <Text style={styles.chip}>{resource.fileSizeMb.toFixed(2)} MB</Text> : null}
-              </View>
-            </View>
-          </View>
-          <View style={styles.readerWrap}><DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} height={Math.max(340, Math.min(560, screenHeight * 0.54))} readerMode/></View>
-          <CommunityLearningLinks resource={resource} userId={session?.user.id}/>
-          <View style={styles.infoCard}>
-            <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: infoExpanded }} style={styles.infoToggle} onPress={() => setInfoExpanded((value) => !value)}>
-              <View style={styles.infoHeadingCopy}><Text style={styles.infoTitle}>Document information</Text><Text style={styles.infoHint}>College, uploader and file details</Text></View>
-              <Ionicons name={infoExpanded ? 'chevron-up' : 'chevron-down'} size={19} color={Colors.textMuted}/>
-            </TouchableOpacity>
-            {infoExpanded ? <View style={styles.infoGrid}>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>College</Text><Text style={styles.infoValue}>{resource.college || 'Not provided'}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Degree</Text><Text style={styles.infoValue}>{resource.degree || 'Not provided'}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Category</Text><Text style={styles.infoValue}>{resource.type.replaceAll('_', ' ')}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Regulation</Text><Text style={styles.infoValue}>{resource.regulation || 'Not provided'}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Language</Text><Text style={styles.infoValue}>{resource.language || 'Not provided'}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>File size</Text><Text style={styles.infoValue}>{resource.fileSizeMb != null ? resource.fileSizeMb.toFixed(2) + ' MB' : 'Not provided'}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Uploader</Text><Text style={styles.infoValue}>{resource.uploader.name}</Text></View>
-              <View style={styles.infoItem}><Text style={styles.infoLabel}>Created</Text><Text style={styles.infoValue}>{resource.createdAt ? new Date(resource.createdAt).toLocaleDateString() : 'Not provided'}</Text></View>
-            </View> : null}
-          </View>
-          <TouchableOpacity accessibilityRole="link" style={styles.driveButton} onPress={() => resource.pdfUrl && openDriveResource(resource.pdfUrl)}><Ionicons name="open-outline" size={18} color={Colors.textPrimary}/><Text style={styles.driveButtonText}>Open in Google Drive</Text></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={styles.report} onPress={report}><Ionicons name="flag-outline" size={15} color={Colors.textMuted}/><Text style={styles.reportText}>Report broken PDF link</Text></TouchableOpacity>
-        </View>
-      </ScrollView> : <ScrollView contentContainerStyle={styles.content}>
+      : resource.resourceKind === 'pdf' ? <View style={styles.readerArea} onLayout={(event) => { const height = event.nativeEvent.layout.height; setReaderAreaHeight((current) => Math.abs(current - height) > 1 ? height : current); }}>
+        <DrivePdfPreview key={resource.pdfUrl} url={resource.pdfUrl || ''} height={readerAreaHeight || Math.max(240, screenHeight - insets.top - insets.bottom)} readerMode onOpenExternal={() => { if (resource.pdfUrl) void openDriveResource(resource.pdfUrl).catch(() => Alert.alert('Could not open document', 'Check that the Google Drive file is shared and try again.')); }} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" onPress={() => safeBack()} style={{ position: 'absolute', top: 12, left: 12, width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.border, backgroundColor: 'rgba(26,29,36,0.88)', zIndex: 4 }}><Ionicons name="arrow-back" size={20} color={Colors.textPrimary}/></TouchableOpacity>
+        <LearningResourcesAction resource={resource} userId={session?.user.id} />
+      </View> : <ScrollView contentContainerStyle={styles.content}>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginBottom: 10 }}>{own ? <><TouchableOpacity onPress={() => router.push({ pathname: '/share-resource', params: { id } })}><Text style={styles.reportText}>Edit resource</Text></TouchableOpacity><TouchableOpacity onPress={remove}><Text style={[styles.reportText, { color: '#FF6B63' }]}>Delete</Text></TouchableOpacity></> : null}<TouchableOpacity onPress={() => void saveResource(id, !saved).then(() => setSaved(!saved)).catch((cause) => Alert.alert('Could not save', cause.message))}><Text style={styles.reportText}>{saved ? 'Saved' : 'Save'}</Text></TouchableOpacity></View>
       <View style={styles.icon}><Ionicons name={resource.resourceKind === 'folder' ? 'folder-open' : 'document-text'} size={32} color="#FF6B63"/></View><Text style={styles.title}>{resource.title}</Text><Text style={styles.subtitle}>{resource.subject} - {resource.studyYear ? 'Year ' + resource.studyYear : 'Year not provided'} - {resource.semester ? 'Semester ' + resource.semester : 'Semester not provided'}</Text>
       {resource.resourceKind === 'folder' ? <View style={styles.pdfListing}>
@@ -147,26 +115,5 @@ export default function ResourceDetailScreen() {
     </ScrollView>}
   </SafeAreaView>;
 }
-const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: Colors.background }, header: { minHeight: 62, borderBottomWidth: 1, borderBottomColor: Colors.border, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.screenPadding, gap: 12, backgroundColor: Colors.background }, back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }, headerTitle: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontWeight: Typography.bold, fontSize: 16 }, content: { padding: Spacing.screenPadding, paddingBottom: 36 }, heroIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }, icon: { width: 58, height: 58, borderRadius: 18, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }, titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, title: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontSize: 23, lineHeight: 31, fontWeight: Typography.bold, letterSpacing: -0.3 }, saveButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 14 }, subtitle: { color: Colors.textMuted, fontSize: 14, lineHeight: 21, marginTop: 8, marginBottom: 14 }, meta: { paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, gap: 5 }, metaLabel: { color: Colors.textMuted, fontWeight: Typography.semiBold, fontSize: 11, lineHeight: 16, textTransform: 'uppercase', letterSpacing: 0.5 }, metaValue: { color: Colors.textPrimary, fontSize: 14, lineHeight: 21 }, open: { minHeight: 52, marginTop: 18, borderRadius: 14, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, openText: { color: Colors.textOnPrimary, fontWeight: Typography.bold, fontSize: 15 }, report: { alignItems: 'center', padding: 15, minHeight: 48, justifyContent: 'center' }, reportText: { color: Colors.primary, fontWeight: Typography.semiBold, fontSize: 13 }, pdfListing: { marginTop: 18, marginBottom: 16, padding: 14, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface, gap: 10 }, childSearch: { color: Colors.textPrimary, backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border, borderRadius: 11, minHeight: 44, paddingHorizontal: 12, fontSize: 13 }, childState: { minHeight: 64, alignItems: 'center', justifyContent: 'center', gap: 8 }, childRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border }, childInfo: { flex: 1, gap: 5 }, childTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: Typography.semiBold }, childMeta: { color: Colors.textMuted, fontSize: 11, lineHeight: 16 }, loadMore: { padding: 12, alignItems: 'center', borderRadius: 10, backgroundColor: Colors.surfaceHighlight }, note: { color: Colors.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 }, state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 25 }, muted: { color: Colors.textMuted, textAlign: 'center', lineHeight: 21 }, pdfUnavailable: { marginTop: 20, padding: 18, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, backgroundColor: Colors.surface }, pdfUnavailableTitle: { color: Colors.textPrimary, fontSize: 15, fontWeight: Typography.bold },
-  pdfContent: { width: '100%', alignItems: 'center', paddingHorizontal: Spacing.screenPadding, paddingTop: 14, paddingBottom: 34 },
-  pdfContentInner: { width: '100%', alignSelf: 'center' },
-  identityCard: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 15, borderRadius: 17, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
-  pdfIcon: { width: 42, height: 42, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: Colors.primarySubtle },
-  identityCopy: { flex: 1, minWidth: 0, gap: 4 },
-  filename: { color: Colors.textPrimary, fontSize: 17, lineHeight: 23, fontWeight: Typography.bold, flexShrink: 1 },
-  documentTitle: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17 },
-  subject: { color: Colors.textMuted, fontSize: 13, lineHeight: 18 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  chip: { overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9, color: Colors.textSecondary, backgroundColor: Colors.surfaceHighlight, fontSize: 10, lineHeight: 14 },
-  readerWrap: { width: '100%', marginTop: 12 },
-  infoCard: { width: '100%', marginTop: 18, borderRadius: 15, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, overflow: 'hidden' },
-  infoToggle: { minHeight: 64, paddingHorizontal: 15, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  infoHeadingCopy: { flex: 1, minWidth: 0, gap: 3 },
-  infoTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 19, fontWeight: Typography.semiBold },
-  infoHint: { color: Colors.textMuted, fontSize: 11, lineHeight: 16 },
-  infoGrid: { paddingHorizontal: 15, paddingBottom: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
-  infoItem: { width: '47%', minWidth: 120, paddingTop: 12, gap: 3 },
-  infoLabel: { color: Colors.textMuted, fontSize: 9, lineHeight: 13, fontWeight: Typography.semiBold, letterSpacing: 0.55, textTransform: 'uppercase' },
-  infoValue: { color: Colors.textPrimary, fontSize: 12, lineHeight: 17, flexShrink: 1 },
-  driveButton: { width: '100%', minHeight: 46, marginTop: 13, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, borderWidth: 1, borderColor: Colors.borderLight, backgroundColor: Colors.surface },
-  driveButtonText: { color: Colors.textPrimary, fontSize: 13, fontWeight: Typography.semiBold }, });
+const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: Colors.background }, header: { minHeight: 54, borderBottomWidth: 1, borderBottomColor: Colors.border, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, gap: 7, backgroundColor: Colors.background }, back: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }, headerTitle: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontWeight: Typography.semiBold, fontSize: 14 }, readerArea: { flex: 1, minHeight: 0, position: 'relative', backgroundColor: '#10131A' }, moreOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.48)' }, moreSheet: { width: '100%', maxWidth: 560, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderBottomWidth: 0, borderColor: Colors.border, backgroundColor: Colors.surface }, moreHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }, moreTitle: { color: Colors.textPrimary, fontSize: 17, fontWeight: Typography.bold }, moreSectionTitle: { color: Colors.textMuted, fontSize: 10, fontWeight: Typography.semiBold, letterSpacing: 0.8, marginBottom: 5 }, detailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border }, detailLabel: { color: Colors.textMuted, fontSize: 12 }, detailValue: { flex: 1, color: Colors.textPrimary, fontSize: 12, textAlign: 'right' }, moreActions: { marginTop: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border }, moreAction: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border }, moreActionText: { color: Colors.textPrimary, fontSize: 13 }, content: { padding: Spacing.screenPadding, paddingBottom: 24 }, heroIcon: { width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, icon: { width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }, titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, title: { flex: 1, minWidth: 0, color: Colors.textPrimary, fontSize: 22, lineHeight: 29, fontWeight: Typography.semiBold }, saveButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12 }, subtitle: { color: Colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 12 }, meta: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border, gap: 4 }, metaLabel: { color: Colors.textMuted, fontWeight: Typography.medium, fontSize: 12, lineHeight: 16 }, metaValue: { color: Colors.textPrimary, fontSize: 14, lineHeight: 21 }, open: { minHeight: 48, marginTop: 16, borderRadius: 12, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, openText: { color: Colors.textOnPrimary, fontWeight: Typography.semiBold, fontSize: 14 }, report: { alignItems: 'center', padding: 12, minHeight: 44, justifyContent: 'center' }, reportText: { color: Colors.primary, fontWeight: Typography.medium, fontSize: 13 }, pdfListing: { marginTop: 16, marginBottom: 12, padding: 12, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, gap: 8 }, childSearch: { color: Colors.textPrimary, backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, minHeight: 44, paddingHorizontal: 12, fontSize: 14 }, childState: { minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 8 }, childRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.border }, childInfo: { flex: 1, gap: 4 }, childTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: Typography.semiBold }, childMeta: { color: Colors.textMuted, fontSize: 12, lineHeight: 16 }, loadMore: { padding: 12, alignItems: 'center', borderRadius: 10, backgroundColor: Colors.surfaceHighlight }, note: { color: Colors.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 }, state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }, muted: { color: Colors.textMuted, textAlign: 'center', lineHeight: 21 }, pdfUnavailable: { marginTop: 16, padding: 16, alignItems: 'center', gap: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, backgroundColor: Colors.surface }, pdfUnavailableTitle: { color: Colors.textPrimary, fontSize: 15, fontWeight: Typography.semiBold },
+});

@@ -51,6 +51,7 @@ export default function SubmitIdeaScreen() {
   const [category, setCategory] = useState<typeof CATEGORIES[0]>('AI / GenAI');
   const [stage, setStage] = useState<ProjectStage>('Concept');
   const [skillsInput, setSkillsInput] = useState('');
+  const [linksInput, setLinksInput] = useState('');
   const [selectedRoles, setSelectedRoles] = useState<StudentRole[]>(['Developer']);
   const [teamSizeNeeded, setTeamSizeNeeded] = useState(3);
   const [showPreview, setShowPreview] = useState(false);
@@ -91,6 +92,11 @@ export default function SubmitIdeaScreen() {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
+      const links = linksInput.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean);
+      if (links.some((value) => { try { return !['https:', 'http:'].includes(new URL(value).protocol); } catch { return true; } })) {
+        Alert.alert('Invalid link', 'Use complete HTTP or HTTPS URLs.');
+        return;
+      }
 
       const created = await submitIdea({
         title: title.trim(),
@@ -111,6 +117,7 @@ export default function SubmitIdeaScreen() {
           { phase: 'Phase 3', title: 'Collegiate Beta Testing', completed: false },
         ],
         tags: [category, stage],
+        resources: links.map((url) => ({ label: 'Related link', url })),
       });
 
       Alert.alert(
@@ -265,6 +272,7 @@ export default function SubmitIdeaScreen() {
               error={errors.skills}
               helperText="Students with matching skills will receive recommendations."
             />
+            <Input label="Related links (optional)" value={linksInput} onChangeText={setLinksInput} placeholder="https://… (one per line)" autoCapitalize="none" keyboardType="url" multiline />
 
             {/* Roles Needed */}
             <View style={styles.fieldSection}>

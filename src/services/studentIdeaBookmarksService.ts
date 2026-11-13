@@ -21,7 +21,7 @@ export const studentIdeaBookmarksService = {
     const { data: { user }, error: authError } = await db.auth.getUser();
     if (authError) throw authError;
     if (!user) return false;
-    const { data, error } = await db.from('student_idea_live_saves')
+    const { data, error } = await db.from('idea_live_saves')
       .select('idea_id').eq('idea_id', ideaId).eq('user_id', user.id).maybeSingle();
     if (error) { schemaUnavailable(error); throw error; }
     bookmarkRelationAvailable = true;
@@ -33,7 +33,7 @@ export const studentIdeaBookmarksService = {
     const db = requireSupabase();
     const { data: { user }, error: authError } = await db.auth.getUser();
     if (authError || !user) return { ids: new Set(), available: false };
-    const { data, error } = await db.from('student_idea_live_saves').select('idea_id')
+    const { data, error } = await db.from('idea_live_saves').select('idea_id')
       .eq('user_id', user.id).in('idea_id', ideaIds);
     if (error) {
       const schemaError = schemaUnavailable(error);
@@ -52,7 +52,7 @@ export const studentIdeaBookmarksService = {
     if (!user) throw new Error('Sign in to view saved ideas.');
     const ids: string[] = [];
     for (let from = 0; ; from += 500) {
-      const result = await db.from('student_idea_live_saves').select('idea_id').eq('user_id', user.id).range(from, from + 499);
+      const result = await db.from('idea_live_saves').select('idea_id').eq('user_id', user.id).range(from, from + 499);
       if (result.error) {
         schemaUnavailable(result.error);
         throw result.error;

@@ -30,7 +30,7 @@ export type StudyHubPdfRow = {
   source_folder_url: string | null;
   drive_file_id: string | null;
   created_at: string | null;
-  profiles?: { first_name?: string | null; last_name?: string | null; college?: string | null } | null;
+  author_profile?: { first_name?: string | null; last_name?: string | null; college?: string | null; avatar_url?: string | null } | null;
   saved_resources?: { user_id: string }[];
 };
 
@@ -66,7 +66,7 @@ export function dedupeStudyPdfs(rows: StudyHubPdfRow[]): StudyHubPdfRow[] {
 }
 
 function profileName(row: StudyHubPdfRow) {
-  const name = [row.profiles?.first_name, row.profiles?.last_name].filter(Boolean).join(' ').trim();
+  const name = [row.author_profile?.first_name, row.author_profile?.last_name].filter(Boolean).join(' ').trim();
   return name || 'Student';
 }
 
@@ -110,8 +110,8 @@ export function toStudyHubPdfResource(row: StudyHubPdfRow): StudyResource {
     uploader: {
       id: row.user_id || '',
       name: profileName(row),
-      avatar: '',
-      college: row.profiles?.college || row.college || undefined,
+      avatar: row.author_profile?.avatar_url || '',
+      college: row.author_profile?.college || row.college || undefined,
     },
   };
 }
@@ -120,7 +120,7 @@ export function buildStudyHubPdfQuery(db: any, filters: StudyHubPdfFilters = {},
   const offset = Math.max(0, filters.offset || 0);
   const limit = Math.min(Math.max(filters.limit || 24, 1), 50);
   const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,language,pdf_file_name,pdf_link,youtube_link,file_size_mb,source_folder_url,drive_file_id,created_at';
-  const relationships = includeOptionalRelations ? ',profiles(first_name,last_name,college),saved_resources(user_id)' : '';
+  const relationships = includeOptionalRelations ? ',saved_resources(user_id)' : '';
   let query = db.from('study_resources')
     .select(`${columns}${relationships}`, { count: 'exact' })
     .not('pdf_link', 'is', null)

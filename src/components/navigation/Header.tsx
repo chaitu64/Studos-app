@@ -1,9 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Avatar } from '../ui/Avatar';
+import { Colors, Typography, Spacing } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
 export interface HeaderProps {
@@ -22,11 +21,10 @@ export const Header: React.FC<HeaderProps> = ({
   hideGreeting,
 }) => {
   const { user, unreadNotifsCount } = useApp();
-  const { width } = useWindowDimensions();
 
   return (
     <View style={[styles.container, hideGreeting && styles.containerCompact]}>
-      {/* Top Bar: Wordmark, Search trigger, Notifications, Avatar */}
+      {/* Top bar: wordmark and available navigation actions */}
       <View style={[styles.topBar, hideGreeting && styles.topBarCompact]}>
         <TouchableOpacity
           style={styles.brandContainer}
@@ -36,9 +34,6 @@ export const Header: React.FC<HeaderProps> = ({
           <Text style={styles.wordmark}>
             STU<Text style={styles.wordmarkHighlight}>DOS</Text>
           </Text>
-          {width >= 430 ? <View style={styles.badgePill}>
-            <Text style={styles.badgeText}>STUDENT NETWORK</Text>
-          </View> : null}
         </TouchableOpacity>
 
         <View style={styles.actionsRight}>
@@ -71,13 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
             ) : null}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => router.push('/(tabs)/profile' as any)}
-            style={styles.avatarBtn}
-          >
-            <Avatar uri={user.avatar} name={user.name} size={36} isOnline isVerified={user.isVerified} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -100,8 +88,8 @@ export const Header: React.FC<HeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.screenPadding,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 4,
+    paddingBottom: 8,
     backgroundColor: Colors.background,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
@@ -111,7 +99,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   topBarCompact: { marginBottom: 0 },
   brandContainer: {
@@ -120,37 +108,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   wordmark: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '600',
     color: Colors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: 0,
   },
   wordmarkHighlight: {
     color: Colors.primary,
   },
-  badgePill: {
-    backgroundColor: Colors.primarySubtle,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: BorderRadius.xs,
-    borderWidth: 1,
-    borderColor: Colors.primaryBorder,
-  },
-  badgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: Colors.primary,
-    letterSpacing: 0.6,
-  },
   actionsRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: Colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
@@ -173,9 +147,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: 'bold',
     color: '#FFF',
-  },
-  avatarBtn: {
-    marginLeft: 4,
   },
   titleSection: {
     marginTop: 4,

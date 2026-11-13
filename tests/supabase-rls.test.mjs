@@ -18,16 +18,18 @@ test('two authenticated identities keep private data scoped and student idea int
   assert.ifError(loginA.error); assert.ifError(loginB.error);
   const idA = loginA.data.user.id; const idB = loginB.data.user.id;
   assert.notEqual(idA, idB, 'test accounts must be distinct');
-  const ownPublicProfile = await a.from('profiles').select('id,first_name').eq('id', idA).single();
+  const ownPublicProfile = await a.from('profiles').select('id,auth_user_id,first_name').eq('auth_user_id', idA).single();
   assert.ifError(ownPublicProfile.error);
-  const otherPublicProfile = await a.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('id', idB).single();
+  const otherPublicProfile = await a.from('profiles').select('id,auth_user_id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('auth_user_id', idB).single();
   assert.ifError(otherPublicProfile.error);
-  assert.equal(otherPublicProfile.data.id, idB, 'authenticated students should discover another real profile');
-  const reversePublicProfile = await b.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('id', idA).single();
+  assert.equal(otherPublicProfile.data.auth_user_id, idB, 'authenticated students should discover another real profile');
+  const reversePublicProfile = await b.from('profiles').select('id,auth_user_id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url').eq('auth_user_id', idA).single();
   assert.ifError(reversePublicProfile.error);
-  assert.equal(reversePublicProfile.data.id, idA, 'profile visibility should work in both directions');
-  const privateProfileColumns = await b.from('profiles').select('email,date_of_birth').eq('id', idA).maybeSingle();
-  assert.ok(privateProfileColumns.error, 'private fields must not be selectable through profiles');
+  assert.equal(reversePublicProfile.data.auth_user_id, idA, 'profile visibility should work in both directions');
+  const crossProfileEdit = await b.from('profiles').update({ bio: 'unauthorized cross-user edit' }).eq('auth_user_id', idA).select('auth_user_id');
+  assert.ok(crossProfileEdit.error || crossProfileEdit.data.length === 0, 'a user cannot edit another Auth user\'s student profile');
+  const privateProfileColumns = await b.from('profiles').select('phone_number').eq('auth_user_id', idA).maybeSingle();
+  assert.ok(privateProfileColumns.error, 'phone numbers must not be selectable through profiles');
 
   const privateProfile = await b.from('profile_private').select('id,date_of_birth,college_email').eq('id', idA);
   assert.ifError(privateProfile.error);
@@ -40,31 +42,31 @@ test('two authenticated identities keep private data scoped and student idea int
   try {
     const visible = await b.from('posts').select('id').eq('id', postId).single();
     assert.ifError(visible.error);
-    const sampleIdea = await b.from('student_ideas').select('id,demo_author_id,title').limit(1).maybeSingle();
+    const sampleIdea = await b.from('ideas').select('id,demo_author_id,title').limit(1).maybeSingle();
     assert.ifError(sampleIdea.error);
     if (sampleIdea.data) {
-      const studentAuthor = await b.from('student_profiles').select('id').eq('id', sampleIdea.data.demo_author_id).single();
+      const studentAuthor = await b.from('profiles').select('id').eq('id', sampleIdea.data.demo_author_id).single();
       assert.ifError(studentAuthor.error);
       assert.equal(studentAuthor.data.id, sampleIdea.data.demo_author_id, 'sample authors remain separate from Auth identities');
-      const existingSpark = await b.from('student_idea_live_sparks').select('idea_id').eq('idea_id', sampleIdea.data.id).eq('user_id', idB).maybeSingle();
+      const existingSpark = await b.from('idea_live_sparks').select('idea_id').eq('idea_id', sampleIdea.data.id).eq('user_id', idB).maybeSingle();
       assert.ifError(existingSpark.error);
       let insertedSpark = false;
       let commentId;
       try {
         if (!existingSpark.data) {
-          const spark = await b.from('student_idea_live_sparks').insert({ idea_id: sampleIdea.data.id, user_id: idB }).select('idea_id').single();
+          const spark = await b.from('idea_live_sparks').insert({ idea_id: sampleIdea.data.id, user_id: idB }).select('idea_id').single();
           assert.ifError(spark.error);
           insertedSpark = true;
-          const crossDeleteSpark = await a.from('student_idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB).select('idea_id');
+          const crossDeleteSpark = await a.from('idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB).select('idea_id');
           assert.ifError(crossDeleteSpark.error); assert.equal(crossDeleteSpark.data.length, 0, 'users cannot remove another account’s Spark');
         }
-        const comment = await b.from('student_idea_live_comments').insert({ idea_id: sampleIdea.data.id, user_id: idB, body: `RLS comment test ${Date.now()}` }).select('id').single();
+        const comment = await b.from('idea_live_comments').insert({ idea_id: sampleIdea.data.id, user_id: idB, body: `RLS comment test ${Date.now()}` }).select('id').single();
         assert.ifError(comment.error); commentId = comment.data.id;
-        const crossDeleteComment = await a.from('student_idea_live_comments').delete().eq('id', commentId).select('id');
+        const crossDeleteComment = await a.from('idea_live_comments').delete().eq('id', commentId).select('id');
         assert.ifError(crossDeleteComment.error); assert.equal(crossDeleteComment.data.length, 0, 'users cannot remove another account’s comment');
       } finally {
-        if (commentId) await b.from('student_idea_live_comments').delete().eq('id', commentId).eq('user_id', idB);
-        if (insertedSpark) await b.from('student_idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB);
+        if (commentId) await b.from('idea_live_comments').delete().eq('id', commentId).eq('user_id', idB);
+        if (insertedSpark) await b.from('idea_live_sparks').delete().eq('idea_id', sampleIdea.data.id).eq('user_id', idB);
       }
     }
     const like = await b.from('post_likes').insert({ post_id: postId, user_id: idB });

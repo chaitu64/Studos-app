@@ -60,10 +60,10 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Header Controls */}
       <View style={styles.header}>
-        <Text style={styles.title}>Activity Center</Text>
+        <View><Text style={styles.title}>Activity</Text><Text style={styles.subtitle}>Updates for you</Text></View>
         <Button
           title="Mark all as read"
           variant="ghost"
@@ -131,18 +131,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.screenPadding,
     paddingTop: 8,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: Typography.title3,
-    fontWeight: Typography.bold,
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: Typography.semiBold,
     color: Colors.textPrimary,
   },
+  subtitle: { color: Colors.textMuted, fontSize: Typography.caption, marginTop: 1 },
   listContainer: {
-    padding: Spacing.screenPadding,
-    gap: 10,
+    paddingHorizontal: Spacing.screenPadding,
+    paddingBottom: 24,
   },
   errorState: { alignItems: 'center', gap: 12, padding: 20, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   errorText: { color: Colors.error, fontSize: Typography.footnote, lineHeight: 19, textAlign: 'center' },
@@ -150,38 +150,34 @@ const styles = StyleSheet.create({
   loadingText: { color: Colors.textMuted, fontSize: Typography.footnote },
   notifCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 12,
+    alignItems: 'flex-start',
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
   },
   notifCardUnread: {
-    borderColor: Colors.primaryBorder,
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: 'transparent',
   },
   iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.surfaceHighlight,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   notifInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 11,
   },
   notifHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   notifTitle: {
     fontSize: Typography.subhead,
-    fontWeight: Typography.bold,
+    fontWeight: Typography.semiBold,
     color: Colors.textPrimary,
     flex: 1,
     marginRight: 6,
@@ -193,7 +189,7 @@ const styles = StyleSheet.create({
   notifMsg: {
     fontSize: Typography.footnote,
     color: Colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   unreadDot: {
     width: 8,

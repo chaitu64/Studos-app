@@ -19,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
-import { BorderRadius, Colors, Shadows, Typography } from '../../constants/theme';
+import { BorderRadius, Colors, Typography } from '../../constants/theme';
 import { CommunityPost, StudentDirectoryProfile, StudentIdentity } from '../../types';
 
 export interface DiscoveryPerson {
@@ -82,6 +82,7 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
   onInterest,
 }: DiscoverySwipeCardProps, ref) {
   const { width: screenWidth } = useWindowDimensions();
+  const isService = item.kind === 'post' && item.post.type === 'service';
   const swipeThreshold = Math.min(120, Math.max(84, screenWidth * SWIPE_DISTANCE_RATIO));
   const translateX = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
@@ -129,16 +130,16 @@ export const DiscoverySwipeCard = forwardRef<DiscoverySwipeCardHandle, Discovery
 
   return (
     <GestureDetector gesture={panGesture}>
-    <Animated.View style={[styles.card, cardAnimatedStyle]}>
+    <Animated.View style={[styles.card, isService && styles.serviceCard, cardAnimatedStyle]}>
       <Animated.View style={[styles.stamp, styles.interestStamp, interestStyle]}>
-        <Text style={styles.interestStampText}>EXPRESS INTEREST</Text>
+        <Text style={styles.interestStampText}>Interested</Text>
       </Animated.View>
       <Animated.View style={[styles.stamp, styles.skipStamp, skipStyle]}>
-        <Text style={styles.skipStampText}>SKIP</Text>
+        <Text style={styles.skipStampText}>Pass</Text>
       </Animated.View>
 
       <ScrollView
-        style={styles.cardScroll}
+        style={[styles.cardScroll, isService && styles.serviceCardScroll]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.cardContent}
         keyboardShouldPersistTaps="handled"
@@ -168,7 +169,7 @@ function PersonCard({ person }: { person: DiscoveryPerson }) {
         <Avatar
           uri={person.author.avatar}
           name={person.author.name}
-          size={88}
+          size={64}
           isOnline={false}
           isVerified={person.author.isVerified}
         />
@@ -233,33 +234,34 @@ function OpportunityCard({ post }: { post: CommunityPost }) {
           <Ionicons name={post.type === 'event_collab' ? 'people-outline' : 'bulb-outline'} size={18} color={Colors.primary} />
         </View>
         <View style={styles.kindText}>
-          <Text style={styles.eyebrow}>{post.type === 'event_collab' && post.teamId ? 'OPEN TEAM ROLE' : post.type === 'event_collab' ? 'TEAM OPPORTUNITY' : 'IDEA & PROJECT'}</Text>
+          <Text style={styles.eyebrow}>{post.type === 'event_collab' && post.teamId ? 'Open team role' : post.type === 'event_collab' ? 'Team opportunity' : 'Idea and project'}</Text>
           {post.stage ? <Text style={styles.subtleText}>{post.stage}</Text> : null}
         </View>
       </View>
-      {post.author.identity?.type === 'demo' && post.type === 'event_collab' ? <Text style={styles.demoNoticeText}>DEMO OPENING - VIEW ONLY</Text> : null}
+      {post.author.identity?.type === 'demo' && post.type === 'event_collab' ? <Text style={styles.demoNoticeText}>Demo opening · View only</Text> : null}
       {post.eventName ? <Text style={styles.subtleText}>Event · {post.eventName}</Text> : null}
       <Text style={styles.cardTitle}>{post.title}</Text>
 
-      <Section label={post.type === 'event_collab' ? 'TEAM OVERVIEW' : post.problemStatement ? 'THE PROBLEM' : 'PROJECT OVERVIEW'}>
-        <Text style={styles.bodyText} numberOfLines={4}>
+      <Section label={post.type === 'event_collab' ? 'Team overview' : post.problemStatement ? 'The problem' : 'Project overview'}>
+        <Text style={styles.bodyText} numberOfLines={5}>
           {(post.problemStatement || post.content).trim()}
         </Text>
+        {(post.problemStatement || post.content).trim().length > 240 ? <Text style={styles.continuationHint}>Full description available in Details</Text> : null}
       </Section>
       {post.openPositions != null ? <Text style={styles.subtleText}>Open positions · {post.openPositions}</Text> : null}
 
       {post.proposedSolution ? (
-        <Section label="PROPOSED SOLUTION">
+        <Section label="Proposed solution">
           <Text style={styles.bodyText} numberOfLines={3}>{post.proposedSolution}</Text>
         </Section>
       ) : null}
 
       {roles.length > 0 ? (
-        <Section label="LOOKING FOR">
+        <Section label="Looking for">
           <SkillTags skills={roles} />
         </Section>
       ) : post.skills?.length ? (
-        <Section label="SKILLS TO CONTRIBUTE">
+        <Section label="Skills to contribute">
           <SkillTags skills={post.skills} />
         </Section>
       ) : null}
@@ -267,7 +269,7 @@ function OpportunityCard({ post }: { post: CommunityPost }) {
       <View style={styles.ownerRow}>
         <Avatar uri={post.author.avatar} name={post.author.name} size={34} />
         <View style={styles.ownerInfo}>
-          <Text style={styles.sectionLabel}>SHARED BY</Text>
+          <Text style={styles.sectionLabel}>Shared by</Text>
           <Text style={styles.ownerName} numberOfLines={1}>{post.author.name}</Text>
         </View>
         {post.author.isVerified ? (
@@ -283,21 +285,21 @@ function ServiceCard({ post }: { post: CommunityPost }) {
     <>
       <View style={styles.kindRow}>
         <View style={styles.serviceIcon}>
-          <Ionicons name="construct-outline" size={18} color={Colors.accentCyan} />
+          <Ionicons name="construct-outline" size={18} color={Colors.textMuted} />
         </View>
         <View style={styles.kindText}>
-          <Text style={styles.eyebrow}>STUDENT SERVICE</Text>
+          <Text style={styles.eyebrow}>Student service</Text>
           {post.category ? <Text style={styles.subtleText}>{post.category}</Text> : null}
         </View>
       </View>
       <Text style={styles.cardTitle}>{post.title}</Text>
-      <Section label="WHAT'S OFFERED">
+      <Section label="What's offered">
         <Text style={styles.bodyText} numberOfLines={5}>{post.content.trim()}</Text>
         {post.content.trim().length > 240 ? <Text style={styles.continuationHint}>Full description available in Details</Text> : null}
       </Section>
 
       {post.skills?.length ? (
-        <Section label="SKILLS">
+        <Section label="Skills">
           <SkillTags skills={post.skills} />
         </Section>
       ) : null}
@@ -322,7 +324,7 @@ function ServiceCard({ post }: { post: CommunityPost }) {
       <View style={styles.ownerRow}>
         <Avatar uri={post.author.avatar} name={post.author.name} size={34} />
         <View style={styles.ownerInfo}>
-          <Text style={styles.sectionLabel}>PROVIDER</Text>
+          <Text style={styles.sectionLabel}>Provider</Text>
           <Text style={styles.ownerName} numberOfLines={1}>{post.author.name}</Text>
         </View>
         {post.author.isVerified ? (
@@ -339,17 +341,18 @@ const styles = StyleSheet.create({
     minHeight: 0,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: Colors.card,
-    borderColor: Colors.cardBorder,
-    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.surface,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    ...Shadows.card,
   },
   cardContent: {
-    padding: 18,
+    padding: 16,
     paddingBottom: 20,
   },
   cardScroll: { flex: 1, minHeight: 0 },
+  serviceCard: { flex: 1, minHeight: 0, maxHeight: 480, alignSelf: 'stretch' },
+  serviceCardScroll: { flex: 1, minHeight: 0, maxHeight: 460 },
   demoNotice: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -365,38 +368,34 @@ const styles = StyleSheet.create({
   },
   demoNoticeText: {
     color: Colors.accentAmber,
-    fontSize: 9,
-    fontWeight: Typography.bold,
-    letterSpacing: 0.25,
+    fontSize: 11,
+    fontWeight: Typography.medium,
   },
   stamp: {
     position: 'absolute',
-    top: 26,
+    top: 16,
     zIndex: 2,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
     borderRadius: BorderRadius.sm,
-    borderWidth: 2,
+    borderWidth: 1,
     backgroundColor: Colors.background,
   },
   interestStamp: {
-    left: 18,
-    borderColor: Colors.accentGreen,
-    transform: [{ rotate: '-8deg' }],
+    left: 16,
+    borderColor: Colors.primary,
   },
   interestStampText: {
-    color: Colors.accentGreen,
+    color: Colors.primary,
     fontSize: Typography.caption,
-    fontWeight: Typography.bold,
-    letterSpacing: 0.6,
+    fontWeight: Typography.medium,
   },
   skipStamp: {
-    right: 18,
-    borderColor: Colors.primary,
-    transform: [{ rotate: '8deg' }],
+    right: 16,
+    borderColor: Colors.border,
   },
   skipStampText: {
-    color: Colors.primary,
+    color: Colors.textSecondary,
     fontSize: Typography.caption,
     fontWeight: Typography.bold,
   },
@@ -426,9 +425,9 @@ const styles = StyleSheet.create({
     fontSize: Typography.caption,
     lineHeight: 16,
   },
-  personBio: { color: Colors.textSecondary, fontSize: Typography.body, lineHeight: 21, marginTop: 16 },
-  profileGrid: { gap: 9, marginTop: 16 },
-  profileFact: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceSubtle, borderWidth: 1, borderColor: Colors.border },
+  personBio: { color: Colors.textSecondary, fontSize: Typography.body, lineHeight: 21, marginTop: 12 },
+  profileGrid: { gap: 8, marginTop: 12 },
+  profileFact: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceSubtle, borderWidth: 1, borderColor: Colors.border },
   factIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: Colors.surfaceHighlight },
   factCopy: { flex: 1 },
   factValue: { color: Colors.textPrimary, fontSize: Typography.caption, lineHeight: 17, fontWeight: Typography.semiBold },
@@ -443,17 +442,16 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: Colors.textMuted,
-    fontSize: 10,
-    fontWeight: Typography.bold,
-    letterSpacing: 0.7,
-    marginBottom: 6,
+    fontSize: 12,
+    fontWeight: Typography.medium,
+    marginBottom: 4,
   },
   cardTitle: {
     color: Colors.textPrimary,
-    fontSize: Typography.title2,
-    fontWeight: Typography.bold,
-    lineHeight: 28,
-    marginTop: 12,
+    fontSize: 20,
+    fontWeight: Typography.semiBold,
+    lineHeight: 26,
+    marginTop: 8,
   },
   bodyText: {
     color: Colors.textSecondary,
@@ -471,7 +469,7 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
     backgroundColor: Colors.surfaceHighlight,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.full,
+    borderRadius: 6,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -515,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.accentCyanSubtle,
+    backgroundColor: Colors.surfaceHighlight,
   },
   kindText: {
     flex: 1,
@@ -523,16 +521,15 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: Colors.textMuted,
-    fontSize: 10,
-    fontWeight: Typography.bold,
-    letterSpacing: 0.7,
+    fontSize: 12,
+    fontWeight: Typography.medium,
   },
   ownerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 18,
-    paddingTop: 14,
+    marginTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
   },

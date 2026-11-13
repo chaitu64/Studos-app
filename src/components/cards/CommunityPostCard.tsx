@@ -5,13 +5,13 @@ import { Avatar } from '../ui/Avatar';
 import { Colors, Typography } from '../../constants/theme';
 import { CommunityPost } from '../../types';
 
-export interface CommunityPostCardProps {
+interface CommunityPostCardProps {
   post: CommunityPost; onLike?: (post: CommunityPost) => void; onComment?: (post: CommunityPost) => void;
   onSave?: (post: CommunityPost) => void; onCollaborate?: (post: CommunityPost) => void;
   onAuthorPress?: (authorId: string) => void; onCardPress?: (post: CommunityPost) => void;
 }
 
-const labels: Record<CommunityPost['type'], string> = { idea: 'Idea', service: 'Service', story: 'Campus life', event_collab: 'Team up', project: 'Project', question: 'Help', study_material: 'Study material', achievement: 'Achievement' };
+const labels: Record<CommunityPost['type'], string> = { idea: 'Idea', service: 'Service', story: 'Campus life', event_collab: 'Team up', project: 'Project', question: 'Help', study_material: 'Study material', poll: 'Survey / Poll', achievement: 'Achievement' };
 
 function formatPostDate(value: string) {
   const date = new Date(value);

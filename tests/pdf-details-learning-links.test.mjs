@@ -4,30 +4,46 @@ import { readFileSync } from 'node:fs';
 
 const route = readFileSync(new URL('../src/app/resource/[id].tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../src/components/home/DrivePdfPreview.tsx', import.meta.url), 'utf8');
-const service = readFileSync(new URL('../src/services/studyResourceLinksService.ts', import.meta.url), 'utf8');
-const linksUi = readFileSync(new URL('../src/components/resources/CommunityLearningLinks.tsx', import.meta.url), 'utf8');
-const pdfQuery = readFileSync(new URL('../src/services/studyHubPdf.ts', import.meta.url), 'utf8');
+const linksAction = readFileSync(new URL('../src/components/resources/LearningResourcesAction.tsx', import.meta.url), 'utf8');
+const linksService = readFileSync(new URL('../src/services/studyResourceLinksService.ts', import.meta.url), 'utf8');
+const list = readFileSync(new URL('../src/app/academic-library/index.tsx', import.meta.url), 'utf8');
+const card = readFileSync(new URL('../src/components/home/ResourceCard.tsx', import.meta.url), 'utf8');
 
-test('PDF details keeps the document preview before community links and collapsible information', () => {
-  const summary = route.indexOf('styles.identityCard');
-  const previewIndex = route.indexOf('<DrivePdfPreview', summary);
-  const community = route.indexOf('<CommunityLearningLinks', previewIndex);
-  const information = route.indexOf('Document information', community);
-  assert.ok(summary >= 0 && previewIndex > summary && community > previewIndex && information > community);
-  assert.match(preview, /Read PDF/);
-  assert.match(route, /Open in Google Drive/);
-  assert.match(route, /Report broken PDF link/);
-  assert.match(pdfQuery, /pdf_link,youtube_link,file_size_mb/);
+test('Study Hub PDF selection opens an immersive reader with compact floating controls', () => {
+  assert.match(list, /router\.push\(\{ pathname: '\/resource\/\[id\]', params: \{ id: item\.id \} \}/);
+  assert.match(card, /onPress=\{onOpen\}/);
+  assert.match(route, /resource\.resourceKind === 'pdf' \? <View style=\{styles\.readerArea\}/);
+  assert.match(route, /readerMode onOpenExternal/);
+  const pdfStart = route.indexOf("resource.resourceKind === 'pdf' ? <View style={styles.readerArea}");
+  const pdfEnd = route.indexOf('</View> : <ScrollView contentContainerStyle={styles.content}>', pdfStart);
+  assert.ok(pdfStart >= 0 && pdfEnd > pdfStart);
+  assert.doesNotMatch(route.slice(pdfStart, pdfEnd), /PDF Details|Read PDF|Document information|identityCard|CommunityLearningLinks/);
+  assert.match(route, /accessibilityLabel="Back" onPress=\{\(\) => safeBack\(\)\}/);
+  assert.match(linksAction, /accessibilityLabel=\{`Learning resources,/);
+  assert.match(linksAction, /<Ionicons name="add" size=\{22\}/);
+  assert.doesNotMatch(route, /More PDF options|PDF options|DOCUMENT DETAILS|Share document link/);
 });
 
-test('learning link queries sort by date and always use the authenticated contributor identity', () => {
-  assert.match(service, /from\('study_resource_links'\)/);
-  assert.match(service, /eq\('study_resource_id', studyResourceId\)/);
-  assert.match(service, /order\('created_at', \{ ascending: true \}\)/);
-  assert.match(service, /auth\.getUser\(\)/);
-  assert.match(service, /submitted_by: userId/);
-  assert.match(service, /\.eq\('submitted_by', userId\)/);
-  assert.match(linksUi, /No learning links shared yet\./);
-  assert.match(linksUi, /Be the first to share one\./);
-  assert.match(linksUi, /link\.isMine/);
+test('PDF reader has loading timeout, retry, external fallback, and no extra full-screen CTA', () => {
+  assert.match(preview, /setTimeout\(\(\) => setStatus\('error'\), 20000\)/);
+  assert.match(preview, /onError=\{\(\) => setStatus\('error'\)\}/);
+  assert.match(preview, /Open externally/);
+  assert.match(preview, /onOpenExternal/);
+  assert.match(preview, /readerMode \? frame\(height\) : null/);
+  assert.doesNotMatch(preview, /Read PDF/);
+});
+
+test('compact plus sheet offers existing YouTube and ChatGPT links with validated descriptions', () => {
+  assert.match(linksAction, /Learning resources/);
+  assert.match(linksAction, /Add YouTube Link/);
+  assert.match(linksAction, /Add ChatGPT Link/);
+  assert.match(linksAction, /DESCRIPTION \(OPTIONAL\)/);
+  assert.match(linksAction, /normalizeResourceLinkUrl\(type, url\)/);
+  assert.match(linksAction, /studyResourceLinksService\.add\(resource\.id, type, title, normalized\)/);
+  assert.match(linksAction, /link\.contributorName/);
+  assert.match(linksAction, /resource\.youtubeLink/);
+  assert.match(linksAction, /Linking\.openURL\(normalizeResourceLinkUrl/);
+  assert.match(linksService, /from\('study_resource_links'\)/);
+  assert.match(linksService, /submitted_by: userId/);
+  assert.match(linksService, /\.eq\('submitted_by', userId\)/);
 });

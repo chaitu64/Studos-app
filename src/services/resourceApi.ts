@@ -3,7 +3,6 @@ import { StudyResource } from '../types';
 import { requireSupabase } from './supabase';
 import { normalizeDriveUrl } from './driveUrl';
 import { buildStudyHubPdfQuery, dedupeStudyPdfs, isIndividualStudyPdf, StudyHubPdfRow, toStudyHubPdfResource } from './studyHubPdf';
-export { normalizeDriveUrl } from './driveUrl';
 
 export type ResourceInput = {
   title: string; category: StudyResource['type']; college?: string; university?: string; degree?: string; branch?: string;
@@ -21,9 +20,22 @@ const toResource = (row: any): StudyResource => ({
   parentResourceId: row.parent_resource_id || null, driveMimeType: row.drive_mime_type || null,
   driveThumbnailUrl: row.drive_thumbnail_url || null, thumbnailUrl: row.drive_thumbnail_url || undefined,
   driveFileSize: row.drive_file_size == null ? null : Number(row.drive_file_size), driveCreatedAt: row.drive_created_at || null, driveModifiedAt: row.drive_modified_at || null,
-  uploader: { id: row.user_id, name: row.resource_kind === 'pdf' ? 'STUDOS' : [row.profiles?.first_name, row.profiles?.last_name].filter(Boolean).join(' ') || 'Student', avatar: row.profiles?.avatar_url || '', college: row.profiles?.college },
+  uploader: { id: row.user_id, name: row.resource_kind === 'pdf' ? 'STUDOS' : [row.author_profile?.first_name, row.author_profile?.last_name].filter(Boolean).join(' ') || 'Student', avatar: row.author_profile?.avatar_url || '', college: row.author_profile?.college },
   uploadedAt: row.drive_created_at || row.created_at, isBookmarked: Boolean(row.is_saved),
 });
+
+async function enrichResourceUploaders<T extends StudyResource>(items: T[]): Promise<T[]> {
+  const ids = [...new Set(items.map((item) => item.uploader.id).filter(Boolean))];
+  if (!ids.length) return items;
+  const { data, error } = await requireSupabase().from('profiles')
+    .select('auth_user_id,first_name,last_name,avatar_url,college').in('auth_user_id', ids);
+  if (error) throw error;
+  const byId = new Map((data || []).map((row: any) => [row.auth_user_id, row]));
+  return items.map((item) => {
+    const profile: any = byId.get(item.uploader.id);
+    return profile ? { ...item, uploader: { ...item.uploader, name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Student', avatar: profile.avatar_url || '', college: profile.college || item.uploader.college } } : item;
+  });
+}
 
 export async function createStudyResource(input: ResourceInput) {
   if (!input.rights_confirmed) throw new Error('Confirm that you have the right to share this material.');
@@ -32,10 +44,10 @@ export async function createStudyResource(input: ResourceInput) {
   const { data: { user } } = await db.auth.getUser();
   if (!user) throw new Error('Sign in to share a resource.');
   const { rights_confirmed, ...fields } = input;
-  const { data, error } = await db.from('study_resources').insert({ ...fields, user_id: user.id, drive_url: drive.url, drive_file_id: drive.id, rights_confirmed_at: new Date().toISOString(), study_year: fields.study_year ? Number(fields.study_year) : null }).select('*,profiles(first_name,last_name,avatar_url,college)').single();
+  const { data, error } = await db.from('study_resources').insert({ ...fields, user_id: user.id, drive_url: drive.url, drive_file_id: drive.id, rights_confirmed_at: new Date().toISOString(), study_year: fields.study_year ? Number(fields.study_year) : null }).select('*').single();
   if (error?.code === '23505') throw new Error('This Google Drive file is already listed in Study Hub.');
   if (error) throw error;
-  return toResource(data);
+  return (await enrichResourceUploaders([toResource(data)]))[0];
 }
 
 export type StudyResourceFilters = { search?: string; college?: string; branch?: string; studyYear?: number; semester?: string; subject?: string; category?: string; regulation?: string; ownerId?: string; ids?: string[]; parentResourceId?: string; offset?: number; limit?: number };
@@ -57,7 +69,7 @@ export async function listStudyHubPdfPage(options: StudyResourceFilters = {}): P
     const { data: { session } } = await db.auth.getSession();
     if (!session) throw new Error('Sign in to view Study Hub resources. This project restricts resource reads to authenticated users.');
   }
-  return { items: rows.map(toStudyHubPdfResource), total, rawCount, hasMore: offset + rawCount < total };
+  return { items: await enrichResourceUploaders(rows.map(toStudyHubPdfResource)), total, rawCount, hasMore: offset + rawCount < total };
 }
 
 async function listLegacyStudyHubPdfPage(options: StudyResourceFilters, offset: number): Promise<StudyResourcePage> {
@@ -103,11 +115,11 @@ async function listLegacyStudyHubPdfPage(options: StudyResourceFilters, offset: 
   return { items, total: count || 0, rawCount, hasMore: offset + rawCount < (count || 0) };
 }
 
-export async function fetchStudyHubPdf(id: string): Promise<StudyResource | null> {
+async function fetchStudyHubPdf(id: string): Promise<StudyResource | null> {
   const db = requireSupabase();
   const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,language,pdf_file_name,pdf_link,youtube_link,file_size_mb,source_folder_url,drive_file_id,created_at';
   const run = (withRelations: boolean) => db.from('study_resources')
-    .select(`${columns}${withRelations ? ',profiles(first_name,last_name,college),saved_resources(user_id)' : ''}`)
+    .select(`${columns}${withRelations ? ',saved_resources(user_id)' : ''}`)
     .eq('id', id).not('pdf_link', 'is', null).not('pdf_file_name', 'is', null)
     .neq('pdf_link', '').neq('pdf_file_name', '').maybeSingle();
   let result = await run(true);
@@ -121,15 +133,15 @@ export async function fetchStudyHubPdf(id: string): Promise<StudyResource | null
   }
   if (!data) return null;
   if (!isIndividualStudyPdf(data as unknown as StudyHubPdfRow)) throw new Error('This record is not an individual PDF or its Drive file link is invalid.');
-  return toStudyHubPdfResource(data as unknown as StudyHubPdfRow);
+  return (await enrichResourceUploaders([toStudyHubPdfResource(data as unknown as StudyHubPdfRow)]))[0];
 }
 
 export async function listStudyResourcePage(options: StudyResourceFilters = {}): Promise<StudyResourcePage> {
   const db = requireSupabase();
   const offset = Math.max(0, options.offset || 0);
   const limit = Math.min(Math.max(options.limit || 24, 1), 50);
-  const run = async (withProfile: boolean, useSearchDocument: boolean) => {
-  let query = db.from('study_resources').select(withProfile ? '*,profiles(first_name,last_name,avatar_url,college),saved_resources(user_id)' : '*,saved_resources(user_id)', { count: 'exact' }).order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+  const run = async (_withProfile: boolean, useSearchDocument: boolean) => {
+  let query = db.from('study_resources').select('*,saved_resources(user_id)', { count: 'exact' }).order('created_at', { ascending: false }).range(offset, offset + limit - 1);
   if (options.search?.trim()) {
     if (useSearchDocument) query = query.textSearch('search_document', options.search.trim(), { type: 'websearch', config: 'english' });
     else {
@@ -164,7 +176,7 @@ export async function listStudyResourcePage(options: StudyResourceFilters = {}):
     if (result.error?.code === '42703' && options.search?.trim() && /search_document/i.test(result.error.message || '')) result = await run(withProfile, false);
   }
   if (result.error) throw result.error;
-  const items = (result.data || []).map((row: any) => toResource({ ...row, is_saved: row.saved_resources?.length > 0 }));
+  const items = await enrichResourceUploaders((result.data || []).map((row: any) => toResource({ ...row, is_saved: row.saved_resources?.length > 0 })));
   const total = result.count || 0;
   return { items, total, hasMore: offset + items.length < total };
 }
@@ -176,12 +188,13 @@ export async function listSavedResources() {
   const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to view saved resources.');
   const saved = await db.from('saved_resources').select('resource_id,created_at').eq('user_id', user.id).order('created_at', { ascending: false });
   if (saved.error) throw saved.error; const ids = (saved.data || []).map((item) => item.resource_id); if (!ids.length) return [];
-  const rows = await db.from('study_resources').select('*,profiles(first_name,last_name,avatar_url,college)').in('id', ids); if (rows.error) throw rows.error;
+  const rows = await db.from('study_resources').select('*').in('id', ids); if (rows.error) throw rows.error;
   const order = new Map(ids.map((id, index) => [id, index]));
-  return (rows.data || []).map((row: any) => {
+  const resources = (rows.data || []).map((row: any) => {
     const savedPdfRow = { ...row, saved_resources: [{ user_id: user.id }] } as StudyHubPdfRow;
     return isIndividualStudyPdf(savedPdfRow) ? toStudyHubPdfResource(savedPdfRow) : toResource({ ...row, is_saved: true });
   }).sort((a, b) => (order.get(a.id) || 0) - (order.get(b.id) || 0));
+  return enrichResourceUploaders(resources);
 }
 
 export async function fetchResource(id: string) {
@@ -195,7 +208,8 @@ export async function fetchResource(id: string) {
   const { data, error } = await db.from('study_resources').select('*').eq('id', id).single();
   if (error) throw error;
   const resource = toResource(data);
-  return { ...resource, pdfUrl: data.drive_url || resource.pdfUrl, driveFileId: data.drive_file_id || resource.driveFileId, resourceKind: data.resource_kind || resource.resourceKind, driveMimeType: data.drive_mime_type || resource.driveMimeType, pdfFileName: data.title || resource.pdfFileName };
+  const [enriched] = await enrichResourceUploaders([resource]);
+  return { ...enriched, pdfUrl: data.drive_url || enriched.pdfUrl, driveFileId: data.drive_file_id || enriched.driveFileId, resourceKind: data.resource_kind || enriched.resourceKind, driveMimeType: data.drive_mime_type || enriched.driveMimeType, pdfFileName: data.title || enriched.pdfFileName };
 }
 export async function updateStudyResource(id: string, input: Partial<ResourceInput>) {
   const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to edit this resource.');
@@ -204,9 +218,9 @@ export async function updateStudyResource(id: string, input: Partial<ResourceInp
   if (drive_url) { const drive = normalizeDriveUrl(drive_url); patch.drive_url = drive.url; patch.drive_file_id = drive.id; }
   if (fields.study_year) patch.study_year = Number(fields.study_year);
   if (rights_confirmed === true) patch.rights_confirmed_at = new Date().toISOString();
-  const { data, error } = await db.from('study_resources').update(patch).eq('id', id).eq('user_id', user.id).select('*,profiles(first_name,last_name,avatar_url,college)').single();
+  const { data, error } = await db.from('study_resources').update(patch).eq('id', id).eq('user_id', user.id).select('*').single();
   if (error?.code === '23505') throw new Error('This Google Drive file is already listed in Study Hub.'); if (error) throw error;
-  return toResource(data);
+  return (await enrichResourceUploaders([toResource(data)]))[0];
 }
 export async function removeStudyResource(id: string) {
   const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in to delete this resource.');
@@ -214,8 +228,22 @@ export async function removeStudyResource(id: string) {
 }
 export const saveResource = async (id: string, saved: boolean) => {
   const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) throw new Error('Sign in required.');
-  const result = saved ? await db.from('saved_resources').upsert({ user_id: user.id, resource_id: id }) : await db.from('saved_resources').delete().eq('user_id', user.id).eq('resource_id', id);
-  if (result.error) throw result.error;
+  const result = saved
+    ? await db.from('saved_resources').insert({ user_id: user.id, resource_id: id })
+    : await db.from('saved_resources').delete().eq('user_id', user.id).eq('resource_id', id);
+  // The composite primary key already represents the saved state. A repeat
+  // insert is successful from the caller's perspective and needs no UPDATE.
+  if (saved && result.error?.code === '23505') return;
+  if (result.error) {
+    if (__DEV__) console.warn('[Study Hub bookmark] Supabase write failed.', {
+      operation: saved ? 'save' : 'remove',
+      code: result.error.code,
+      message: result.error.message?.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '[id]').slice(0, 240),
+      hint: result.error.hint?.slice(0, 160),
+      status: result.status,
+    });
+    throw result.error;
+  }
 };
 export const isResourceSaved = async (id: string) => {
   const db = requireSupabase(); const { data: { user } } = await db.auth.getUser(); if (!user) return false;

@@ -11,7 +11,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { safeBack } from '@/navigation/safeBack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +23,8 @@ import { useApp } from '../../context/AppContext';
 import { dataService } from '../../services/dataService';
 import { Opportunity } from '../../types';
 import { formatDaysRemaining } from '../../services/unstopService';
+import { OpportunityDescription } from '../../components/opportunities/OpportunityDescription';
+import { getOpportunityReward } from '../../services/opportunityUtils';
 
 export default function OpportunityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -155,7 +157,8 @@ export default function OpportunityDetailScreen() {
     return name.slice(0, 2).toUpperCase();
   };
 
-  const isUrgent = opp.daysRemaining !== undefined && opp.daysRemaining <= 7;
+  const isUrgent = opp.daysRemaining !== undefined && opp.daysRemaining >= 0 && opp.daysRemaining <= 7;
+  const reward = getOpportunityReward(opp);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -200,6 +203,7 @@ export default function OpportunityDetailScreen() {
             <Badge label={opp.category} variant="purple" size="md" />
           ) : null}
           <Badge label={`${opp.format} • ${opp.location}`} variant="cyan" size="md" />
+          {opp.status && opp.status !== 'Expired' && opp.status !== 'Closed' ? <Badge label={opp.status} variant="primary" size="md" /> : null}
         </View>
 
         {/* Title */}
@@ -225,18 +229,8 @@ export default function OpportunityDetailScreen() {
           <View style={styles.organizerInfo}>
             <View style={styles.organizerNameRow}>
               <Text style={styles.organizerName}>{opp.organizer}</Text>
-              {opp.isVerified ? (
-                <Ionicons
-                  name="checkmark-circle"
-                  size={16}
-                  color={Colors.primary}
-                  style={{ marginLeft: 5 }}
-                />
-              ) : null}
             </View>
-            {opp.source ? (
-              <Text style={styles.sourceText}>Source verified via {opp.source}</Text>
-            ) : null}
+            {opp.source ? <Text style={styles.sourceText}>Source: {opp.source}</Text> : null}
           </View>
         </View>
 
@@ -245,37 +239,38 @@ export default function OpportunityDetailScreen() {
           <View style={styles.metricItem}>
             <Text style={styles.metricLabel}>DEADLINE</Text>
             <Text style={[styles.metricValue, { color: isUrgent ? Colors.primary : Colors.textPrimary }]}>
-              {opp.deadline}
+              {opp.deadline !== 'Not specified' ? opp.deadline : 'Not specified'}
             </Text>
-            <Text style={styles.metricSub}>
-              {formatDaysRemaining(opp.daysRemaining).label}
-            </Text>
+            {opp.daysRemaining !== undefined ? <Text style={styles.metricSub}>{formatDaysRemaining(opp.daysRemaining).label}</Text> : null}
           </View>
 
           <View style={styles.metricDivider} />
 
-          <View style={styles.metricItem}>
-            <Text style={styles.metricLabel}>PRIZE / REWARD</Text>
-            <Text style={[styles.metricValue, { color: Colors.accentAmber }]}>
-              {opp.prizeOrCompensation.split(' ')[0]}
-            </Text>
-            <Text style={styles.metricSub} numberOfLines={1}>
-              {opp.prizeOrCompensation}
-            </Text>
-          </View>
+          {reward ? <><View style={styles.metricDivider} /><View style={styles.metricItem}>
+            <Text style={styles.metricLabel}>{reward.label.toUpperCase()}</Text>
+            <Text style={[styles.metricValue, { color: Colors.accentAmber }]} numberOfLines={2}>{reward.text}</Text>
+          </View></> : null}
 
-          <View style={styles.metricDivider} />
-
-          <View style={styles.metricItem}>
+          {opp.teamSize || opp.registrationFee ? <><View style={styles.metricDivider} /><View style={styles.metricItem}>
             <Text style={styles.metricLabel}>TEAM & FEE</Text>
             <Text style={[styles.metricValue, { color: Colors.accentCyan }]}>
-              {opp.teamSize || 'Individual'}
+              {opp.teamSize && opp.teamSize !== 'Not specified' ? opp.teamSize : 'Open'}
             </Text>
             <Text style={styles.metricSub}>
               {opp.registrationFee ? `Fee: ${opp.registrationFee}` : 'Free'}
             </Text>
-          </View>
+          </View></> : null}
         </Card>
+
+        <Button
+          title="Apply / View on Official Source"
+          variant="primary"
+          size="lg"
+          icon={<Ionicons name="open-outline" size={18} color="#FFF" />}
+          iconPosition="right"
+          onPress={handleApply}
+          style={styles.registerButton}
+        />
 
         {/* Action Row: Save, Self-Report Applied, Reminder */}
         <View style={styles.actionRow}>
@@ -330,12 +325,27 @@ export default function OpportunityDetailScreen() {
 
         {/* Section: Description */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ABOUT THIS OPPORTUNITY</Text>
-          <Text style={styles.bodyText}>{opp.description}</Text>
+          <Text style={styles.sectionTitle}>ABOUT</Text>
+          {opp.description ? <OpportunityDescription description={opp.description} title={opp.title} /> : <Text style={styles.bodyText}>No description was provided by the source.</Text>}
         </View>
 
+        {reward ? <View style={styles.section}>
+          <Text style={styles.sectionTitle}>BENEFITS / {reward.label.toUpperCase()}</Text>
+          <View style={styles.rewardPanel}><Ionicons name="trophy-outline" size={18} color={Colors.primary} /><View style={{ flex: 1 }}><Text style={styles.rewardValue}>{reward.text}</Text><Text style={styles.metricSub}>{reward.label} offered by the organizer</Text></View></View>
+        </View> : null}
+
+        {opp.deadline && opp.deadline !== 'Not specified' ? <View style={styles.section}>
+          <Text style={styles.sectionTitle}>IMPORTANT DATES</Text>
+          <View style={styles.eligibilityBox}><Ionicons name="calendar-outline" size={18} color={isUrgent ? Colors.primary : Colors.accentCyan} style={{ marginRight: 9 }} /><Text style={styles.eligibilityText}>Apply by {opp.deadline}</Text></View>
+        </View> : null}
+
+        {(opp.format || opp.location) ? <View style={styles.section}>
+          <Text style={styles.sectionTitle}>FORMAT / LOCATION</Text>
+          <View style={styles.eligibilityBox}><Ionicons name="location-outline" size={18} color={Colors.accentCyan} style={{ marginRight: 9 }} /><Text style={styles.eligibilityText}>{[opp.format, opp.location !== opp.format ? opp.location : null].filter(Boolean).join(' · ')}</Text></View>
+        </View> : null}
+
         {/* Section: Eligibility */}
-        <View style={styles.section}>
+        {opp.eligibility && opp.eligibility !== 'Everyone can apply' ? <View style={styles.section}>
           <Text style={styles.sectionTitle}>ELIGIBILITY REQUIREMENTS</Text>
           <View style={styles.eligibilityBox}>
             <Ionicons
@@ -346,20 +356,20 @@ export default function OpportunityDetailScreen() {
             />
             <Text style={styles.eligibilityText}>{opp.eligibility}</Text>
           </View>
-        </View>
+        </View> : null}
 
         {/* Section: Skills & Tags */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>RELEVANT SKILLS & TRACKS</Text>
           <View style={styles.chipsWrap}>
-            {opp.requiredSkills.map((s) => (
-              <Badge key={s} label={s} variant="outline" size="md" />
+            {Array.from(new Set(opp.requiredSkills)).map((s, index) => (
+              <Badge key={`${s}-${index}`} label={s} variant="outline" size="md" />
             ))}
           </View>
         </View>
 
         {/* Section: Application Checklist */}
-        <View style={styles.section}>
+        {opp.checklist && opp.checklist.length > 0 ? <View style={styles.section}>
           <Text style={styles.sectionTitle}>STUDENT PREPARATION CHECKLIST</Text>
           <Text style={styles.checklistHint}>
             Check items off as you prepare your application:
@@ -385,43 +395,9 @@ export default function OpportunityDetailScreen() {
               );
             })}
           </View>
-        </View>
+        </View> : null}
 
-        {/* Teammate Match CTA */}
-        <Card variant="outline" style={styles.teamMatchBanner}>
-          <View style={styles.teamMatchInfo}>
-            <Ionicons name="people" size={20} color={Colors.primary} />
-            <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text style={styles.teamMatchTitle}>Need teammates for this?</Text>
-              <Text style={styles.teamMatchSub}>
-                Find complementary student builders looking to collaborate.
-              </Text>
-            </View>
-          </View>
-          <Button
-            title="Find Teammates"
-            variant="secondary"
-            size="sm"
-            onPress={() => router.push('/teams' as any)}
-            style={{ marginTop: 10 }}
-          />
-        </Card>
-
-        {/* Prominent Register / Apply Button */}
-        <Button
-          title="Register / Apply on Official Portal"
-          variant="primary"
-          size="lg"
-          icon={<Ionicons name="open-outline" size={18} color="#FFF" />}
-          iconPosition="right"
-          onPress={handleApply}
-          style={styles.registerButton}
-        />
-
-        <Text style={styles.sourceAttributionText}>
-          Tapping Register opens the authorized Unstop registration link ({opp.officialUrl}).
-          StudOs does not collect credentials or automate external registrations.
-        </Text>
+        <Text style={styles.sourceAttributionText}>Application opens the opportunity source in your browser.</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -586,6 +562,8 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
   },
+  rewardPanel: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: BorderRadius.md, backgroundColor: Colors.primarySubtle, borderWidth: 1, borderColor: Colors.primaryBorder },
+  rewardValue: { color: '#F0B0A8', fontSize: Typography.headline, fontWeight: Typography.bold, marginBottom: 3 },
   metricDivider: {
     width: 1,
     backgroundColor: Colors.border,

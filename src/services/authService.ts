@@ -1,6 +1,6 @@
 import { requireSupabase } from './supabase';
 
-export type SignupInput = { first_name: string; middle_name?: string; last_name: string; email: string; password: string; college?: string; degree?: string; branch?: string; study_year?: number; graduation_year?: number };
+export type SignupInput = { first_name: string; middle_name?: string; last_name: string; email: string; password: string; college?: string; degree?: string; branch?: string; study_year?: number; graduation_year?: number; bio?: string; phone_number?: string; skills?: string[]; interests?: string[]; github_url?: string; linkedin_url?: string; portfolio_url?: string };
 const oauthExchanges = new Map<string, ReturnType<ReturnType<typeof requireSupabase>['auth']['exchangeCodeForSession']>>();
 
 export const authService = {
@@ -11,9 +11,9 @@ export const authService = {
     // appear stuck, and those writes may fail independently of authentication.
     return db.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
   },
-  signUp: (input: SignupInput) => {
+  signUp: (input: SignupInput, emailRedirectTo?: string) => {
     const { email, password, ...profile } = input;
-    return requireSupabase().auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: profile } });
+    return requireSupabase().auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: profile, ...(emailRedirectTo ? { emailRedirectTo } : {}) } });
   },
   signInWithGoogle: (redirectTo: string | undefined, skipBrowserRedirect: boolean) => requireSupabase().auth.signInWithOAuth({
     provider: 'google',
@@ -25,32 +25,6 @@ export const authService = {
     const exchange = (async () => {
     const db = requireSupabase();
     const result = await db.auth.exchangeCodeForSession(code);
-    const user = result.data.user;
-    if (!result.error && user) {
-      const metadata = user.user_metadata || {};
-      const fullName = String(metadata.full_name || metadata.name || '').trim().split(/\s+/);
-      const firstName = String(metadata.first_name || metadata.given_name || fullName[0] || '').trim();
-      const lastName = String(metadata.last_name || metadata.family_name || fullName.slice(1).join(' ') || '').trim();
-      const googleAvatar = user.app_metadata?.provider === 'google'
-        ? String(metadata.avatar_url || metadata.picture || '').trim()
-        : '';
-      const updates = [];
-      if (firstName || lastName) {
-        // The Auth session is already valid. Best-effort profile enrichment
-        // must not keep the user on the callback screen.
-        if (firstName) updates.push(db.from('profiles').update({ first_name: firstName }).eq('id', user.id).eq('first_name', ''));
-        if (lastName) updates.push(db.from('profiles').update({ last_name: lastName }).eq('id', user.id).eq('last_name', ''));
-      }
-      if (googleAvatar) {
-        updates.push((async () => {
-          const current = await db.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle();
-          if (!current.error && !current.data?.avatar_url) {
-            await db.from('profiles').update({ avatar_url: googleAvatar }).eq('id', user.id);
-          }
-        })());
-      }
-      void Promise.all(updates).catch(() => undefined);
-    }
     return result;
     })();
     oauthExchanges.set(code, exchange);

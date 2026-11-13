@@ -1,10 +1,11 @@
-import type { Idea } from '../types';
+import type { Idea, StudentIdentity } from '../types';
 import { resolveStudentIdentity } from './studentIdentity';
 import { requireSupabase } from './supabase';
 import { studentIdeaBookmarksService } from './studentIdeaBookmarksService';
 
 export type DemoIdeaAuthor = {
   id: string;
+  identity: StudentIdentity;
   name: string;
   avatarUrl: string | null;
   college: string | null;
@@ -26,6 +27,7 @@ export type DemoIdea = {
   collaborationOpen: boolean;
   githubUrl: string | null;
   youtubeUrl: string | null;
+  links: string[];
   createdAt: string;
   sparkCount: number | null;
   commentCount: number | null;
@@ -67,17 +69,18 @@ export type DemoIdeaLoadResult = {
   interactionErrors: string[];
 };
 
-export type DemoIdeaInteractionState = {
-  isSparked: boolean;
-  isSaved: boolean;
-  requestStatus: 'pending' | 'accepted' | 'rejected' | null;
-};
-
 export type DemoIdeaPaginationOptions = {
   offset?: number;
   limit?: number;
   search?: string;
   category?: string;
+};
+
+export type NewStudentIdea = {
+  title: string; description: string; category?: string; ideaType?: string; stage?: string;
+  tags?: string[]; skillsNeeded?: string[]; collaborationOpen?: boolean; githubUrl?: string;
+  youtubeUrl?: string; problemStatement?: string; proposedSolution?: string;
+  targetAudience?: string; rolesNeeded?: string[]; links?: string[];
 };
 
 export const toAppIdea = (idea: DemoIdea): Idea => ({
@@ -107,6 +110,7 @@ export const toAppIdea = (idea: DemoIdea): Idea => ({
   resources: [
     ...(validWebUrl(idea.githubUrl) ? [{ label: 'GitHub repository', url: idea.githubUrl! }] : []),
     ...(validWebUrl(idea.youtubeUrl) ? [{ label: 'YouTube video', url: idea.youtubeUrl! }] : []),
+    ...idea.links.filter(validWebUrl).map((url) => ({ label: 'Related link', url })),
   ],
   creator: {
     id: idea.author.id,
@@ -115,7 +119,7 @@ export const toAppIdea = (idea: DemoIdea): Idea => ({
     college: idea.author.college || '',
     role: idea.author.branch || '',
     studyYear: idea.author.studyYear ? `Year ${idea.author.studyYear}` : undefined,
-    identity: resolveStudentIdentity('student_profiles', idea.author.id),
+    identity: resolveStudentIdentity(idea.author.identity.type === 'demo' ? 'profiles' : 'auth', idea.author.id),
   },
 });
 
@@ -127,10 +131,10 @@ function validWebUrl(value: string | null): boolean {
 
 // Live PostgREST confirms these base-table columns. Avoid the optional feed
 // view until its definition and security behavior are reconciled in SQL.
-const IDEA_FIELDS = 'id,demo_author_id,title,description,category,idea_type,stage,tags,skills_needed,collaboration_open,created_at,github_url,youtube_url';
+const IDEA_FIELDS = 'id,demo_author_id,author_id,title,description,problem_statement,proposed_solution,target_audience,roles_needed,links,category,idea_type,stage,tags,skills_needed,collaboration_open,created_at,github_url,youtube_url';
 const BASE_FIELDS = IDEA_FIELDS;
-const authorIdOf = (row: any): string => typeof row?.demo_author_id === 'string' ? row.demo_author_id : '';
-export function demoIdeaActorProfileId(row: any): string | null {
+const authorIdOf = (row: any): string => typeof row?.author_id === 'string' ? row.author_id : typeof row?.demo_author_id === 'string' ? row.demo_author_id : '';
+function demoIdeaActorProfileId(row: any): string | null {
   return typeof row?.demo_profile_id === 'string' ? row.demo_profile_id : null;
 }
 const isIdeaOwnerActor = (row: any, ideaAuthorId: string) => {
@@ -188,19 +192,24 @@ async function readAuthors(authorIds: string[]) {
   const db = requireSupabase();
   const ids = [...new Set(authorIds.filter(Boolean))];
   if (!ids.length) return new Map<string, any>();
-  const { data, error } = await db.from('student_profiles')
-    .select('id,first_name,last_name,college,degree,branch,study_year,skills,interests,github_url,portfolio_url')
-    .in('id', ids);
-  if (error) throwQuery('read student idea authors', 'student_profiles', error);
-  const authors = new Map((data || []).map((row: any) => [row.id, row]));
+  const { data, error } = await db.from('profiles')
+    .select('id,auth_user_id,first_name,last_name,college,degree,branch,study_year,skills,interests,github_url,portfolio_url')
+    .or(`id.in.(${ids.join(',')}),auth_user_id.in.(${ids.join(',')})`);
+  if (error) throwQuery('read student idea authors', 'profiles', error);
+  const authorEntries: [string, any][] = (data || []).flatMap((row: any): [string, any][] => [
+    [row.id, row],
+    ...(row.auth_user_id ? [[row.auth_user_id, row] as [string, any]] : []),
+  ]);
+  const authors = new Map<string, any>(authorEntries);
   const missing = ids.filter((id) => !authors.has(id));
-  if (missing.length) throw new Error(`Could not read ${missing.length} student idea author profile(s) from student_profiles. Check SELECT grants and RLS.`);
+  if (missing.length) throw new Error(`Could not read ${missing.length} student idea author profile(s) from profiles. Check SELECT grants and RLS.`);
   return authors;
 }
 
-function mapAuthor(id: string, row: any): DemoIdeaAuthor {
+function mapAuthor(id: string, row: any, isAuthAuthor: boolean): DemoIdeaAuthor {
   return {
     id,
+    identity: { type: isAuthAuthor ? 'real' : 'demo', id },
     name: [row?.first_name, row?.last_name].filter(Boolean).join(' ') || 'Student',
     avatarUrl: row?.avatar_url || null,
     college: row?.college || null,
@@ -221,13 +230,13 @@ async function loadInteractionMaps(ideaIds: string[], userId: string | null) {
     liveRequestsPrimary,
     savedResult,
   ] = await Promise.all([
-    fetchAll((from, to) => db.from('student_idea_sparks').select('idea_id').in('idea_id', ideaIds).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_comments').select('idea_id').in('idea_id', ideaIds).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_actors').select('idea_id,demo_profile_id,role,created_at').in('idea_id', ideaIds).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_live_sparks').select('idea_id,user_id').in('idea_id', ideaIds).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_live_comments').select('idea_id').in('idea_id', ideaIds).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_live_collaborators').select('idea_id,user_id,joined_at').in('idea_id', ideaIds).range(from, to)),
-    userId ? fetchAll((from, to) => db.from('student_idea_live_requests').select('idea_id,status,created_at').eq('user_id', userId).in('idea_id', ideaIds).order('created_at', { ascending: false }).range(from, to)) : Promise.resolve({ data: [], error: null }),
+    fetchAll((from, to) => db.from('idea_sparks').select('idea_id').in('idea_id', ideaIds).range(from, to)),
+    fetchAll((from, to) => db.from('idea_comments').select('idea_id').in('idea_id', ideaIds).range(from, to)),
+    fetchAll((from, to) => db.from('idea_actors').select('idea_id,demo_profile_id,role,created_at').in('idea_id', ideaIds).range(from, to)),
+    fetchAll((from, to) => db.from('idea_live_sparks').select('idea_id,user_id').in('idea_id', ideaIds).range(from, to)),
+    fetchAll((from, to) => db.from('idea_live_comments').select('idea_id').in('idea_id', ideaIds).range(from, to)),
+    fetchAll((from, to) => db.from('idea_live_collaborators').select('idea_id,user_id,joined_at').in('idea_id', ideaIds).range(from, to)),
+    userId ? fetchAll((from, to) => db.from('idea_live_requests').select('idea_id,status,created_at').eq('user_id', userId).in('idea_id', ideaIds).order('created_at', { ascending: false }).range(from, to)) : Promise.resolve({ data: [], error: null }),
     studentIdeaBookmarksService.savedIds(ideaIds),
   ]);
 
@@ -238,9 +247,9 @@ async function loadInteractionMaps(ideaIds: string[], userId: string | null) {
 
   const errors = new Set<string>();
   for (const [relation, result] of [
-    ['student_idea_sparks', demoSparks], ['student_idea_comments', demoComments], ['student_idea_actors', demoActors],
-    ['student_idea_live_sparks', liveSparks], ['student_idea_live_comments', liveComments], ['student_idea_live_collaborators', liveCollaborators],
-    ...(userId ? [['student_idea_live_requests', liveRequests]] as const : []),
+    ['idea_sparks', demoSparks], ['idea_comments', demoComments], ['idea_actors', demoActors],
+    ['idea_live_sparks', liveSparks], ['idea_live_comments', liveComments], ['idea_live_collaborators', liveCollaborators],
+    ...(userId ? [['idea_live_requests', liveRequests]] as const : []),
   ] as const) {
     if (result.error) { report('read demo idea interactions', relation, result.error); errors.add(relation); }
   }
@@ -268,6 +277,7 @@ async function loadInteractionMaps(ideaIds: string[], userId: string | null) {
 
 function makeIdea(row: any, authors: Map<string, any>, stats: Awaited<ReturnType<typeof loadInteractionMaps>>): DemoIdea {
   const authorId = authorIdOf(row);
+  const isAuthAuthor = typeof row.author_id === 'string';
   const demoCollaborators = (stats.actors || []).filter((actor: any) => actor.idea_id === row.id && !isIdeaOwnerActor(actor, authorId) && isSeededCollaboratorActor(actor)).length;
 
   const countFor = (viewVal: unknown, demoCount: number | null, liveCount: number | null) => {
@@ -279,8 +289,8 @@ function makeIdea(row: any, authors: Map<string, any>, stats: Awaited<ReturnType
 
   return {
     id: String(row.id),
-    demoAuthorId: authorId,
-    author: mapAuthor(authorId, authors.get(authorId)),
+    demoAuthorId: isAuthAuthor ? '' : authorId,
+    author: mapAuthor(authorId, authors.get(authorId), isAuthAuthor),
     title: String(row.title || ''),
     description: String(row.description || ''),
     category: row.category || null,
@@ -291,6 +301,7 @@ function makeIdea(row: any, authors: Map<string, any>, stats: Awaited<ReturnType
     collaborationOpen: Boolean(row.collaboration_open),
     githubUrl: typeof row.github_url === 'string' ? row.github_url : null,
     youtubeUrl: typeof row.youtube_url === 'string' ? row.youtube_url : null,
+    links: normalizeStrings(row.links),
     createdAt: row.created_at || new Date().toISOString(),
     sparkCount: countFor(row.spark_count, stats.demoSparks ? stats.demoSparks.get(row.id) || 0 : null, stats.liveSparks ? stats.liveSparks.get(row.id) || 0 : null),
     commentCount: countFor(row.comment_count, stats.demoComments ? stats.demoComments.get(row.id) || 0 : null, stats.liveComments ? stats.liveComments.get(row.id) || 0 : null),
@@ -308,14 +319,14 @@ export async function getDemoIdeas(options: DemoIdeaPaginationOptions = {}): Pro
   const offset = Math.max(0, options.offset || 0);
   const limit = Math.min(Math.max(options.limit || 8, 1), 30);
 
-  let query = db.from('student_ideas').select(IDEA_FIELDS, { count: 'exact' }).order('created_at', { ascending: false });
+  let query = db.from('ideas').select(IDEA_FIELDS, { count: 'exact' }).order('created_at', { ascending: false });
   if (options.category && options.category.toLowerCase() !== 'all') query = query.eq('category', options.category);
   if (options.search?.trim()) {
     const search = options.search.trim().replace(/[%,()]/g, ' ');
     query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
   }
   const { data, count, error } = await query.range(offset, offset + limit - 1);
-  if (error) throwQuery('load Student Idea Hub', 'student_ideas', error);
+  if (error) throwQuery('load Student Idea Hub', 'ideas', error);
   const rows = data || [];
   const total = count ?? rows.length;
 
@@ -336,11 +347,36 @@ export async function getDemoIdeaById(id: string): Promise<DemoIdea | null> {
   const db = requireSupabase();
   const userId = await currentUserId();
 
-  const { data, error } = await db.from('student_ideas').select(BASE_FIELDS).eq('id', id).maybeSingle();
-  if (error) throwQuery('load student idea details', 'student_ideas', error);
+  const { data, error } = await db.from('ideas').select(BASE_FIELDS).eq('id', id).maybeSingle();
+  if (error) throwQuery('load student idea details', 'ideas', error);
   if (!data) return null;
   const authors = await readAuthors([authorIdOf(data)]);
   const stats = await loadInteractionMaps([data.id], userId);
+  return makeIdea(data, authors, stats);
+}
+
+export async function createStudentIdea(input: NewStudentIdea): Promise<DemoIdea> {
+  const db = requireSupabase();
+  const { data: { user }, error: authError } = await db.auth.getUser();
+  if (authError) throw authError;
+  if (!user) throw new Error('Sign in to publish an idea.');
+  const title = input.title.trim(); const description = input.description.trim();
+  if (title.length < 5 || title.length > 180) throw new Error('Idea titles must be 5 to 180 characters.');
+  if (description.length < 20 || description.length > 6000) throw new Error('Add an idea description of at least 20 characters.');
+  const links = (input.links || []).map((value) => value.trim()).filter(Boolean);
+  for (const value of links) { try { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol)) throw new Error(); } catch { throw new Error('Idea links must be valid HTTP or HTTPS URLs.'); } }
+  const { data, error } = await db.from('ideas').insert({
+    author_id: user.id, demo_author_id: null, title, description,
+    problem_statement: input.problemStatement?.trim() || '', proposed_solution: input.proposedSolution?.trim() || '',
+    target_audience: input.targetAudience?.trim() || '', category: input.category || null,
+    idea_type: input.ideaType || 'Software', stage: input.stage || 'Concept',
+    tags: input.tags || [], skills_needed: input.skillsNeeded || [], roles_needed: input.rolesNeeded || [],
+    collaboration_open: input.collaborationOpen ?? true, github_url: input.githubUrl || null,
+    youtube_url: input.youtubeUrl || null, links,
+  }).select(IDEA_FIELDS).single();
+  if (error) throw error;
+  const authors = await readAuthors([user.id]);
+  const stats = await loadInteractionMaps([data.id], user.id);
   return makeIdea(data, authors, stats);
 }
 
@@ -349,12 +385,12 @@ export async function toggleDemoIdeaSpark(id: string, userId?: string): Promise<
   if (!authId) throw new Error('Sign in to Spark an idea.');
   const db = requireSupabase();
 
-  const { data, error } = await db.from('student_idea_live_sparks').select('idea_id').eq('idea_id', id).eq('user_id', authId).maybeSingle();
-  if (error) throwQuery('read Spark before toggle', 'student_idea_live_sparks', error);
+  const { data, error } = await db.from('idea_live_sparks').select('idea_id').eq('idea_id', id).eq('user_id', authId).maybeSingle();
+  if (error) throwQuery('read Spark before toggle', 'idea_live_sparks', error);
   const result = data
-    ? await db.from('student_idea_live_sparks').delete().eq('idea_id', id).eq('user_id', authId)
-    : await db.from('student_idea_live_sparks').upsert({ idea_id: id, user_id: authId }, { onConflict: 'idea_id,user_id', ignoreDuplicates: true });
-  if (result.error) throwQuery('persist student idea Spark', 'student_idea_live_sparks', result.error);
+    ? await db.from('idea_live_sparks').delete().eq('idea_id', id).eq('user_id', authId)
+    : await db.from('idea_live_sparks').upsert({ idea_id: id, user_id: authId }, { onConflict: 'idea_id,user_id', ignoreDuplicates: true });
+  if (result.error) throwQuery('persist student idea Spark', 'idea_live_sparks', result.error);
   return !data;
 }
 
@@ -369,21 +405,21 @@ export async function getDemoIdeaComments(id: string): Promise<DemoIdeaComment[]
   const userId = await currentUserId();
 
   const [demo, live] = await Promise.all([
-    fetchAll((from, to) => db.from('student_idea_comments').select('id,idea_id,demo_profile_id,body,created_at').eq('idea_id', id).order('created_at', { ascending: true }).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_live_comments').select('id,idea_id,user_id,body,created_at').eq('idea_id', id).order('created_at', { ascending: true }).range(from, to)),
+    fetchAll((from, to) => db.from('idea_comments').select('id,idea_id,demo_profile_id,body,created_at').eq('idea_id', id).order('created_at', { ascending: true }).range(from, to)),
+    fetchAll((from, to) => db.from('idea_live_comments').select('id,idea_id,user_id,body,created_at').eq('idea_id', id).order('created_at', { ascending: true }).range(from, to)),
   ]);
 
-  if (demo.error) throwQuery('load seeded idea comments', 'student_idea_comments', demo.error);
-  if (live.error) throwQuery('load authenticated idea comments', 'student_idea_live_comments', live.error);
+  if (demo.error) throwQuery('load seeded idea comments', 'idea_comments', demo.error);
+  if (live.error) throwQuery('load authenticated idea comments', 'idea_live_comments', live.error);
 
   const demoIds = [...new Set((demo.data || []).map((row: any) => row.demo_profile_id).filter(Boolean))];
   const liveIds = [...new Set((live.data || []).map((row: any) => row.user_id).filter(Boolean))];
 
   const [demoProfiles, liveProfiles] = await Promise.all([
-    demoIds.length ? db.from('student_profiles').select('id,first_name,last_name,branch').in('id', demoIds) : Promise.resolve({ data: [], error: null }),
-    liveIds.length ? db.from('profiles').select('id,first_name,last_name,branch,avatar_url').in('id', liveIds) : Promise.resolve({ data: [], error: null }),
+    demoIds.length ? db.from('profiles').select('id,first_name,last_name,branch').in('id', demoIds) : Promise.resolve({ data: [], error: null }),
+    liveIds.length ? db.from('profiles').select('id:auth_user_id,first_name,last_name,branch,avatar_url').in('auth_user_id', liveIds) : Promise.resolve({ data: [], error: null }),
   ]);
-  if (demoProfiles.error) throwQuery('resolve seeded idea comment authors', 'student_profiles', demoProfiles.error);
+  if (demoProfiles.error) throwQuery('resolve seeded idea comment authors', 'profiles', demoProfiles.error);
   if (liveProfiles.error) throwQuery('resolve authenticated idea comment authors', 'profiles', liveProfiles.error);
 
   const demoMap = new Map((demoProfiles.data || []).map((row: any) => [row.id, row]));
@@ -430,14 +466,14 @@ export async function addDemoIdeaComment(id: string, content: string): Promise<D
   if (!authId) throw new Error('Sign in to comment on an idea.');
   const db = requireSupabase();
 
-  const insertRes = await db.from('student_idea_live_comments')
+  const insertRes = await db.from('idea_live_comments')
     .insert({ idea_id: id, user_id: authId, body: content.trim() })
     .select('id,idea_id,user_id,body,created_at')
     .single();
-  if (insertRes.error) throwQuery('insert student idea comment', 'student_idea_live_comments', insertRes.error);
+  if (insertRes.error) throwQuery('insert student idea comment', 'idea_live_comments', insertRes.error);
   const data = insertRes.data!;
 
-  const { data: profile } = await db.from('profiles').select('first_name,last_name,branch,avatar_url').eq('id', authId).maybeSingle();
+  const { data: profile } = await db.from('profiles').select('first_name,last_name,branch,avatar_url').eq('auth_user_id', authId).maybeSingle();
 
   return {
     id: data.id,
@@ -458,13 +494,13 @@ export async function requestDemoIdeaCollaboration(id: string, message: string):
   if (!userId) throw new Error('Sign in to request collaboration.');
   const db = requireSupabase();
 
-  const { data: existing, error: existingError } = await db.from('student_idea_live_requests').select('id,status').eq('idea_id', id).eq('user_id', userId).eq('status', 'pending').maybeSingle();
-  if (existingError) throwQuery('check duplicate collaboration request', 'student_idea_live_requests', existingError);
+  const { data: existing, error: existingError } = await db.from('idea_live_requests').select('id,status').eq('idea_id', id).eq('user_id', userId).eq('status', 'pending').maybeSingle();
+  if (existingError) throwQuery('check duplicate collaboration request', 'idea_live_requests', existingError);
   if (existing) throw new Error('You already have a pending request for this idea.');
 
-  const insertRes = await db.from('student_idea_live_requests').insert({ idea_id: id, user_id: userId, message: message.trim(), status: 'pending' }).select('id,status,created_at').single();
+  const insertRes = await db.from('idea_live_requests').insert({ idea_id: id, user_id: userId, message: message.trim(), status: 'pending' }).select('id,status,created_at').single();
   if (insertRes.error?.code === '23505') throw new Error('You already have a pending request for this idea.');
-  if (insertRes.error) throwQuery('submit collaboration request', 'student_idea_live_requests', insertRes.error);
+  if (insertRes.error) throwQuery('submit collaboration request', 'idea_live_requests', insertRes.error);
 
   return insertRes.data;
 }
@@ -472,22 +508,22 @@ export async function requestDemoIdeaCollaboration(id: string, message: string):
 export async function getDemoIdeaCollaborators(id: string): Promise<DemoIdeaCollaborator[]> {
   const db = requireSupabase();
   const [actorsResult, liveResult] = await Promise.all([
-    fetchAll((from, to) => db.from('student_idea_actors').select('idea_id,demo_profile_id,role,created_at').eq('idea_id', id).range(from, to)),
-    fetchAll((from, to) => db.from('student_idea_live_collaborators').select('idea_id,user_id,joined_at').eq('idea_id', id).range(from, to)),
+    fetchAll((from, to) => db.from('idea_actors').select('idea_id,demo_profile_id,role,created_at').eq('idea_id', id).range(from, to)),
+    fetchAll((from, to) => db.from('idea_live_collaborators').select('idea_id,user_id,joined_at').eq('idea_id', id).range(from, to)),
   ]);
 
-  if (actorsResult.error) throwQuery('load student idea actors', 'student_idea_actors', actorsResult.error);
-  if (liveResult.error) throwQuery('load accepted collaborators', 'student_idea_live_collaborators', liveResult.error);
-  const { data: idea, error: ideaError } = await db.from('student_ideas').select('demo_author_id').eq('id', id).maybeSingle();
-  if (ideaError) throwQuery('load student idea author', 'student_ideas', ideaError);
+  if (actorsResult.error) throwQuery('load student idea actors', 'idea_actors', actorsResult.error);
+  if (liveResult.error) throwQuery('load accepted collaborators', 'idea_live_collaborators', liveResult.error);
+  const { data: idea, error: ideaError } = await db.from('ideas').select('demo_author_id').eq('id', id).maybeSingle();
+  if (ideaError) throwQuery('load student idea author', 'ideas', ideaError);
   const ideaAuthorId = authorIdOf(idea);
   const demoActors = (actorsResult.data || []).filter((row: any) => !isIdeaOwnerActor(row, ideaAuthorId) && isSeededCollaboratorActor(row));
   const demoIds = [...new Set(demoActors.map(demoIdeaActorProfileId).filter((value): value is string => Boolean(value)))];
   const liveIds = [...new Set((liveResult.data || []).map((row: any) => row.user_id).filter(Boolean))];
 
   const [demoProfiles, profiles] = await Promise.all([
-    demoIds.length ? db.from('student_profiles').select('id,first_name,last_name,branch,skills').in('id', demoIds) : Promise.resolve({ data: [], error: null }),
-    liveIds.length ? db.from('profiles').select('id,first_name,last_name,branch,skills,avatar_url').in('id', liveIds) : Promise.resolve({ data: [], error: null }),
+    demoIds.length ? db.from('profiles').select('id,first_name,last_name,branch,skills').in('id', demoIds) : Promise.resolve({ data: [], error: null }),
+    liveIds.length ? db.from('profiles').select('id:auth_user_id,first_name,last_name,branch,skills,avatar_url').in('auth_user_id', liveIds) : Promise.resolve({ data: [], error: null }),
   ]);
 
   const demoMap = new Map((demoProfiles.data || []).map((row: any) => [row.id, row]));

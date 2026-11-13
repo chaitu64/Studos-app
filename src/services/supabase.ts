@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '../types/database';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -8,8 +9,8 @@ const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 // Keep local/demo screens usable when Supabase has not been configured. Auth
 // and cloud services report an actionable configuration error when called.
 export const supabaseConfigured = Boolean(url && key);
-export const supabase = supabaseConfigured
-  ? createClient(url!, key!, {
+const supabase = supabaseConfigured
+  ? createClient<Database>(url!, key!, {
       auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
     })
   : null;

@@ -11,7 +11,7 @@ const strings = (value: unknown): string[] => Array.isArray(value) ? value.filte
 const asProfile = (row: any, type: 'real' | 'demo'): StudentDirectoryProfile => {
   const id = String(row.id);
   const name = [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Student';
-  return { id, identity: resolveStudentIdentity(type === 'real' ? 'profiles' : 'student_profiles', id), isDemo: type === 'demo', name, avatar: row.avatar_url || '', college: row.college || '', branch: row.branch || '', degree: row.degree || '', studyYear: row.study_year == null ? '' : String(row.study_year), gradYear: row.graduation_year == null ? '' : String(row.graduation_year), shortBio: row.bio || '', skills: strings(row.skills), interests: strings(row.interests), githubUrl: row.github_url || undefined, linkedinUrl: row.linkedin_url || undefined, portfolioUrl: row.portfolio_url || undefined };
+  return { id, identity: type === 'real' ? { type: 'real', id } : resolveStudentIdentity('profiles', id), isDemo: type === 'demo', name, avatar: row.avatar_url || '', college: row.college || '', branch: row.branch || '', degree: row.degree || '', studyYear: row.study_year == null ? '' : String(row.study_year), gradYear: row.graduation_year == null ? '' : String(row.graduation_year), shortBio: row.bio || '', skills: strings(row.skills), interests: strings(row.interests), githubUrl: row.github_url || undefined, linkedinUrl: row.linkedin_url || undefined, portfolioUrl: row.portfolio_url || undefined };
 };
 const profileColumns = 'id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,avatar_url';
 async function getAll(query: any) {
@@ -28,8 +28,8 @@ export const studentDirectoryService = {
   async list(options: { search?: string; college?: string; branch?: string; studyYear?: string; offset?: number; limit?: number } = {}) {
     const db = requireSupabase();
     const [realResult, demoResult] = await Promise.all([
-      getAll(db.from('profiles').select(profileColumns).order('created_at', { ascending: false })),
-      getAll(db.from('student_profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,github_url,linkedin_url,portfolio_url').order('last_name', { ascending: true })),
+      getAll(db.from('profiles').select(`id:auth_user_id,${profileColumns.slice(3)}`).not('auth_user_id', 'is', null).order('created_at', { ascending: false })),
+      getAll(db.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,github_url,linkedin_url,portfolio_url').is('auth_user_id', null).order('last_name', { ascending: true })),
     ].map((request) => request.then((rows) => ({ rows, error: null as unknown })).catch((error: unknown) => ({ rows: [] as any[], error }))));
     if (realResult.error && __DEV__) console.warn('[Connect directory] Auth profile query failed.', realResult.error);
     if (demoResult.error && __DEV__) console.warn('[Connect directory] Student profile query failed.', demoResult.error);
@@ -46,21 +46,21 @@ export const studentDirectoryService = {
   async portfolio(identity: StudentIdentity): Promise<{ profile: StudentDirectoryProfile; ideas: Idea[]; contributions: Idea[]; posts: CommunityPost[]; services: any[]; teams: TeamListing[]; resources: StudyResource[]; sectionErrors: string[] }> {
     const db = requireSupabase();
     let profile: StudentDirectoryProfile;
-    let ids: Record<'ideas' | 'posts' | 'student_services' | 'teams' | 'study_resources', string[]> | null = null;
+    let ids: Record<'ideas' | 'posts' | 'services' | 'teams' | 'study_resources', string[]> | null = null;
     if (identity.type === 'real') {
-      const { data, error } = await db.from('profiles').select(profileColumns).eq('id', identity.id).maybeSingle();
+      const { data, error } = await db.from('profiles').select(`id:auth_user_id,${profileColumns.slice(3)}`).eq('auth_user_id', identity.id).maybeSingle();
       if (error) throw error; if (!data) throw new Error('This student profile could not be found.');
       profile = asProfile(data, 'real');
-      const links = await db.from('profiles').select('github_url,linkedin_url,portfolio_url').eq('id', identity.id).maybeSingle();
+      const links = await db.from('profiles').select('github_url,linkedin_url,portfolio_url').eq('auth_user_id', identity.id).maybeSingle();
       if (!links.error && links.data) profile = { ...profile, githubUrl: links.data.github_url || undefined, linkedinUrl: links.data.linkedin_url || undefined, portfolioUrl: links.data.portfolio_url || undefined };
     } else {
-      const { data, error } = await db.from('student_profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,github_url,linkedin_url,portfolio_url').eq('id', identity.id).maybeSingle();
+      const { data, error } = await db.from('profiles').select('id,first_name,last_name,college,branch,degree,study_year,graduation_year,bio,skills,interests,github_url,linkedin_url,portfolio_url').eq('id', identity.id).maybeSingle();
       if (error) throw error; if (!data) throw new Error('This student profile could not be found.');
       profile = asProfile(data, 'demo');
-      const mapping = await db.from('student_content').select('content_type,content_id').eq('student_profile_id', identity.id);
+      const mapping = await db.from('content').select('content_type,content_id').eq('student_profile_id', identity.id);
       if (mapping.error) throw mapping.error;
-      ids = { ideas: [], posts: [], student_services: [], teams: [], study_resources: [] };
-      const aliases: Record<string, keyof typeof ids> = { idea: 'ideas', ideas: 'ideas', post: 'posts', posts: 'posts', service: 'student_services', services: 'student_services', student_service: 'student_services', team: 'teams', teams: 'teams', study_resource: 'study_resources', study_resources: 'study_resources' };
+      ids = { ideas: [], posts: [], services: [], teams: [], study_resources: [] };
+      const aliases: Record<string, keyof typeof ids> = { idea: 'ideas', ideas: 'ideas', post: 'posts', posts: 'posts', service: 'services', services: 'services', student_service: 'services', team: 'teams', teams: 'teams', study_resource: 'study_resources', study_resources: 'study_resources' };
       for (const row of mapping.data || []) { const key = aliases[String(row.content_type).toLowerCase()]; if (key) ids[key].push(String(row.content_id)); }
     }
     const tasks = await Promise.allSettled([
@@ -68,13 +68,13 @@ export const studentDirectoryService = {
         ? getDemoIdeas({ limit: 30 }).then((page) => page.items.filter((idea) => idea.author.id === identity.id).map(toAppIdea))
         : Promise.resolve([] as Idea[]),
       identity.type === 'real' ? postService.feed(1, 100, undefined, identity.id).then((result) => result.posts) : postService.byIds(ids!.posts),
-      studentServicesService.list(identity.type === 'real' ? { providerId: identity.id } : { ids: ids!.student_services }),
+      studentServicesService.list(identity.type === 'real' ? { providerId: identity.id } : { ids: ids!.services }),
       sharedContentService.list<TeamListing>('teams', identity.type === 'real' ? { ownerId: identity.id } : { ids: ids!.teams }),
       listStudyResources(identity.type === 'real' ? { ownerId: identity.id } : { ids: ids!.study_resources, limit: 100 }),
       (async () => {
         const membership = identity.type === 'demo'
-          ? await db.from('student_idea_actors').select('idea_id,demo_profile_id,role,created_at').eq('demo_profile_id', identity.id)
-          : await db.from('student_idea_live_collaborators').select('idea_id').eq('user_id', identity.id);
+          ? await db.from('idea_actors').select('idea_id,demo_profile_id,role,created_at').eq('demo_profile_id', identity.id)
+          : await db.from('idea_live_collaborators').select('idea_id').eq('user_id', identity.id);
         if (membership.error) throw membership.error;
         const ideaIds = new Set((membership.data || []).map((row: any) => row.idea_id));
         if (!ideaIds.size) return [] as Idea[];
