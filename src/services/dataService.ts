@@ -52,7 +52,11 @@ class DataService {
     if (params?.categories?.length && !params.categories.includes('All')) result = result.filter((item) => params.categories!.includes(item.category || '') || params.categories!.includes(item.type));
     if (params?.teamSize?.length) result = result.filter((item) => params.teamSize!.includes(item.teamSize || ''));
     if (params?.payment?.length) result = result.filter((item) => params.payment!.some((value) => value === 'Free registration' ? item.registrationFee === 'Free' : value === 'Paid registration' ? item.registrationFee === 'Paid' : value.toLowerCase().includes('stipend') ? Boolean(item.stipend) : value.toLowerCase().includes('prize') ? Boolean(item.prizeAmount) : true));
-    if (params?.sortBy === 'recent') result.sort((a, b) => Date.parse(b.publishedAt || '') - Date.parse(a.publishedAt || ''));
+    if (params?.sortBy === 'recent') result.sort((a, b) => {
+      const aDate = Date.parse(a.publishedAt || '');
+      const bDate = Date.parse(b.publishedAt || '');
+      return (Number.isFinite(bDate) ? bDate : 0) - (Number.isFinite(aDate) ? aDate : 0);
+    });
     else if (params?.sortBy === 'prize') result.sort((a, b) => (getOpportunityRewardAmount(b) || 0) - (getOpportunityRewardAmount(a) || 0));
     else if (params?.sortBy === 'deadline') result.sort((a, b) => {
       const aDate = Date.parse(a.deadlineIso || '');

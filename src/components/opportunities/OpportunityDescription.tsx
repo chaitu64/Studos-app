@@ -1,6 +1,7 @@
 import React from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { Colors, Typography } from '../../constants/theme';
+import { decodeOpportunityText } from '../../utils/opportunityText';
 
 const SECTION_HEADINGS = new Set([
   'about the opportunity', 'eligibility', 'eligibility criteria', 'important dates',
@@ -22,7 +23,7 @@ function renderLinkedText(line: string, paragraphIndex: number) {
 }
 
 export function OpportunityDescription({ description, title }: { description: string; title?: string }) {
-  const blocks = (description || '').replace(/\r/g, '').split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const blocks = decodeOpportunityText(description || '').replace(/\r/g, '').split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   return (
     <View>
       {blocks.map((block, index) => {

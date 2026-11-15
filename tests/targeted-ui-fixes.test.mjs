@@ -29,17 +29,22 @@ test('Home surface opens its type-specific detail route while nested controls st
   assert.match(feed, /onInteraction=\{stop\}/);
   assert.match(home, /entry\.kind === 'idea'[\s\S]*?\/ideahub\/\[id\]/);
   assert.match(home, /else router\.push\(\{ pathname: '\/community\/\[kind\]\/\[id\]'/);
-  assert.match(home, /type === 'study_material' && entry\.data\.document\?\.id[\s\S]*?\/resource\/\[id\]/);
+  assert.match(home, /type === 'study_material' && entry\.data\.document\?\.id[\s\S]*?resourceReaderRoute\(entry\.data\.document\)/);
   assert.match(home, /pathname: '\/post\/\[id\]'/);
 });
 
-test('Explore shows one search field and compact horizontal All, sort, and filter controls', () => {
-  assert.match(explore, /placeholder="Search opportunities\.\.\."/);
-  assert.doesNotMatch(explore, /setSearchOpen|Search opportunities"\}/);
+test('Explore search is header-launched and controls retain the compact horizontal sort row', () => {
+  assert.match(explore, /<Header hideGreeting onSearchPress=\{\(\) => setShowSearchModal\(true\)\}/);
+  assert.match(explore, /placeholder="Search opportunities"/);
+  assert.match(explore, /setShowSearchModal\(false\)/);
   assert.match(explore, /<ScrollView horizontal showsHorizontalScrollIndicator=\{false\} style=\{styles\.quickControlsScroll\}/);
   for (const label of ['All', 'Deadline', 'Recent', 'Prize']) assert.ok(explore.includes(`>${label}</Text>`));
   assert.match(explore, /accessibilityLabel="Open opportunity filters"/);
+  assert.match(explore, /styles\.controlsRow/);
   assert.match(explore, /filterBtnCompact: \{ width: 34, height: 32/);
+  assert.match(explore, /sortBy === 'all' \? undefined : sortBy/);
+  assert.doesNotMatch(explore, /Find your next opportunity|displayedOpportunities\.length.*opportunit/);
+  assert.match(explore, /accessibilityState=\{\{ selected: sortBy === 'all' \}\}/);
 });
 
 test('Connect categories remain horizontally scrollable without the indicator and service cards fill the deck area', () => {

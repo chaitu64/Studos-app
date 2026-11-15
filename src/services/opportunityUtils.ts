@@ -4,8 +4,8 @@ type RecordValue = Record<string, unknown>;
 
 const DATE_FIELDS = [
   'deadline', 'deadlineIso', 'application_deadline', 'applicationDeadline',
-  'end_date', 'endDate', 'date_end', 'submission_end', 'submissionEnd',
-  'submissionEndDate', 'registration_end', 'registrationEnd', 'registrationEndDate', 'registration_deadline', 'last_date',
+  'submission_end', 'submissionEnd', 'submissionEndDate', 'registration_end',
+  'registrationEnd', 'registrationEndDate', 'registration_deadline', 'last_date',
 ];
 const CLOSED_STATUS = /(?:closed|expired|ended|over|complete|completed|cancelled|canceled|inactive|not\s*open|registration\s*closed)/i;
 
@@ -52,12 +52,23 @@ const REWARD_FIELDS = [
 ];
 
 function cleanReward(value: unknown): string {
-  if (typeof value === 'number') return value > 0 ? `₹${value.toLocaleString('en-IN')}` : '';
-  if (typeof value === 'string') return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (typeof value === 'number') return value > 0 ? value.toLocaleString('en-IN') : '';
+  if (typeof value === 'string') return value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
   if (Array.isArray(value)) return value.map(cleanReward).filter(Boolean).join(' · ');
   const obj = record(value);
   const nested = obj.amount ?? obj.value ?? obj.title ?? obj.name ?? obj.cash;
   return nested == null || nested === value ? '' : cleanReward(nested);
+}
+
+function formatRewardAmount(text: string): string {
+  const explicitInr = /(?:₹|\bINR\b|\bRs\.?\s*)/i.test(text);
+  const normalized = text.replace(/\bINR\s*/gi, '\u20B9').replace(/\bRs\.?\s*/gi, '\u20B9').replace(/\u20B9\s+/g, '\u20B9');
+  return normalized.replace(/(\u20B9\s*)?(\d[\d,]*(?:\.\d+)?)/g, (match, currency = '', amount: string) => {
+    const number = Number(amount.replace(/,/g, ''));
+    if (!Number.isFinite(number)) return match;
+    const formatted = number.toLocaleString('en-IN');
+    return `${explicitInr ? currency || '\u20B9' : ''}${formatted}`;
+  });
 }
 
 export function getOpportunityReward(value: unknown): { label: string; text: string } | undefined {
@@ -67,23 +78,25 @@ export function getOpportunityReward(value: unknown): { label: string; text: str
     if (!text || /^(?:not specified|none|n\/a|no prize|unpaid)$/i.test(text)) continue;
     const key = field.toLowerCase();
     const label = key.includes('stipend') || /\bstipend\b/i.test(text) ? 'Stipend'
-      : key.includes('salary') ? 'Salary'
+      : key.includes('salary') || /\bsalary\b/i.test(text) ? 'Salary'
         : key.includes('scholarship') || /\bscholarship\b/i.test(text) ? 'Scholarship'
           : key.includes('grant') || /\bgrant\b/i.test(text) ? 'Grant'
-            : /\bsalary\b/i.test(text) ? 'Salary'
-            : key.includes('reward') ? 'Reward'
-              : 'Prize';
-    const normalized = text.replace(/\b(INR|Rs\.?)(\s*)/gi, '₹$2').replace(/₹\s+/g, '₹');
-    const display = label === 'Stipend' && !/\b(month|monthly|per month|\/month)\b/i.test(normalized) && /\d/.test(normalized)
-      ? `${normalized}/month` : normalized;
+            : key.includes('reward') ? 'Reward' : 'Prize';
+    const formatted = formatRewardAmount(text);
+    const display = label === 'Stipend' && !/\b(month|monthly|per month|\/month)\b/i.test(formatted) && /\d/.test(formatted)
+      ? `${formatted}/month` : formatted;
     return { label, text: display };
   }
   return undefined;
 }
 
 export function getOpportunityRewardAmount(value: unknown): number | undefined {
-  const reward = getOpportunityReward(value);
-  if (!reward) return undefined;
+  const item = record(value);
+  const reward = getOpportunityReward(item);
+  if (!reward || ['Salary', 'Stipend', 'Scholarship', 'Grant'].includes(reward.label)) return undefined;
+  const raw = String(item.prizeOrCompensation ?? item.prize ?? item.prize_pool ?? item.cash_prize ?? item.prize_amount ?? item.reward ?? '');
+  const currency = String(item.currency ?? '');
+  if (!/(?:₹|\bINR\b|\bRs\.?\s*)/i.test(raw) && !/^INR$/i.test(currency)) return undefined;
   const amountMatch = reward.text.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
   if (!amountMatch) return undefined;
   let amount = Number(amountMatch[0]);

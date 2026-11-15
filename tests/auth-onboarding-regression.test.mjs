@@ -9,10 +9,20 @@ const profileScreen = await readFile(new URL('../src/app/(tabs)/profile.tsx', im
 const saveMigration = await readFile(new URL('../backend/migrations/019_fix_save_student_profile.sql', import.meta.url), 'utf8');
 
 test('email signup is a three-step flow and requires matching credentials before account creation', () => {
-  assert.match(authScreen, /signupSteps = \['Account', 'Academic identity', 'Your profile'\]/);
+  assert.match(authScreen, /signupSteps = \['Account', 'Academic Identity', 'Your Profile'\]/);
   assert.match(authScreen, /fields\.password !== fields\.confirmPassword/);
   assert.match(authScreen, /step < 3/);
   assert.match(authScreen, /authService\.signUp\(payload/);
+});
+
+test('signup shows email credentials before Google without a selection step', () => {
+  const accountForm = authScreen.slice(authScreen.indexOf("{authMode &&"), authScreen.indexOf("{mode === 'signup' && step === 2"));
+  assert.ok(accountForm.indexOf("input('email', 'Email address'") < accountForm.indexOf("input('password', 'Password'"));
+  assert.ok(accountForm.indexOf("input('password', 'Password'") < accountForm.indexOf("input('confirmPassword', 'Confirm password'"));
+  assert.ok(accountForm.indexOf('Create account') < accountForm.indexOf('or continue with'));
+  assert.ok(accountForm.indexOf('or continue with') < accountForm.indexOf('Continue with Google'));
+  assert.doesNotMatch(authScreen, /emailEnabled|Continue with email/);
+  assert.match(authScreen, /Show \$\{label\.toLowerCase\(\)\}/);
 });
 
 test('signup metadata and profile completion cover academic, personal and professional fields', () => {

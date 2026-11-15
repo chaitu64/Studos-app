@@ -1,21 +1,51 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BorderRadius, Colors, Typography } from '../../constants/theme';
 import { StudyResource } from '../../types';
+import { compactResourceMetadata } from '../../utils/resourcePresentation';
 
 type Props = { resource: StudyResource; onOpen: () => void; onBookmark?: () => void; compact?: boolean };
 
 export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen, onBookmark, compact = false }: Props) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const fileName = resource.pdfFileName || resource.fileName;
   const academicMeta = [
     resource.college ? `College: ${resource.college}` : null,
     resource.regulation || null,
   ].filter(Boolean);
   const size = resource.fileSizeMb != null ? `${resource.fileSizeMb.toFixed(1)} MB` : null;
+  const compactMeta = compactResourceMetadata(resource.college, resource.regulation, resource.fileSizeMb);
+
+  if (compact) return (
+    <View style={styles.feedRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${fileName}, ${resource.subject}`}
+        accessibilityHint="Opens the full-screen PDF reader"
+        onPress={onOpen}
+        onHoverIn={() => setIsHovered(true)}
+        onHoverOut={() => setIsHovered(false)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={({ pressed }) => [styles.feedOpen, pressed && styles.feedPressed, (isHovered || isFocused) && styles.feedHovered]}
+      >
+        <Ionicons name="document-text" size={19} color={Colors.primary} style={styles.feedIcon}/>
+        <View style={styles.feedCopy}>
+          <Text style={styles.feedTitle} numberOfLines={2} ellipsizeMode="tail">{fileName}</Text>
+          <Text style={styles.feedSubject} numberOfLines={2} ellipsizeMode="tail">{resource.subject}</Text>
+          {compactMeta ? <Text style={styles.feedMeta} numberOfLines={1} ellipsizeMode="tail">{compactMeta}</Text> : null}
+        </View>
+      </Pressable>
+      {onBookmark ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={resource.isBookmarked ? 'Remove saved PDF' : 'Save PDF'} accessibilityState={{ selected: Boolean(resource.isBookmarked) }} onPress={onBookmark} style={styles.feedSaveButton}>
+        <Ionicons name={resource.isBookmarked ? 'bookmark' : 'bookmark-outline'} size={19} color={resource.isBookmarked ? Colors.primary : Colors.textMuted} />
+      </TouchableOpacity> : null}
+    </View>
+  );
 
   return (
-    <View style={[styles.card, compact && styles.compactCard]}>
+    <View style={styles.card}>
       <View style={styles.topRow}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Open ${fileName}, ${resource.subject}`} onPress={onOpen} style={({ pressed }) => [styles.openArea, pressed && styles.pressed]}>
           <View style={styles.fileIcon}><Ionicons name="document-text" size={21} color={Colors.primary} /></View>
@@ -39,7 +69,14 @@ export const ResourceCard = React.memo(function ResourceCard({ resource, onOpen,
 
 const styles = StyleSheet.create({
   card: { width: 292, backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.cardBorder, padding: 16, marginRight: 12 },
-  compactCard: { width: '100%', marginRight: 0, marginBottom: 8, borderRadius: BorderRadius.md, padding: 12 },
+  feedRow: { width: '100%', minWidth: 0, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, position: 'relative' },
+  feedOpen: { width: '100%', minWidth: 0, paddingVertical: 11, paddingRight: 44, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  feedPressed: { opacity: 0.78 }, feedHovered: { backgroundColor: Colors.surface },
+  feedIcon: { marginTop: 1 }, feedCopy: { flex: 1, minWidth: 0, gap: 2 },
+  feedTitle: { color: Colors.textPrimary, fontSize: 14, lineHeight: 19, fontWeight: Typography.semiBold },
+  feedSubject: { color: Colors.textSecondary, fontSize: 12, lineHeight: 16 },
+  feedMeta: { color: Colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 3 },
+  feedSaveButton: { position: 'absolute', top: 5, right: 0, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   openArea: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   fileIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.primarySubtle, alignItems: 'center', justifyContent: 'center' },

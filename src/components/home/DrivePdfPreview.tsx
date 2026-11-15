@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import WebView from 'react-native-webview';
@@ -8,11 +8,11 @@ import { Colors } from '../../constants/theme';
 type Props = { url: string; height?: number; readerMode?: boolean; onOpenExternal?: () => void };
 
 export function DrivePdfPreview({ url, height = 460, readerMode = false, onOpenExternal }: Props) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'frame-ready' | 'error'>('loading');
   const [expanded, setExpanded] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const drive = (() => { try { return normalizeDriveUrl(url); } catch { return null; } })();
-  const previewUrl = drive && drive.kind === 'file' ? `https://drive.google.com/file/d/${drive.id}/preview` : null;
+  const drive = useMemo(() => { try { return normalizeDriveUrl(url); } catch { return null; } }, [url]);
+  const previewUrl = useMemo(() => drive && drive.kind === 'file' ? `https://drive.google.com/file/d/${drive.id}/preview` : null, [drive]);
   const openExternal = () => {
     if (!drive?.url) return;
     if (onOpenExternal) onOpenExternal();
@@ -32,7 +32,9 @@ export function DrivePdfPreview({ url, height = 460, readerMode = false, onOpenE
       allowFullScreen: true,
       allow: 'fullscreen',
       referrerPolicy: 'strict-origin-when-cross-origin',
-      onLoad: () => setStatus('loaded'),
+      // This only confirms the iframe document responded. Google does not expose
+      // the PDF render state cross-origin, so the reader keeps an external-open fallback.
+      onLoad: () => setStatus('frame-ready'),
       onError: () => setStatus('error'),
       style: { width: '100%', height: frameHeight, border: 0, backgroundColor: '#171A21', display: 'block' },
     }) : <WebView
@@ -40,9 +42,7 @@ export function DrivePdfPreview({ url, height = 460, readerMode = false, onOpenE
       originWhitelist={['https://*']}
       javaScriptEnabled
       domStorageEnabled
-      startInLoadingState
-      renderLoading={() => <View style={styles.overlay}><ActivityIndicator color={Colors.primary} /><Text style={styles.message}>Loading Drive preview…</Text></View>}
-      onLoad={() => setStatus('loaded')}
+      onLoad={() => setStatus('frame-ready')}
       onError={() => setStatus('error')}
       onHttpError={({ nativeEvent }) => { if (nativeEvent.statusCode >= 400) setStatus('error'); }}
       onShouldStartLoadWithRequest={({ url: nextUrl }) => /^https:\/\/(drive|accounts|docs)\.google\.com\//i.test(nextUrl) || nextUrl === 'about:blank'}

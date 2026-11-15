@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 import { safeBack } from '@/navigation/safeBack';
@@ -11,21 +11,17 @@ import { SearchField } from '../../components/ui/SearchField';
 import { BorderRadius, Colors, Spacing, Typography } from '../../constants/theme';
 import { Header } from '../../components/navigation/Header';
 import { useAuth } from '../../context/AuthContext';
+import { resourceReaderRoute } from '../../navigation/resourceReader';
 
 const PAGE_SIZE = 24;
-const CATEGORIES: { label: string; value: StudyResourceType | 'all' }[] = [
-  { label: 'All', value: 'all' }, { label: 'Notes', value: 'notes' },
-  { label: 'Previous papers', value: 'previous_paper' }, { label: 'Important questions', value: 'important_questions' },
-  { label: 'Lab manuals', value: 'lab_manual' }, { label: 'Study guides', value: 'study_guide' },
-];
-
 type Filters = { search?: string; subject?: string; studyYear?: number; semester?: string; category?: string; regulation?: string };
+type FilterDraft = { studyYear: string; semester: string; subject: string; regulation: string };
+const EMPTY_DRAFT: FilterDraft = { studyYear: '', semester: '', subject: '', regulation: '' };
 
 export default function AcademicLibraryScreen() {
   const { session } = useAuth();
   const pathname = usePathname();
   const [items, setItems] = useState<StudyResource[]>([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -40,7 +36,9 @@ export default function AcademicLibraryScreen() {
   const [semester, setSemester] = useState('');
   const [regulation, setRegulation] = useState('');
   const [category, setCategory] = useState<StudyResourceType | 'all'>('all');
-  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState<FilterDraft>(EMPTY_DRAFT);
   const sequence = useRef(0);
   const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
 
@@ -91,7 +89,7 @@ export default function AcademicLibraryScreen() {
       try {
         const page = await listStudyHubPdfPage({ ...filters, offset: 0, limit: PAGE_SIZE });
         if (!active || current !== sequence.current) return;
-        setItems(page.items); setTotal(page.total); setOffset(page.rawCount || page.items.length); setHasMore(page.hasMore);
+        setItems(page.items); setOffset(page.rawCount || page.items.length); setHasMore(page.hasMore);
       } catch (cause) {
         if (active && current === sequence.current) setError(cause instanceof Error ? cause.message : 'Could not load study resources. Check your connection and retry.');
       } finally {
@@ -113,7 +111,7 @@ export default function AcademicLibraryScreen() {
           return [...previous, ...page.items.filter((item) => !seen.has(item.id))];
         });
         setOffset((previous) => previous + (page.rawCount || page.items.length));
-        setHasMore(page.hasMore); setTotal(page.total);
+        setHasMore(page.hasMore);
       }
     } catch (cause) {
       if (current === sequence.current) setError(cause instanceof Error ? cause.message : 'Could not load more resources.');
@@ -123,36 +121,48 @@ export default function AcademicLibraryScreen() {
   }, [filters, offset, loading, loadingMore, hasMore, error]);
 
   const refresh = () => { setRefreshing(true); setRetry((value) => value + 1); };
-  const visibleSubjects = [...new Set(items.map((item) => item.subject).filter(Boolean))];
-  const availableCategories = CATEGORIES.filter((entry) => entry.value === 'all' || items.some((item) => item.type === entry.value));
+  const activeFilterCount = [studyYear, semester, subject, regulation].filter((value) => value.trim()).length;
+  const openFilterPanel = () => {
+    setDraft({ studyYear, semester, subject, regulation });
+    setFiltersOpen(true);
+  };
+  const applyFilterDraft = () => {
+    setStudyYear(draft.studyYear.trim()); setSemester(draft.semester.trim());
+    setSubject(draft.subject.trim()); setRegulation(draft.regulation.trim());
+    setFiltersOpen(false);
+  };
+  const clearAll = () => setDraft({ ...EMPTY_DRAFT });
+
+  const renderFilterField = (label: string, value: string, key: keyof FilterDraft, keyboardType?: 'number-pad') => (
+    <View style={styles.fieldGroup} key={key}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.fieldInputRow}>
+        <TextInput accessibilityLabel={label} value={value} onChangeText={(text) => setDraft((current) => ({ ...current, [key]: text }))} placeholder={`Any ${label.toLowerCase()}`} placeholderTextColor={Colors.textSubtle} keyboardType={keyboardType} style={styles.fieldInput} />
+        {value ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Clear ${label}`} onPress={() => setDraft((current) => ({ ...current, [key]: '' }))} style={styles.clearField}><Ionicons name="close-circle" size={18} color={Colors.textMuted} /></TouchableOpacity> : null}
+      </View>
+    </View>
+  );
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
-    <Header title="Study Hub" subtitle="Course notes, papers and guides" hideGreeting showSearch={false} />
+    <Header hideGreeting showSearch onSearchPress={() => setSearchOpen(true)} />
     <FlatList
       data={items}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <ResourceCard compact resource={item} onOpen={() => router.push({ pathname: '/resource/[id]', params: { id: item.id } } as never)} onBookmark={() => { void toggleBookmark(item); }} />}
+      renderItem={({ item }) => <ResourceCard compact resource={item} onOpen={() => router.push(resourceReaderRoute(item))} onBookmark={() => { void toggleBookmark(item); }} />}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={<View>
         {pathname.includes('academic-library') ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => safeBack()} style={styles.back}><Ionicons name="arrow-back" size={21} color="#FFF" /></TouchableOpacity> : null}
-        <Text style={styles.eyebrow}>STUDOS LIBRARY</Text>
-        <SearchField accessibilityLabel="Search study resources" value={search} onChangeText={setSearch} placeholder="Search title, filename, or subject" />
-        <View style={styles.filtersRow}>
-          <TextInput accessibilityLabel="Filter by study year" value={studyYear} onChangeText={setStudyYear} placeholder="Study year" keyboardType="number-pad" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
-          <TextInput accessibilityLabel="Filter by semester" value={semester} onChangeText={setSemester} placeholder="Semester" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
+        <View style={styles.categoryControls}>
+          <View style={styles.categoryGroup}>
+            {([{ label: 'All', value: 'all' }, { label: 'Study guides', value: 'study_guide' }] as const).map((entry) => <TouchableOpacity key={entry.value} accessibilityRole="button" accessibilityLabel={entry.label} accessibilityState={{ selected: category === entry.value }} onPress={() => setCategory(entry.value)} style={[styles.category, category === entry.value && styles.categorySelected]}><Text style={[styles.categoryText, category === entry.value && styles.categoryTextSelected]}>{entry.label}</Text></TouchableOpacity>)}
+          </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={activeFilterCount ? `Filters, ${activeFilterCount} active` : 'Filters'} accessibilityState={{ expanded: filtersOpen }} onPress={openFilterPanel} style={[styles.filterButton, activeFilterCount > 0 && styles.filterButtonActive]}>
+            <Ionicons name="options-outline" size={16} color={activeFilterCount ? Colors.primary : Colors.textSecondary} />
+            <Text style={[styles.filterButtonText, activeFilterCount > 0 && styles.filterButtonTextActive]}>Filter</Text>
+            {activeFilterCount > 0 ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: moreFiltersOpen }} onPress={() => setMoreFiltersOpen((open) => !open)} style={styles.moreFilters}>
-          <Text style={styles.moreFiltersText}>{moreFiltersOpen ? 'Hide subject and regulation' : 'Filter by subject or regulation'}</Text>
-          <Ionicons name={moreFiltersOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textMuted} />
-        </TouchableOpacity>
-        {moreFiltersOpen ? <View style={styles.filtersRow}>
-          <TextInput accessibilityLabel="Filter by full subject name" value={subject} onChangeText={setSubject} placeholder="Subject" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
-          <TextInput accessibilityLabel="Filter by regulation" value={regulation} onChangeText={setRegulation} placeholder="Regulation" placeholderTextColor={Colors.textSubtle} style={styles.smallInput} />
-        </View> : null}
-        <FlatList horizontal data={availableCategories} keyExtractor={(item) => item.value} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow} renderItem={({ item }) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected: category === item.value }} onPress={() => setCategory(item.value)} style={[styles.category, category === item.value && styles.categorySelected]}><Text style={[styles.categoryText, category === item.value && styles.categoryTextSelected]}>{item.label}</Text></TouchableOpacity>} />
-        {visibleSubjects.length ? <Text style={styles.subjectHints}>Subjects: {visibleSubjects.slice(0, 3).join(' · ')}{visibleSubjects.length > 3 ? ` +${visibleSubjects.length - 3} more` : ''}</Text> : null}
-        <Text style={styles.count}>{loading ? 'Loading resources…' : `${items.length} loaded${total ? ` of ${total}` : ''}`}</Text>
         {error && items.length ? <View style={styles.inlineError}><Text accessibilityRole="alert" style={styles.stateText}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : null}
       </View>}
       ListEmptyComponent={loading ? <View style={styles.state}><ActivityIndicator color={Colors.primary} /><Text style={styles.stateText}>Loading study resources…</Text></View> : error ? <View style={styles.state}><Ionicons name="cloud-offline-outline" size={30} color={Colors.textMuted} /><Text accessibilityRole="alert" style={styles.stateText}>{error}</Text><TouchableOpacity accessibilityRole="button" style={styles.retryButton} onPress={() => setRetry((value) => value + 1)}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View> : <View style={styles.state}><Text style={styles.stateText}>No study resources match these filters.</Text><TouchableOpacity accessibilityRole="button" onPress={() => { setSearch(''); setStudyYear(''); setSemester(''); setSubject(''); setRegulation(''); setCategory('all'); }}><Text style={styles.retryText}>Clear filters</Text></TouchableOpacity></View>}
@@ -161,31 +171,80 @@ export default function AcademicLibraryScreen() {
       onEndReachedThreshold={0.45}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.primary} colors={[Colors.primary]} />}
     />
+
+    <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={() => setSearchOpen(false)}>
+      <View style={styles.modalScrim}>
+        <View style={styles.searchPanel}>
+          <View style={styles.panelHeader}><Text style={styles.panelTitle}>Search Study Hub</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Close search" onPress={() => setSearchOpen(false)} style={styles.closeButton}><Ionicons name="close" size={21} color={Colors.textSecondary} /></TouchableOpacity></View>
+          <SearchField accessibilityLabel="Search PDFs by title, filename, or subject" value={search} onChangeText={setSearch} placeholder="Title, filename, or subject" />
+          {search ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch('')} style={styles.clearSearch}><Text style={styles.clearSearchText}>Clear search</Text></TouchableOpacity> : null}
+        </View>
+      </View>
+    </Modal>
+
+    <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={() => setFiltersOpen(false)}>
+      <KeyboardAvoidingView style={styles.sheetScrim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close filters" style={StyleSheet.absoluteFill} onPress={() => setFiltersOpen(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.panelHeader}><Text style={styles.panelTitle}>Filters</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Close filters" onPress={() => setFiltersOpen(false)} style={styles.closeButton}><Ionicons name="close" size={21} color={Colors.textSecondary} /></TouchableOpacity></View>
+          <ScrollView style={styles.filterFields} keyboardShouldPersistTaps="handled">
+            {renderFilterField('Study Year', draft.studyYear, 'studyYear', 'number-pad')}
+            {renderFilterField('Semester', draft.semester, 'semester')}
+            {renderFilterField('Subject', draft.subject, 'subject')}
+            {renderFilterField('Regulation', draft.regulation, 'regulation')}
+          </ScrollView>
+          <View style={styles.sheetActions}>
+            <TouchableOpacity accessibilityRole="button" onPress={clearAll} style={styles.resetButton}><Text style={styles.resetText}>Reset All</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" onPress={applyFilterDraft} style={styles.applyButton}><Text style={styles.applyText}>Apply Filters</Text></TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   content: { paddingHorizontal: Spacing.screenPadding, paddingBottom: 24 },
-  back: { width: 40, height: 40, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 12 },
-  eyebrow: { color: Colors.textMuted, fontSize: 12, lineHeight: 16, fontWeight: Typography.medium, marginBottom: 8 },
-  title: { color: Colors.textPrimary, fontSize: 24, lineHeight: 30, fontWeight: Typography.semiBold },
-  subtitle: { color: Colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4, marginBottom: 12 },
-  filtersRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 8, marginTop: 8 },
-  smallInput: { color: Colors.textPrimary, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, minHeight: 44, paddingHorizontal: 12, flex: 1, minWidth: 0, fontSize: 14 },
-  moreFilters: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, paddingHorizontal: 2 },
-  moreFiltersText: { color: Colors.textSecondary, fontSize: 13, fontWeight: Typography.medium },
-  categoryRow: { gap: 6, paddingVertical: 8 },
+  back: { width: 40, height: 40, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 8 },
+  categoryControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 8 },
+  categoryGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
   category: { minHeight: 36, justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.full, paddingHorizontal: 12, backgroundColor: Colors.surface },
   categorySelected: { backgroundColor: Colors.primarySubtle, borderColor: Colors.primary },
   categoryText: { color: Colors.textSecondary, fontSize: 12, fontWeight: Typography.medium },
   categoryTextSelected: { color: Colors.primary },
+  filterButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.full, paddingHorizontal: 11, backgroundColor: Colors.surface },
+  filterButtonActive: { borderColor: Colors.primaryBorder, backgroundColor: Colors.primarySubtle },
+  filterButtonText: { color: Colors.textSecondary, fontSize: 12, fontWeight: Typography.medium },
+  filterButtonTextActive: { color: Colors.primary },
+  filterBadge: { minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary },
+  filterBadgeText: { color: Colors.textOnPrimary, fontSize: 10, fontWeight: Typography.bold },
   inlineError: { borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.error, backgroundColor: Colors.errorSubtle, padding: 12, marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  subjectHints: { color: Colors.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 8 },
-  count: { color: Colors.textMuted, fontSize: 12, marginBottom: 12 },
   state: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 36, paddingHorizontal: 24, backgroundColor: Colors.surface, borderRadius: 18, borderWidth: 1, borderColor: Colors.border },
   stateText: { color: Colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 21 },
   retryButton: { backgroundColor: Colors.primary, minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 11 },
   retryText: { color: Colors.textOnPrimary, fontWeight: Typography.bold, fontSize: 13 },
   loadMore: { backgroundColor: Colors.surface, minHeight: 48, padding: 14, alignItems: 'center', justifyContent: 'center', borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: Colors.border },
+  modalScrim: { flex: 1, justifyContent: 'flex-start', paddingTop: 68, paddingHorizontal: Spacing.screenPadding, backgroundColor: 'rgba(4,6,10,0.72)' },
+  searchPanel: { padding: 16, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, gap: 12 },
+  panelHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  panelTitle: { color: Colors.textPrimary, fontSize: Typography.title3, fontWeight: Typography.semiBold },
+  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated },
+  clearSearch: { alignSelf: 'flex-end', paddingVertical: 5, paddingHorizontal: 4 },
+  clearSearchText: { color: Colors.primary, fontSize: Typography.caption, fontWeight: Typography.semiBold },
+  sheetScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(4,6,10,0.72)' },
+  sheet: { maxHeight: '88%', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 24, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  sheetHandle: { width: 38, height: 4, alignSelf: 'center', borderRadius: 2, marginBottom: 8, backgroundColor: Colors.borderLight },
+  filterFields: { gap: 10, paddingTop: 10 },
+  fieldGroup: { gap: 5 },
+  fieldLabel: { color: Colors.textSecondary, fontSize: Typography.caption, fontWeight: Typography.semiBold },
+  fieldInputRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated },
+  fieldInput: { flex: 1, minWidth: 0, minHeight: 44, color: Colors.textPrimary, paddingHorizontal: 12, fontSize: Typography.subhead },
+  clearField: { width: 40, height: 42, alignItems: 'center', justifyContent: 'center' },
+  sheetActions: { flexDirection: 'row', gap: 10, paddingTop: 18 },
+  resetButton: { minHeight: 48, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceElevated },
+  resetText: { color: Colors.textSecondary, fontSize: Typography.subhead, fontWeight: Typography.semiBold },
+  applyButton: { minHeight: 48, flex: 1.5, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.primaryBorder, borderRadius: BorderRadius.md, backgroundColor: Colors.primary },
+  applyText: { color: Colors.textOnPrimary, fontSize: Typography.subhead, fontWeight: Typography.semiBold },
 });

@@ -8,6 +8,7 @@ import { PostComposerModal } from '../../components/modals/PostComposerModal';
 import { CommunityDraft, CommunityRecordComposer } from '../../components/home/CommunityRecordComposer';
 import { HomeFeedEntry, HomeFeedItem } from '../../components/home/HomeFeedItem';
 import { useAuth } from '../../context/AuthContext';
+import { resourceReaderRoute } from '../../navigation/resourceReader';
 import { useApp } from '../../context/AppContext';
 import { Colors, Typography } from '../../constants/theme';
 import { getDemoIdeas, getDemoIdeaById, toggleDemoIdeaSave, toggleDemoIdeaSpark, type DemoIdea } from '../../services/demoIdeasService';
@@ -206,7 +207,7 @@ export default function HomeScreen() {
 
   const openEntry = (entry: HomeFeedEntry) => {
     if (entry.kind === 'idea') router.push({ pathname: '/ideahub/[id]', params: { id: entry.id } } as never);
-    else if (entry.kind === 'post' && entry.data.type === 'study_material' && entry.data.document?.id) router.push({ pathname: '/resource/[id]', params: { id: entry.data.document.id } } as never);
+    else if (entry.kind === 'post' && entry.data.type === 'study_material' && entry.data.document?.id) router.push(resourceReaderRoute(entry.data.document));
     else if (entry.kind === 'post') router.push({ pathname: '/post/[id]', params: { id: entry.id } } as never);
     else router.push({ pathname: '/community/[kind]/[id]', params: { kind: entry.kind === 'problem' ? 'problem' : 'help', id: entry.id } } as never);
   };

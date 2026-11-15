@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js';
 import { UserProfile } from '../types';
 import { requireSupabase } from './supabase';
+import { normalizeSelections, validProfileUrl } from '../data/profileOptions';
 
 export const authIdentityProfile = (user: User): UserProfile => {
   const id = user.id;
@@ -91,10 +92,13 @@ export async function updateStudentProfile(id: string, updated: Partial<UserProf
   const db = requireSupabase();
   const { data: { user } } = await db.auth.getUser();
   if (!user || user.id !== id) throw new Error('Your session changed. Sign in again to edit this profile.');
-  const links = [updated.githubUrl, updated.linkedinUrl, updated.portfolioUrl, updated.avatar].filter((value): value is string => Boolean(value?.trim()));
-  if (links.some((value) => !/^https:\/\//i.test(value.trim()))) throw new Error('Profile links and image URLs must use HTTPS.');
-  const skills = [...new Set((updated.skills ?? current.skills).map((value) => value.trim()).filter(Boolean))];
-  const interests = [...new Set((updated.interests ?? current.interests).map((value) => value.trim()).filter(Boolean))];
+  if (!validProfileUrl('github', updated.githubUrl ?? current.githubUrl ?? '')) throw new Error('Enter a valid GitHub profile URL.');
+  if (!validProfileUrl('linkedin', updated.linkedinUrl ?? current.linkedinUrl ?? '')) throw new Error('Enter a valid LinkedIn profile URL.');
+  if (!validProfileUrl('portfolio', updated.portfolioUrl ?? current.portfolioUrl ?? '')) throw new Error('Enter a valid HTTPS portfolio URL.');
+  const avatar = updated.avatar ?? current.avatar ?? '';
+  if (avatar.trim() && !validProfileUrl('portfolio', avatar)) throw new Error('Profile image URLs must use HTTPS.');
+  const skills = normalizeSelections(updated.skills ?? current.skills);
+  const interests = normalizeSelections(updated.interests ?? current.interests);
   const parts = (updated.name ?? current.name).trim().split(/\s+/).filter(Boolean);
   const firstName = parts.shift() || '';
   const lastName = parts.pop() || '';
@@ -104,7 +108,7 @@ export async function updateStudentProfile(id: string, updated: Partial<UserProf
     degree: updated.degree ?? current.degree, branch: updated.branch ?? current.branch ?? '',
     study_year: updated.studyYear ?? current.studyYear ?? '', graduation_year: updated.gradYear ?? current.gradYear ?? '',
     bio: updated.shortBio ?? current.shortBio, skills,
-    interests, avatar_url: updated.avatar ?? current.avatar,
+    interests, avatar_url: avatar,
     github_url: updated.githubUrl ?? current.githubUrl ?? '', linkedin_url: updated.linkedinUrl ?? current.linkedinUrl ?? '',
     portfolio_url: updated.portfolioUrl ?? current.portfolioUrl ?? '', phone_number: updated.phoneNumber ?? current.phoneNumber ?? '',
     college_email: updated.collegeEmail ?? current.collegeEmail ?? '', date_of_birth: updated.dateOfBirth ?? current.dateOfBirth ?? '',

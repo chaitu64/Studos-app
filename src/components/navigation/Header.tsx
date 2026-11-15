@@ -11,6 +11,7 @@ export interface HeaderProps {
   title?: string;
   subtitle?: string;
   hideGreeting?: boolean;
+  onSearchPress?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
   hideGreeting,
+  onSearchPress,
 }) => {
   const { user, unreadNotifsCount } = useApp();
 
@@ -40,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
           {showSearch ? <TouchableOpacity
             accessibilityLabel="Search"
             style={styles.iconBtn}
-            onPress={() => router.push('/search' as any)}
+            onPress={onSearchPress || (() => router.push('/search' as any))}
           >
             <Ionicons name="search-outline" size={22} color={Colors.textSecondary} />
           </TouchableOpacity> : null}

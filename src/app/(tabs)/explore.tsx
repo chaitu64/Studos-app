@@ -53,7 +53,7 @@ const PAYMENT_OPTIONS = [
   'Stipends',
 ];
 
-type SortOption = 'deadline' | 'recent' | 'prize';
+type SortOption = 'all' | 'deadline' | 'recent' | 'prize';
 
 function uniqueOpportunities(items: Opportunity[]): Opportunity[] {
   const seen = new Set<string>();
@@ -71,6 +71,7 @@ export default function ExploreScreen() {
   // Search input and debounce state
   const [searchQuery, setSearchQuery] = useState(params.query || '');
   const [debouncedSearch, setDebouncedSearch] = useState(params.query || '');
+  const [showSearchModal, setShowSearchModal] = useState(Boolean(params.query));
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -79,9 +80,6 @@ export default function ExploreScreen() {
   }, [searchQuery]);
 
   // Category selections
-  const [userSelectedCategory, setUserSelectedCategory] = useState<string | null>(null);
-  const selectedCategory = userSelectedCategory ?? (params.category || 'All');
-
   const [userSelectedCategories, setUserSelectedCategories] = useState<string[] | null>(null);
   const selectedCategories = useMemo(() => {
     if (userSelectedCategories !== null) return userSelectedCategories;
@@ -95,7 +93,7 @@ export default function ExploreScreen() {
   const [selectedDeadlineFilter, setSelectedDeadlineFilter] = useState<string>('All Deadlines');
   const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
   const [keywordFilter, setKeywordFilter] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('deadline');
+  const [sortBy, setSortBy] = useState<SortOption>('all');
 
   // Filter modal draft state
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -168,9 +166,8 @@ export default function ExploreScreen() {
   // Compute active category array
   const activeCategories = useMemo(() => {
     if (selectedCategories.length > 0) return selectedCategories;
-    if (selectedCategory !== 'All') return [selectedCategory];
     return [];
-  }, [selectedCategories, selectedCategory]);
+  }, [selectedCategories]);
 
   // Client-side filtering & sorting for instantaneous response
   const displayedOpportunities = useMemo(() => {
@@ -180,7 +177,7 @@ export default function ExploreScreen() {
       categories: activeCategories,
       teamSize: selectedTeamSizes,
       payment: selectedPayments,
-      sortBy,
+      sortBy: sortBy === 'all' ? undefined : sortBy,
     });
 
     // Format / Mode filter
@@ -224,7 +221,7 @@ export default function ExploreScreen() {
       categories: draftCategories,
       teamSize: draftTeamSizes,
       payment: draftPayments,
-      sortBy,
+      sortBy: sortBy === 'all' ? undefined : sortBy,
     });
 
     if (draftFormat && draftFormat !== 'All') {
@@ -281,8 +278,6 @@ export default function ExploreScreen() {
     setDraftCategories(
       selectedCategories.length > 0
         ? [...selectedCategories]
-        : selectedCategory !== 'All'
-        ? [selectedCategory]
         : []
     );
     setDraftFormat(selectedFormat);
@@ -295,13 +290,6 @@ export default function ExploreScreen() {
 
   const applyDraftFilters = () => {
     setUserSelectedCategories(draftCategories);
-    if (draftCategories.length === 1) {
-      setUserSelectedCategory(draftCategories[0]);
-    } else if (draftCategories.length === 0) {
-      setUserSelectedCategory('All');
-    } else {
-      setUserSelectedCategory('Multiple');
-    }
     setSelectedFormat(draftFormat);
     setSelectedTeamSizes(draftTeamSizes);
     setSelectedDeadlineFilter(draftDeadline);
@@ -312,7 +300,6 @@ export default function ExploreScreen() {
 
   const resetFilters = () => {
     setUserSelectedCategories([]);
-    setUserSelectedCategory('All');
     setSelectedFormat('All');
     setSelectedTeamSizes([]);
     setSelectedDeadlineFilter('All Deadlines');
@@ -351,44 +338,16 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <Header hideGreeting showSearch={false} />
-      <View style={styles.header}>
-        <View style={styles.titleBlock}><Text style={styles.headerTitle}>Explore</Text><Text style={styles.headerSubtitle}>Find your next opportunity</Text></View>
-      </View>
-      <View style={styles.searchSection}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={18} color={Colors.textMuted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search opportunities..."
-            placeholderTextColor={Colors.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            returnKeyType="search"
-            clearButtonMode="never"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 ? (
-            <TouchableOpacity
-              onPress={() => setSearchQuery('')}
-              style={styles.clearSearchBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search text"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </View>
+      <Header hideGreeting onSearchPress={() => setShowSearchModal(true)} />
 
       <FlatList
         data={isLoading || hasError ? [] : displayedOpportunities}
-        keyExtractor={(item, index) => `${item.id}-${index}`}
+        keyExtractor={(item) => item.id}
         renderItem={renderOpportunityCard}
         ListHeaderComponent={<View>
+        <View style={styles.controlsRow}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickControlsScroll} contentContainerStyle={styles.sortButtons}>
-          <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: selectedCategory === 'All' }} style={[styles.sortPill, selectedCategory === 'All' && styles.sortPillActive]} onPress={() => { setUserSelectedCategory('All'); setUserSelectedCategories([]); }}><Text style={[styles.sortPillText, selectedCategory === 'All' && styles.sortPillTextActive]}>All</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: sortBy === 'all' }} style={[styles.sortPill, sortBy === 'all' && styles.sortPillActive]} onPress={() => setSortBy('all')}><Text style={[styles.sortPillText, sortBy === 'all' && styles.sortPillTextActive]}>All</Text></TouchableOpacity>
           <TouchableOpacity
             style={[styles.sortPill, sortBy === 'deadline' && styles.sortPillActive]}
             onPress={() => setSortBy('deadline')}
@@ -406,26 +365,12 @@ export default function ExploreScreen() {
             <Ionicons name="trophy-outline" size={12} color={sortBy === 'prize' ? '#FFF' : Colors.textMuted} />
             <Text style={[styles.sortPillText, sortBy === 'prize' && styles.sortPillTextActive]}>Prize</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.filterBtn, styles.filterBtnCompact, activeFilterCount > 0 && styles.filterBtnActive]} onPress={openFilterModal} accessibilityRole="button" accessibilityLabel="Open opportunity filters">
+        </ScrollView>
+          <TouchableOpacity style={[styles.filterBtn, styles.filterBtnCompact, activeFilterCount > 0 && styles.filterBtnActive]} onPress={openFilterModal} accessibilityRole="button" accessibilityLabel="Open opportunity filters" accessibilityState={{ selected: activeFilterCount > 0 }}>
             <Ionicons name="options-outline" size={17} color={activeFilterCount > 0 ? '#FFF' : Colors.primary} />
             {activeFilterCount > 0 ? <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilterCount}</Text></View> : null}
           </TouchableOpacity>
-        </ScrollView>
-        <View style={styles.metaRow}>
-        <Text style={styles.counterText}>
-          {isLoading
-            ? 'Updating listings...'
-            : debouncedSearch.trim()
-            ? `${displayedOpportunities.length} ${
-                displayedOpportunities.length === 1 ? 'result' : 'results'
-              } for "${debouncedSearch.trim()}"`
-    : `${displayedOpportunities.length} ${
-                displayedOpportunities.length === 1 ? 'opportunity' : 'opportunities'
-              }`}
-        </Text>
-
         </View>
-        {activeFilterCount > 0 ? <Text style={styles.activeSummary}>{activeFilterCount} active filter{activeFilterCount === 1 ? '' : 's'}</Text> : null}
         </View>}
         ListEmptyComponent={isLoading ? <View style={styles.skeletonContainer}><CardSkeleton /><CardSkeleton /><CardSkeleton /></View> : hasError ? <View style={styles.errorContainer}>
           <Ionicons name="cloud-offline-outline" size={48} color={Colors.primary} />
@@ -480,6 +425,34 @@ export default function ExploreScreen() {
             />
         }
       />
+
+      <Modal visible={showSearchModal} transparent animationType="fade" onRequestClose={() => setShowSearchModal(false)}>
+        <View style={styles.searchOverlay}>
+          <View style={styles.searchDialog}>
+            <View style={styles.searchInputContainer}>
+              <Ionicons name="search" size={18} color={Colors.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search opportunities"
+                placeholderTextColor={Colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+                clearButtonMode="never"
+                autoCorrect={false}
+                autoFocus
+                accessibilityLabel="Search opportunities by title, organization, or category"
+              />
+              {searchQuery.length > 0 ? <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn} accessibilityRole="button" accessibilityLabel="Clear search text">
+                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+              </TouchableOpacity> : null}
+            </View>
+            <TouchableOpacity style={styles.searchClose} onPress={() => setShowSearchModal(false)} accessibilityRole="button" accessibilityLabel="Close opportunity search">
+              <Text style={styles.searchCloseText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* FILTER MODAL */}
       <Modal
@@ -717,6 +690,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.screenPadding, marginBottom: 8, gap: 6 },
+  searchOverlay: { flex: 1, justifyContent: 'flex-start', paddingTop: 72, paddingHorizontal: Spacing.screenPadding, backgroundColor: 'rgba(0,0,0,0.68)' },
+  searchDialog: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchClose: { paddingHorizontal: 5, paddingVertical: 8 },
+  searchCloseText: { color: Colors.primary, fontSize: Typography.footnote, fontWeight: Typography.semiBold },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -898,7 +876,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screenPadding,
     paddingVertical: 2,
   },
-  quickControlsScroll: { flexGrow: 0, marginBottom: 7 },
+  quickControlsScroll: { flex: 1, minWidth: 0 },
   sortPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -930,7 +908,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
-    paddingHorizontal: Spacing.screenPadding,
     paddingBottom: 36,
   },
   activeSummary: {

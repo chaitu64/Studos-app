@@ -4,10 +4,13 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import AcademicIdentityFields from '../components/academic/AcademicIdentityFields';
+import SearchableMultiSelect from '../components/academic/SearchableMultiSelect';
+import { interestSuggestions, normalizeSelections, skillSuggestions, validProfileUrl } from '../data/profileOptions';
 
 type Fields = { first: string; middle: string; last: string; college: string; degree: string; branch: string; year: string; gradYear: string; phone: string; avatar: string; bio: string; skills: string; interests: string; github: string; linkedin: string; portfolio: string };
 const validWebUrl = (value: string) => !value.trim() || /^https:\/\//i.test(value.trim());
-const normalizeList = (value: string) => [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+const normalizeList = (value: string) => normalizeSelections(value.split(','));
 const fieldsFromUser = (user: ReturnType<typeof useApp>['user']): Fields => {
   const nameParts = user.name === 'Not provided' ? [] : user.name.trim().split(/\s+/);
   return {
@@ -27,18 +30,28 @@ export default function OnboardingRoute() {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [branchNeedsReview, setBranchNeedsReview] = useState(false);
+  const [studyYearNeedsReview, setStudyYearNeedsReview] = useState(false);
 
   const set = (key: keyof Fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
+  const setAcademicField = (key: 'college' | 'degree' | 'branch' | 'studyYear' | 'graduationYear', value: string) => {
+    const fieldKey = key === 'studyYear' ? 'year' : key === 'graduationYear' ? 'gradYear' : key;
+    set(fieldKey, value);
+  };
   const validate = () => {
     if (step === 1) {
       if (!fields.college.trim() || !fields.degree.trim() || !fields.branch.trim()) return 'Add your college, degree and branch.';
+      if (branchNeedsReview) return 'Review the saved branch for your selected degree. Choose a relevant option or re-enter it manually.';
+      if (studyYearNeedsReview) return 'Choose a study year for the selected degree.';
       if (!/^[1-8]$/.test(fields.year)) return 'Study year must be from 1 to 8.';
       const year = Number(fields.gradYear);
       if (!/^\d{4}$/.test(fields.gradYear) || year < 2000 || year > 2200) return 'Enter a valid graduation year.';
     } else if (step === 2) {
       if (!fields.first.trim() || !fields.last.trim()) return 'Add your first and last name.';
       if (fields.phone.trim() && !/^[+\d().\-\s]{7,20}$/.test(fields.phone.trim())) return 'Enter a valid phone number.';
-    } else if ([fields.github, fields.linkedin, fields.portfolio, fields.avatar].some((value) => !validWebUrl(value))) return 'Profile links and avatar must use HTTPS.';
+    } else if (!validProfileUrl('github', fields.github)) return 'Enter a valid GitHub profile URL using https://github.com/username.';
+    else if (!validProfileUrl('linkedin', fields.linkedin)) return 'Enter a valid LinkedIn profile URL.';
+    else if (!validProfileUrl('portfolio', fields.portfolio) || !validWebUrl(fields.avatar)) return 'Portfolio and image links must use HTTPS.';
     return '';
   };
 
@@ -67,9 +80,9 @@ export default function OnboardingRoute() {
   return <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.logo}>STUDOS</Text><Text style={styles.eyebrow}>{editing ? 'PROFILE SETTINGS' : 'STUDENT ONBOARDING'}</Text><Text style={styles.title}>{editing ? 'Edit your profile' : 'Make your profile yours'}</Text><Text style={styles.subtitle}>You can update these details any time from your profile.</Text>
     <View style={styles.progress} accessibilityLabel={`Profile step ${step} of 3`}>{stepLabels.map((label, index) => <View style={styles.progressItem} key={label}><View style={[styles.progressDot, index + 1 <= step && styles.activeDot]}><Text style={styles.dotText}>{index + 1}</Text></View><Text style={[styles.progressLabel, index + 1 === step && styles.currentLabel]}>{label}</Text></View>)}</View>
-    {step === 1 ? <View style={styles.form}>{input('college', 'College or university')}{input('degree', 'Degree or program')}{input('branch', 'Branch / major')}{input('year', 'Current study year (1–8)', true)}{input('gradYear', 'Expected graduation year', true)}<Text style={styles.helper}>Custom college names are welcome.</Text></View> : null}
-    {step === 2 ? <View style={styles.form}>{input('first', 'First name')}{input('middle', 'Middle name (optional)')}{input('last', 'Last name')}{input('phone', 'Phone number (private, optional)', true)}{input('avatar', 'Profile image URL (optional)')}{input('bio', 'Short introduction (optional)', false, true)}<Text style={styles.helper}>Your phone number is stored in the owner-only private profile record.</Text></View> : null}
-    {step === 3 ? <View style={styles.form}>{input('skills', 'Skills, separated by commas (optional)')}{input('interests', 'Interests, separated by commas (optional)')}{input('github', 'GitHub HTTPS link (optional)')}{input('linkedin', 'LinkedIn HTTPS link (optional)')}{input('portfolio', 'Portfolio HTTPS link (optional)')}</View> : null}
+    {step === 1 ? <AcademicIdentityFields college={fields.college} degree={fields.degree} branch={fields.branch} studyYear={fields.year} graduationYear={fields.gradYear} onChange={setAcademicField} onBranchReviewChange={setBranchNeedsReview} onStudyYearReviewChange={setStudyYearNeedsReview}/> : null}
+    {step === 2 ? <View style={styles.form}>{input('first', 'First name')}{input('middle', 'Middle name (optional)')}{input('last', 'Last name')}{input('phone', 'Phone number (private, optional)', true)}{input('avatar', 'Profile image URL (optional)')}{input('bio', 'Short introduction (optional)', false, true)}</View> : null}
+    {step === 3 ? <View style={styles.form}><SearchableMultiSelect label="Skills" values={normalizeList(fields.skills)} suggestions={skillSuggestions} onChange={(values) => set('skills', values.join(', '))}/><SearchableMultiSelect label="Interests" values={normalizeList(fields.interests)} suggestions={interestSuggestions} onChange={(values) => set('interests', values.join(', '))}/>{input('github', 'GitHub URL (optional)')}{input('linkedin', 'LinkedIn URL (optional)')}{input('portfolio', 'Portfolio URL (optional)')}</View> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <View style={styles.actions}>{step > 1 ? <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => { setError(''); setStep((current) => current - 1); }} style={styles.back}><Text style={styles.backText}>Back</Text></TouchableOpacity> : null}<TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void save()} style={[styles.primary, busy && { opacity: 0.6 }]}>{busy ? <ActivityIndicator color="#FFF"/> : <Text style={styles.primaryText}>{step === 3 ? editing ? 'Save changes' : 'Finish profile' : 'Continue'}</Text>}</TouchableOpacity></View>
   </ScrollView></KeyboardAvoidingView>;

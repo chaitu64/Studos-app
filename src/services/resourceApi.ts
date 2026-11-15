@@ -118,12 +118,11 @@ async function listLegacyStudyHubPdfPage(options: StudyResourceFilters, offset: 
 async function fetchStudyHubPdf(id: string): Promise<StudyResource | null> {
   const db = requireSupabase();
   const columns = 'id,user_id,title,subject,category,study_year,semester,college,degree,regulation,language,pdf_file_name,pdf_link,youtube_link,file_size_mb,source_folder_url,drive_file_id,created_at';
-  const run = (withRelations: boolean) => db.from('study_resources')
-    .select(`${columns}${withRelations ? ',saved_resources(user_id)' : ''}`)
+  const run = () => db.from('study_resources')
+    .select(columns)
     .eq('id', id).not('pdf_link', 'is', null).not('pdf_file_name', 'is', null)
     .neq('pdf_link', '').neq('pdf_file_name', '').maybeSingle();
-  let result = await run(true);
-  if (result.error?.code === 'PGRST200') result = await run(false);
+  const result = await run();
   const { data, error } = result;
   if (error) {
     if (error.code === '42703' || error.code === 'PGRST204') {
@@ -133,7 +132,7 @@ async function fetchStudyHubPdf(id: string): Promise<StudyResource | null> {
   }
   if (!data) return null;
   if (!isIndividualStudyPdf(data as unknown as StudyHubPdfRow)) throw new Error('This record is not an individual PDF or its Drive file link is invalid.');
-  return (await enrichResourceUploaders([toStudyHubPdfResource(data as unknown as StudyHubPdfRow)]))[0];
+  return toStudyHubPdfResource(data as unknown as StudyHubPdfRow);
 }
 
 export async function listStudyResourcePage(options: StudyResourceFilters = {}): Promise<StudyResourcePage> {

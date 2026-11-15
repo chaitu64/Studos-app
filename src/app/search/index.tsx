@@ -26,6 +26,7 @@ import { studentServicesService } from '../../services/studentServicesService';
 import type { StudentService } from '../../services/homeDiscoveryData';
 import { listStudyResources } from '../../services/resourceApi';
 import { visibleSearchResultCount } from '../../utils/globalSearch';
+import { resourceReaderRoute } from '../../navigation/resourceReader';
 
 const SEARCH_TABS = ['All', 'Students', 'Ideas', 'Problems', 'Help requests', 'Openings', 'Services', 'Study resources', 'Posts', 'Teams', 'Opportunities', 'Rooms'];
 
@@ -279,7 +280,7 @@ export default function GlobalSearchScreen() {
 
             {(selectedTab === 'All' || selectedTab === 'Services') && matchedServices.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>STUDENT SERVICES ({matchedServices.length})</Text>{matchedServices.map((service) => <Card key={service.id} variant="default" style={styles.resultCard} onPress={() => router.push({ pathname: '/(tabs)/swipe', params: { section: 'services', search: service.title } } as never)}><Avatar uri={service.provider.avatar} name={service.provider.name} size={38}/><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{service.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{service.category} · {service.provider.name}</Text></View>{service.startingPrice != null ? <Badge label={`From ${service.startingPrice}`} variant="outline" size="sm"/> : null}</Card>)}</View> : null}
 
-            {(selectedTab === 'All' || selectedTab === 'Study resources') && matchedResources.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>STUDY RESOURCES ({matchedResources.length})</Text>{matchedResources.map((resource) => <Card key={resource.id} variant="default" style={styles.resultCard} onPress={() => router.push(`/resource/${resource.id}` as never)}><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{resource.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{resource.subject} · {resource.studyYear || resource.academicYear} · {resource.semester || ''}</Text></View><Badge label="PDF" variant="outline" size="sm"/></Card>)}</View> : null}
+            {(selectedTab === 'All' || selectedTab === 'Study resources') && matchedResources.length > 0 ? <View style={styles.resultGroup}><Text style={styles.groupHeader}>STUDY RESOURCES ({matchedResources.length})</Text>{matchedResources.map((resource) => <Card key={resource.id} variant="default" style={styles.resultCard} onPress={() => router.push(resourceReaderRoute(resource))}><View style={styles.resultInfo}><Text style={styles.resultName} numberOfLines={2}>{resource.title}</Text><Text style={styles.resultSub} numberOfLines={2}>{resource.subject} · {resource.studyYear || resource.academicYear} · {resource.semester || ''}</Text></View><Badge label="PDF" variant="outline" size="sm"/></Card>)}</View> : null}
 
             {/* Teams results */}
             {(selectedTab === 'All' || selectedTab === 'Teams') && matchedTeams.length > 0 ? (

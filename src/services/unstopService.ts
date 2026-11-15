@@ -290,7 +290,7 @@ function normalizeUnstopItem(
   const regnReq = asRecord(item.regnRequirements);
   const rawDeadline = text(
     item.deadline ?? item.application_deadline ?? item.submission_end ?? item.registration_end
-      ?? item.end_date ?? regnReq.end_regn_dt ?? item.registration_deadline ?? item.last_date
+      ?? regnReq.end_regn_dt ?? item.registration_deadline ?? item.last_date
   ) || null;
 
   // Days remaining calculation
@@ -424,7 +424,7 @@ function normalizeUnstopItem(
     status,
     isSaved: false,
     featured: (prizeAmount && prizeAmount > 50000) || false,
-    publishedAt: text(item.approved_date ?? item.updated_at) || new Date().toISOString(),
+    publishedAt: text(item.approved_date ?? item.created_at ?? item.published_at ?? item.updated_at) || undefined,
   };
   return isOpportunityActive(opportunity) ? opportunity : null;
 }
