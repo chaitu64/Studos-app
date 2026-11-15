@@ -4,7 +4,7 @@
 
 -- 1) Confirm canonical relations and the private profile relation are present.
 select relation_name, to_regclass('public.' || relation_name) as relation
-from (values ('profiles'), ('profile_private'), ('posts'), ('study_resources')) as expected(relation_name)
+from (values ('profiles'), ('student_profiles'), ('profile_private'), ('posts'), ('study_resources')) as expected(relation_name)
 order by relation_name;
 
 -- 2) Verify the fields queried by profileService and required by signup RPCs.
@@ -59,7 +59,7 @@ from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
   and p.proname in (
-    'initialize_student_profile', 'studos_create_canonical_profile',
+    'handle_new_user', 'initialize_student_profile', 'studos_create_canonical_profile',
     '_create_student_profile_for_auth_user', 'ensure_student_profile',
     'save_student_profile'
   )
@@ -141,8 +141,8 @@ begin
     execute $query$
       select string_agg(version::text, ', ' order by version)
       from supabase_migrations.schema_migrations
-      where version::text in ('012', '013', '014', '015', '016', '017')
-         or version::text ~ '^(012|013|014|015|016|017)'
+      where version::text in ('012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022')
+         or version::text ~ '^(012|013|014|015|016|017|018|019|020|021|022)'
     $query$ into v_versions;
     raise notice 'Recorded migration versions 012-017: %', coalesce(v_versions, '(none found)');
   end if;

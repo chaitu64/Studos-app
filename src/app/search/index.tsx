@@ -338,7 +338,7 @@ export default function GlobalSearchScreen() {
                       <Text style={styles.resultName}>{r.title}</Text>
                       <Text style={styles.resultSub} numberOfLines={1}>{r.topic}</Text>
                     </View>
-                    <Badge label={`${r.membersCount} students`} variant="cyan" size="sm" />
+                    {r.membersCount !== undefined ? <Badge label={`${r.membersCount} students`} variant="cyan" size="sm" /> : null}
                   </Card>
                 ))}
               </View>

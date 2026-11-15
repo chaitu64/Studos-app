@@ -239,8 +239,7 @@ export interface ChatRoom {
   title: string;
   topic: string;
   description: string;
-  membersCount: number;
-  activeNow: number;
+  membersCount?: number;
   icon: string;
   isPrivate: boolean;
 }

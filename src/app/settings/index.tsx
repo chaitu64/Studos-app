@@ -17,7 +17,17 @@ export default function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [allowChatRequests, setAllowChatRequests] = useState(true);
   const [savingChatPrivacy, setSavingChatPrivacy] = useState(false);
-  useEffect(() => { if (chatRequestsEnabled) void chatService.requestPreference().then(setAllowChatRequests).catch(() => undefined); }, []);
+  const [chatPreferenceError, setChatPreferenceError] = useState('');
+  useEffect(() => {
+    if (!chatRequestsEnabled) return;
+    let active = true;
+    void chatService.requestPreference().then((enabled) => {
+      if (active) setAllowChatRequests(enabled);
+    }).catch((cause) => {
+      if (active) setChatPreferenceError(cause instanceof Error ? cause.message : 'Could not load this privacy setting.');
+    });
+    return () => { active = false; };
+  }, []);
 
   const updateChatPreference = async (enabled: boolean) => {
     setSavingChatPrivacy(true);
@@ -69,6 +79,7 @@ export default function SettingsScreen() {
             </View>
             <Switch accessibilityLabel="Allow message requests" value={allowChatRequests} disabled={!chatRequestsEnabled || savingChatPrivacy} onValueChange={(value) => void updateChatPreference(value)} trackColor={{ false: Colors.surfaceHighlight, true: Colors.primary }} thumbColor={Colors.textPrimary} />
           </View>
+          {chatPreferenceError ? <Text accessibilityRole="alert" style={styles.rowDetail}>Could not load message request preference: {chatPreferenceError}</Text> : null}
           <View style={styles.divider} />
           <View style={styles.infoRow}>
             <View style={styles.infoIcon}><Ionicons name="color-palette-outline" size={19} color={Colors.accentPurple} /></View>

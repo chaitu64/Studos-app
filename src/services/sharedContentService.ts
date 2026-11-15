@@ -132,14 +132,15 @@ export const sharedContentService = {
     if (error) throw error;
     return { success: true, message: 'Your application has been sent to the team lead.' };
   },
-  async respondToTeamApplication(teamId: string, applicantId: string, status: 'accepted' | 'declined', role = 'Member') {
+  async respondToTeamApplication(teamId: string, applicantId: string, status: 'accepted' | 'declined', role?: string) {
     const db = requireSupabase();
-    const { error } = await db.from('team_applications').update({ status }).eq('team_id', teamId).eq('applicant_id', applicantId);
+    const { error } = await db.rpc('respond_to_team_application_021', {
+      target_team_id: teamId,
+      target_applicant_id: applicantId,
+      decision: status,
+      member_role: role || null,
+    });
     if (error) throw error;
-    if (status === 'accepted') {
-      const { error: memberError } = await db.from('team_members').insert({ team_id: teamId, user_id: applicantId, role });
-      if (memberError && memberError.code !== '23505') throw memberError;
-    }
   },
   async students(): Promise<UserProfile[]> {
     const rows: any[] = []; const db = requireSupabase();
@@ -157,7 +158,7 @@ export const sharedContentService = {
   async chatRooms(): Promise<ChatRoom[]> {
     const db = requireSupabase(); const { data, error } = await db.from('chat_rooms').select('id,slug,title,description').order('title', { ascending: true });
     if (error) throw error;
-    return (data || []).map((row: any) => ({ id: row.id, title: row.title, topic: row.slug, description: row.description || '', membersCount: 0, activeNow: 0, icon: 'chatbubbles-outline', isPrivate: false }));
+    return (data || []).map((row: any) => ({ id: row.id, title: row.title, topic: row.slug, description: row.description || '', icon: 'chatbubbles-outline', isPrivate: false }));
   },
   async messages(conversationId: string): Promise<ChatMessage[]> { return chatService.messages(conversationId); },
   async sendMessage(conversationId: string, content: string) { return chatService.sendMessage(conversationId, content); },
@@ -178,6 +179,14 @@ export const sharedContentService = {
     if (!user) throw new Error('Sign in to send a room message.');
     const { error } = await db.from('chat_room_messages').insert({ room_id: roomId, user_id: user.id, content: content.trim() });
     if (error) throw error;
+  },
+  subscribeRoomMessages(roomId: string, onMessage: () => void, onStatus: (status: string) => void): () => void {
+    const db = requireSupabase();
+    const channel = db
+      .channel(`room-messages:${roomId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_room_messages', filter: `room_id=eq.${roomId}` }, onMessage)
+      .subscribe(onStatus);
+    return () => { void db.removeChannel(channel); };
   },
 };
 

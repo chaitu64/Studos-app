@@ -59,8 +59,8 @@ export default function TeamDetailScreen() {
       Alert.alert('Application Sent!', res.message, [
         { text: 'Great!', onPress: () => safeBack() },
       ]);
-    } catch {
-      Alert.alert('Error', 'Failed to submit application. Try again.');
+    } catch (cause) {
+      Alert.alert('Application failed', cause instanceof Error ? cause.message : 'Please try again.');
     } finally {
       setIsSubmitting(false);
     }

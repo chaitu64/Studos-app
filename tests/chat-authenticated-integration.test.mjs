@@ -20,9 +20,12 @@ for (const filename of allowedEnvFiles) {
     local[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
   }
 }
-const config = (name) => local[name] || '';
+const config = (name) => process.env[name] || local[name] || '';
 const url = config('STUDOS_TEST_SUPABASE_URL');
 const key = config('STUDOS_TEST_SUPABASE_ANON_KEY');
+const serviceRoleKey = config('STUDOS_TEST_SUPABASE_SERVICE_ROLE_KEY');
+const writeAuthorized = config('STUDOS_TEST_ENVIRONMENT') === 'disposable-staging'
+  && config('STUDOS_TEST_ALLOW_WRITES') === 'true';
 const normalA = [config('STUDOS_CHAT_TEST_USER_A_EMAIL'), config('STUDOS_CHAT_TEST_USER_A_PASSWORD')];
 const normalB = [config('STUDOS_CHAT_TEST_USER_B_EMAIL'), config('STUDOS_CHAT_TEST_USER_B_PASSWORD')];
 const securityA = [config('STUDOS_CHAT_SECURITY_USER_A_EMAIL'), config('STUDOS_CHAT_SECURITY_USER_A_PASSWORD')];
@@ -30,14 +33,39 @@ const securityB = [config('STUDOS_CHAT_SECURITY_USER_B_EMAIL'), config('STUDOS_C
 const blockA = [config('STUDOS_CHAT_BLOCK_TEST_USER_A_EMAIL'), config('STUDOS_CHAT_BLOCK_TEST_USER_A_PASSWORD')];
 const blockB = [config('STUDOS_CHAT_BLOCK_TEST_USER_B_EMAIL'), config('STUDOS_CHAT_BLOCK_TEST_USER_B_PASSWORD')];
 const hasPair = (pair) => pair.every(Boolean);
-const normalConfigured = Boolean(url && key && hasPair(normalA) && hasPair(normalB));
+const normalConfigured = Boolean(writeAuthorized && url && key && serviceRoleKey && hasPair(normalA) && hasPair(normalB));
 const securityDisposable = config('STUDOS_CHAT_SECURITY_TEST_USERS_DISPOSABLE') === 'true';
-const securityConfigured = Boolean(url && key && hasPair(securityA) && hasPair(securityB) && securityDisposable);
+const securityConfigured = Boolean(writeAuthorized && url && key && serviceRoleKey && hasPair(securityA) && hasPair(securityB) && securityDisposable);
 const blockDisposable = config('STUDOS_CHAT_BLOCK_TEST_USERS_DISPOSABLE') === 'true';
 const blockExplicitlyAllowed = config('STUDOS_CHAT_BLOCK_TEST_ALLOWED') === 'true';
-const blockConfigured = Boolean(url && key && hasPair(blockA) && hasPair(blockB) && blockDisposable && blockExplicitlyAllowed);
+const blockConfigured = Boolean(writeAuthorized && url && key && serviceRoleKey && hasPair(blockA) && hasPair(blockB) && blockDisposable && blockExplicitlyAllowed);
 
 const client = () => createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+const cleanupClient = () => createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+async function deleteRowsById(table, ids) {
+  if (!ids.length) return;
+  const result = await cleanupClient().from(table).delete().in('id', ids);
+  assert.ifError(result.error);
+}
+
+async function cleanupConversation(conversationId, requestIds) {
+  const cleanup = cleanupClient();
+  const conversationIds = new Set(conversationId ? [conversationId] : []);
+  if (requestIds.length) {
+    const related = await cleanup.from('conversation_requests').select('conversation_id').in('id', requestIds);
+    assert.ifError(related.error);
+    for (const row of related.data) {
+      if (row.conversation_id) conversationIds.add(row.conversation_id);
+    }
+    const requests = await cleanup.from('conversation_requests').delete().in('id', requestIds);
+    assert.ifError(requests.error);
+  }
+  for (const id of conversationIds) {
+    const result = await cleanup.from('conversations').delete().eq('id', id);
+    assert.ifError(result.error);
+  }
+}
 
 async function signInPair(credentialsA, credentialsB) {
   const a = client();
@@ -116,6 +144,8 @@ async function assertConversationMembers(a, b, conversationId, idA, idB) {
 
 test('normal authenticated chat: discover, request, accept, send, receive, persist, and Realtime in both directions', { skip: !normalConfigured }, async () => {
   const { a, b, idA, idB } = await signInPair(normalA, normalB);
+  let requestId;
+  let conversationId;
   try {
     await assertAuthProfiles(a, b, idA, idB);
     const status = await a.rpc('direct_chat_contact_status', { target_user_id: idB });
@@ -127,6 +157,7 @@ test('normal authenticated chat: discover, request, accept, send, receive, persi
     });
     assert.ifError(request.error);
     assert.ok(request.data, 'request RPC should return a request id');
+    requestId = request.data;
     const [sentView, receivedView] = await Promise.all([
       a.from('conversation_requests').select('id,requester_id,recipient_id,status').eq('id', request.data).single(),
       b.from('conversation_requests').select('id,requester_id,recipient_id,status').eq('id', request.data).single(),
@@ -141,7 +172,7 @@ test('normal authenticated chat: discover, request, accept, send, receive, persi
       request_id: request.data, decision: 'accepted',
     });
     assert.ifError(accepted.error);
-    const conversationId = accepted.data;
+    conversationId = accepted.data;
     assert.ok(conversationId, 'acceptance should return the authorized conversation id');
     await assertConversationMembers(a, b, conversationId, idA, idB);
     const forgedMember = await b.from('conversation_members').insert({
@@ -203,11 +234,15 @@ test('normal authenticated chat: discover, request, accept, send, receive, persi
     } finally { await refreshedB.auth.signOut(); }
 
     await assertAnonymousDenied(conversationId);
-  } finally { await Promise.all([a.auth.signOut(), b.auth.signOut()]); }
+  } finally {
+    await cleanupConversation(conversationId, requestId ? [requestId] : []);
+    await Promise.all([a.auth.signOut(), b.auth.signOut()]);
+  }
 });
 
 test('opt-in disposable-account security checks: request ownership, decline, duplicates, membership and sender enforcement, and rate limit', { skip: !securityConfigured }, async () => {
   const { a, b, idA, idB } = await signInPair(securityA, securityB);
+  const requestIds = [];
   try {
     const normalEmails = new Set([normalA[0], normalB[0]].filter(Boolean).map((value) => value.toLowerCase()));
     assert.ok(!normalEmails.has(securityA[0].toLowerCase()) && !normalEmails.has(securityB[0].toLowerCase()), 'security accounts must not be used for normal messaging');
@@ -217,6 +252,7 @@ test('opt-in disposable-account security checks: request ownership, decline, dup
     assert.equal(contactStatus.data, 'available', 'security test requires a fresh disposable Auth account pair');
     const request = await a.rpc('request_direct_conversation', { target_user_id: idB, request_message: 'Security decline test' });
     assert.ifError(request.error);
+    requestIds.push(request.data);
     const duplicate = await a.rpc('request_direct_conversation', { target_user_id: idB, request_message: 'Duplicate pending probe' });
     assert.ok(duplicate.error, 'duplicate pending request must fail');
     const wrongAccept = await a.rpc('respond_to_conversation_request', { request_id: request.data, decision: 'accepted' });
@@ -236,6 +272,7 @@ test('opt-in disposable-account security checks: request ownership, decline, dup
         target_user_id: idB, request_message: `Rate limit probe ${index + 1}`,
       });
       assert.ifError(row.error);
+      requestIds.push(row.data);
       const cancelled = await a.rpc('cancel_conversation_request', { request_id: row.data });
       assert.ifError(cancelled.error);
     }
@@ -244,11 +281,17 @@ test('opt-in disposable-account security checks: request ownership, decline, dup
     });
     assert.ok(limit.error, 'request throttle must reject after ten requests in 24 hours');
     assert.match(limit.error.message, /limit|later|rate/i);
-  } finally { await Promise.all([a.auth.signOut(), b.auth.signOut()]); }
+  } finally {
+    await deleteRowsById('conversation_requests', requestIds);
+    await Promise.all([a.auth.signOut(), b.auth.signOut()]);
+  }
 });
 
 test('opt-in blocking test uses a separate, disposable pair with explicit authorization', { skip: !blockConfigured }, async () => {
   const { a, b, idA, idB } = await signInPair(blockA, blockB);
+  let requestId;
+  let conversationId;
+  let blockCreated = false;
   assert.notEqual(idA, idB);
   const otherEmails = new Set([normalA[0], normalB[0], securityA[0], securityB[0]].filter(Boolean).map((value) => value.toLowerCase()));
   assert.ok(!otherEmails.has(blockA[0].toLowerCase()) && !otherEmails.has(blockB[0].toLowerCase()), 'blocking identities must be separate from normal/security pairs');
@@ -259,16 +302,26 @@ test('opt-in blocking test uses a separate, disposable pair with explicit author
     assert.equal(status.data, 'available', 'blocking test requires a fresh disposable Auth pair');
     const request = await a.rpc('request_direct_conversation', { target_user_id: idB, request_message: 'Disposable blocking test' });
     assert.ifError(request.error);
+    requestId = request.data;
     const accepted = await b.rpc('respond_to_conversation_request', { request_id: request.data, decision: 'accepted' });
     assert.ifError(accepted.error);
-    const conversationId = accepted.data;
+    conversationId = accepted.data;
     assert.ok(conversationId);
     const block = await b.rpc('block_chat_user', { target_user_id: idA });
     assert.ifError(block.error);
+    blockCreated = true;
     const unavailable = await a.rpc('direct_chat_contact_status', { target_user_id: idB });
     assert.ifError(unavailable.error);
     assert.equal(unavailable.data, 'unavailable');
     const blockedSend = await a.from('messages').insert({ conversation_id: conversationId, sender_id: idA, content: 'Blocked send probe' });
     assert.ok(blockedSend.error, 'block must prevent messaging in the existing direct conversation');
-  } finally { await Promise.all([a.auth.signOut(), b.auth.signOut()]); }
+  } finally {
+    await cleanupConversation(conversationId, requestId ? [requestId] : []);
+    if (blockCreated) {
+      const cleanup = await cleanupClient().from('user_blocks')
+        .delete().eq('blocker_id', idB).eq('blocked_id', idA);
+      assert.ifError(cleanup.error);
+    }
+    await Promise.all([a.auth.signOut(), b.auth.signOut()]);
+  }
 });

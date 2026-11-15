@@ -173,14 +173,11 @@ function throwQuery(feature: string, relation: string, error: { code?: string })
 }
 
 async function currentUserId(expected?: string) {
-  try {
-    const { data: { user }, error } = await requireSupabase().auth.getUser();
-    if (error || !user) return null;
-    if (expected && expected !== user.id) throw new Error('The requested interaction user does not match the signed-in account.');
-    return user.id;
-  } catch {
-    return null;
-  }
+  const { data: { user }, error } = await requireSupabase().auth.getUser();
+  if (error) throw error;
+  if (!user) return null;
+  if (expected && expected !== user.id) throw new Error('The requested interaction user does not match the signed-in account.');
+  return user.id;
 }
 
 export async function getSavedDemoIdeaIds(userId?: string | null): Promise<string[]> {

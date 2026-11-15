@@ -70,6 +70,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const { session } = useAuth();
   const pathname = usePathname();
   const loadVersion = useRef(0);
+  const dataOwnerId = useRef<string | null>(null);
+  const [readyOwnerId, setReadyOwnerId] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile>(() => session ? authIdentityProfile(session.user) : { id: '', name: 'Not signed in', avatar: '', college: '', degree: '', gradYear: '', shortBio: '', skills: [], interests: [] });
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [studentServices, setStudentServices] = useState<StudentService[]>([]);
@@ -90,9 +92,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const version = ++loadVersion.current;
     setIsLoading(true); setDataErrors({});
     if (!session || !supabaseConfigured) {
+      dataOwnerId.current = null;
+      setReadyOwnerId(null);
+      notificationsRequest.current += 1;
       setStudents([]); setStudentServices([]); setIdeas([]); setTeams([]); setLeaderboard([]); setCommunityPosts([]); setConversations([]); setOpportunities([]);
+      setNotifications([]); setNotificationsError(''); setNotificationsLoading(false);
       setUser({ id: '', name: 'Not signed in', avatar: '', college: '', degree: '', gradYear: '', shortBio: '', skills: [], interests: [] });
       setIsLoading(false); return;
+    }
+    if (dataOwnerId.current !== session.user.id) {
+      dataOwnerId.current = null;
+      setReadyOwnerId(null);
+      notificationsRequest.current += 1;
+      setStudents([]); setStudentServices([]); setIdeas([]); setTeams([]); setLeaderboard([]); setCommunityPosts([]); setConversations([]); setOpportunities([]);
+      setNotifications([]); setNotificationsError(''); setNotificationsLoading(false);
+      setUser(authIdentityProfile(session.user));
     }
     const p = pathname.replace(/\/+$/, '') || '/';
     const at = (prefix: string) => p === prefix || p.startsWith(`${prefix}/`);
@@ -160,6 +174,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const ownIdeas = (loaded.get('ideas') as Idea[] | undefined)?.filter((item) => item.creator.id === session.user.id).length ?? currentProfile.ideasCount;
       setUser({ ...currentProfile, ideasCount: ownIdeas, points: ownLeaderboard?.points ?? currentProfile.points, leaderboardRank: ownLeaderboard?.rank ?? currentProfile.leaderboardRank });
     }
+    dataOwnerId.current = session.user.id;
+    setReadyOwnerId(session.user.id);
     setIsLoading(false);
   }, [session, pathname]);
 
@@ -178,8 +194,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally { if (requestId === notificationsRequest.current) setNotificationsLoading(false); }
   }, []);
   useEffect(() => {
+    notificationsRequest.current += 1;
     const timer = setTimeout(() => {
-      notificationsRequest.current += 1;
       if (!session?.user.id) { setNotifications([]); setNotificationsError(''); setNotificationsLoading(false); return; }
       void refreshNotifications();
     }, 0);
@@ -329,30 +345,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     throw new Error('Collaboration requests are unavailable in the current database schema.');
   };
 
-  const unreadNotifsCount = notifications.filter((n) => !n.read).length;
-  const savedOpportunityIds = opportunities.filter((o) => o.isSaved).map((o) => o.id);
-  const visibleUser = session && supabaseConfigured && user.id !== session.user.id ? authIdentityProfile(session.user) : user;
+  const hasCurrentSessionData = Boolean(session && supabaseConfigured && readyOwnerId === session.user.id);
+  const unreadNotifsCount = hasCurrentSessionData ? notifications.filter((n) => !n.read).length : 0;
+  const savedOpportunityIds = hasCurrentSessionData ? opportunities.filter((o) => o.isSaved).map((o) => o.id) : [];
+  const visibleUser = hasCurrentSessionData && user.id === session?.user.id
+    ? user
+    : session && supabaseConfigured
+      ? authIdentityProfile(session.user)
+      : { id: '', name: 'Not signed in', avatar: '', college: '', degree: '', gradYear: '', shortBio: '', skills: [], interests: [] };
 
   return (
     <AppContext.Provider
       value={{
         user: visibleUser,
-        students,
-        studentServices,
-        ideas,
-        teams,
-        opportunities,
-        conversations,
-        notifications,
-        notificationsLoading,
-        notificationsError,
+        students: hasCurrentSessionData ? students : [],
+        studentServices: hasCurrentSessionData ? studentServices : [],
+        ideas: hasCurrentSessionData ? ideas : [],
+        teams: hasCurrentSessionData ? teams : [],
+        opportunities: hasCurrentSessionData ? opportunities : [],
+        conversations: hasCurrentSessionData ? conversations : [],
+        notifications: hasCurrentSessionData ? notifications : [],
+        notificationsLoading: hasCurrentSessionData && notificationsLoading,
+        notificationsError: hasCurrentSessionData ? notificationsError : '',
         refreshNotifications,
-        leaderboard,
+        leaderboard: hasCurrentSessionData ? leaderboard : [],
         savedOpportunityIds,
         unreadNotifsCount,
-        isLoading,
-        dataErrors,
-        communityPosts,
+        isLoading: isLoading || Boolean(session && supabaseConfigured && !hasCurrentSessionData),
+        dataErrors: hasCurrentSessionData ? dataErrors : {},
+        communityPosts: hasCurrentSessionData ? communityPosts : [],
         refreshCommunityPosts,
         addCommunityPost,
         toggleLikePost,

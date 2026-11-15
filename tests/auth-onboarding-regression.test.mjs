@@ -24,6 +24,16 @@ test('signup metadata and profile completion cover academic, personal and profes
   assert.match(profileService, /middle_name:/);
 });
 
+test('untouched optional signup fields safely normalize to empty values', () => {
+  assert.match(authScreen, /const fieldValue = \(key: string\) => fields\[key\] \?\? ''/);
+  const payload = authScreen.match(/const payload: SignupInput = \{([\s\S]*?)\n    \};/);
+  assert.ok(payload, 'signup payload should be constructed before submission');
+  assert.doesNotMatch(payload[1], /fields\.[A-Za-z_]+\.trim\(\)/);
+  for (const field of ['middle_name', 'bio', 'phone_number', 'github_url', 'linkedin_url', 'portfolio_url']) {
+    assert.ok(payload[1].includes(`fieldValue('${field}')`), `optional field ${field} should tolerate an untouched input`);
+  }
+});
+
 test('profile editor exposes private phone and graduation fields and validates HTTPS links', () => {
   assert.match(profileScreen, /Phone number \(private\)/);
   assert.match(profileScreen, /Graduation year/);

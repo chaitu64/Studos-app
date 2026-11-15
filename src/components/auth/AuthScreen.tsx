@@ -19,8 +19,9 @@ export default function AuthScreen({ mode }: { mode: Mode }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [needsVerification, setNeedsVerification] = useState(false);
-  const { configurationError } = useAuth();
+  const { configurationError, authError } = useAuth();
   const set = (key: string, value: string) => setFields((current) => ({ ...current, [key]: value }));
+  const fieldValue = (key: string) => fields[key] ?? '';
 
   const signInWithGoogle = async () => {
     setError(''); setNotice(''); setBusy(true);
@@ -62,13 +63,13 @@ export default function AuthScreen({ mode }: { mode: Mode }) {
 
   const submitSignup = async () => {
     const payload: SignupInput = {
-      email: fields.email.trim(), password: fields.password,
-      first_name: fields.first_name.trim(), middle_name: fields.middle_name.trim(), last_name: fields.last_name.trim(),
-      college: fields.college.trim(), degree: fields.degree.trim(), branch: fields.branch.trim(),
-      study_year: Number(fields.study_year), graduation_year: Number(fields.graduation_year),
-      bio: fields.bio.trim(), phone_number: fields.phone_number.trim(),
-      skills: splitList(fields.skills), interests: splitList(fields.interests),
-      github_url: fields.github_url.trim(), linkedin_url: fields.linkedin_url.trim(), portfolio_url: fields.portfolio_url.trim(),
+      email: fieldValue('email').trim(), password: fieldValue('password'),
+      first_name: fieldValue('first_name').trim(), middle_name: fieldValue('middle_name').trim(), last_name: fieldValue('last_name').trim(),
+      college: fieldValue('college').trim(), degree: fieldValue('degree').trim(), branch: fieldValue('branch').trim(),
+      study_year: Number(fieldValue('study_year')), graduation_year: Number(fieldValue('graduation_year')),
+      bio: fieldValue('bio').trim(), phone_number: fieldValue('phone_number').trim(),
+      skills: splitList(fieldValue('skills')), interests: splitList(fieldValue('interests')),
+      github_url: fieldValue('github_url').trim(), linkedin_url: fieldValue('linkedin_url').trim(), portfolio_url: fieldValue('portfolio_url').trim(),
     };
     setBusy(true); setError(''); setNotice('');
     try {
@@ -96,8 +97,8 @@ export default function AuthScreen({ mode }: { mode: Mode }) {
         const { error: authError } = await authService.signIn(fields.email, fields.password);
         if (authError) { if ('code' in authError && authError.code === 'email_not_confirmed') setNeedsVerification(true); throw authError; }
       } else if (mode === 'forgot') {
-        const { error: authError } = await authService.resetPassword(fields.email);
-        if (authError) throw authError;
+        const { error: resetError } = await authService.resetPassword(fields.email, Linking.createURL('reset-password'));
+        if (resetError) throw resetError;
         setNotice('If an account uses that email, a password reset link is on its way.');
       } else {
         const { error: authError } = await authService.updatePassword(fields.password);
@@ -116,7 +117,7 @@ export default function AuthScreen({ mode }: { mode: Mode }) {
 
   return <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <View style={styles.brand}><Text style={styles.logo}>STUDOS</Text><Text style={styles.eyebrow}>LEARN · BUILD · CONNECT</Text><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{mode === 'signup' ? 'A thoughtful profile helps the right people find you.' : 'Your student community, ready when you are.'}</Text></View>
-    {configurationError ? <Text accessibilityRole="alert" style={styles.error}>{configurationError}</Text> : null}
+    {configurationError ? <Text accessibilityRole="alert" style={styles.error}>{configurationError}</Text> : null}{authError ? <Text accessibilityRole="alert" style={styles.error}>{authError}</Text> : null}
     {mode === 'signup' ? <View style={styles.progress} accessibilityLabel={`Signup step ${step} of 3`}>{signupSteps.map((label, index) => <View key={label} style={styles.progressItem}><View style={[styles.progressDot, index < step && styles.progressActive]}><Text style={styles.progressNumber}>{index + 1}</Text></View><Text style={[styles.progressLabel, index + 1 === step && styles.progressCurrent]}>{label}</Text></View>)}</View> : null}
     {authMode && (mode === 'login' || step === 1) ? <>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Continue with Google" disabled={busy || Boolean(configurationError)} onPress={() => void signInWithGoogle()} style={styles.googleButton}><Text style={styles.googleMark}>G</Text><Text style={styles.googleText}>{busy ? 'Connecting to Google…' : 'Continue with Google'}</Text>{busy ? <ActivityIndicator size="small" color={Colors.primary}/> : null}</TouchableOpacity>

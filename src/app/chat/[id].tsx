@@ -252,7 +252,7 @@ export default function ChatConversationScreen() {
             <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
 
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`View ${conv.name}'s profile`} onPress={async () => { try { const members = await chatService.members(conv.id); const other = members.find((member) => member.id !== user.id); if (other && conv.type === 'direct') router.push(`/student/real/${other.id}` as never); } catch {} }}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`View ${conv.name}'s profile`} onPress={async () => { try { const members = await chatService.members(conv.id); const other = members.find((member) => member.id !== user.id); if (other && conv.type === 'direct') router.push(`/student/real/${other.id}` as never); } catch (cause) { Alert.alert('Could not open profile', cause instanceof Error ? cause.message : 'Please try again.'); } }}>
             <Avatar uri={conv.avatar} name={conv.name} size={40} />
           </TouchableOpacity>
 

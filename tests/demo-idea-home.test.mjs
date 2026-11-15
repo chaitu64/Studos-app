@@ -30,6 +30,10 @@ test('Home is a continuous, virtualized student feed with compact create and cat
 });
 
 test('Student Idea Hub uses the consolidated student feed and interaction relations', () => {
+  const currentUserId = service.match(/async function currentUserId\(expected\?: string\) \{([\s\S]*?)\n\}/);
+  assert.ok(currentUserId, 'idea interactions should resolve the current Auth identity explicitly');
+  assert.match(currentUserId[1], /if \(error\) throw error/);
+  assert.doesNotMatch(currentUserId[1], /catch/);
   assert.match(service, /from\('ideas'\)\.select\(IDEA_FIELDS, \{ count: 'exact' \}\)/);
   assert.doesNotMatch(service, /from\('ideas_feed'\)/);
   assert.match(service, /id,demo_author_id,author_id,title,description,problem_statement,proposed_solution,target_audience,roles_needed,links,category,idea_type,stage,tags,skills_needed,collaboration_open,created_at,github_url,youtube_url/);
